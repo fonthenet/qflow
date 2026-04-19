@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { PrioritiesEditor } from './PrioritiesEditor';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
@@ -94,6 +95,8 @@ interface Props {
   officeName?: string;
   onClose: () => void;
   onSaved?: () => void;
+  onOpenTeam?: () => void;
+  onOpenBusinessAdmin?: () => void;
 }
 
 const WEEK_DAYS = [
@@ -178,7 +181,7 @@ function coerceArr(v: any, def: string[]): string[] {
 }
 
 // ─── Component ─────────────────────────────────────────────────────────
-export function SettingsModal({ organizationId, officeId, locale, storedAuth, officeName, onClose, onSaved }: Props) {
+export function SettingsModal({ organizationId, officeId, locale, storedAuth, officeName, onClose, onSaved, onOpenTeam, onOpenBusinessAdmin }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
 
   const [loading, setLoading] = useState(true);
@@ -434,6 +437,24 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '👤',
       title: t('Account'),
       fields: [], // Custom-rendered section
+    },
+    {
+      id: 'team',
+      icon: '👥',
+      title: t('Team & Staff'),
+      fields: [], // Custom-rendered: opens TeamModal
+    },
+    {
+      id: 'business_admin',
+      icon: '🏢',
+      title: t('Business Administration'),
+      fields: [], // Custom-rendered: opens BusinessAdminModal
+    },
+    {
+      id: 'diagnostics',
+      icon: '🩺',
+      title: t('Sync Diagnostics'),
+      fields: [], // Custom-rendered
     },
   ], [locale]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2556,7 +2577,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => setActiveSection(item.id)}
+                      onClick={() => {
+                        if (item.id === 'team') {
+                          if (onOpenTeam) { onClose(); setTimeout(() => onOpenTeam(), 0); }
+                          return;
+                        }
+                        if (item.id === 'business_admin') {
+                          if (onOpenBusinessAdmin) { onClose(); setTimeout(() => onOpenBusinessAdmin(), 0); }
+                          return;
+                        }
+                        setActiveSection(item.id);
+                      }}
                       style={{
                         width: '100%', textAlign: 'left', border: 'none',
                         padding: '8px 14px', cursor: 'pointer',
@@ -2580,7 +2611,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               <div style={{
                 flex: 1, overflowY: 'auto', padding: '16px 22px',
               }}>
-                {activeSection === 'account' ? (
+                {activeSection === 'diagnostics' ? (
+                  <DiagnosticsPanel t={t} />
+                ) : activeSection === 'account' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>
 

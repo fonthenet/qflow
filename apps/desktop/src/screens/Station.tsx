@@ -5,6 +5,8 @@ import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale 
 import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
+import { TeamModal } from '../components/TeamModal';
+import { BusinessAdminModal } from '../components/BusinessAdminModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
@@ -1695,6 +1697,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [expandedPendingId, setExpandedPendingId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [showBusinessAdminModal, setShowBusinessAdminModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
@@ -1713,7 +1717,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // Listen for native File > Settings menu click
   useEffect(() => {
     const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
-    return () => { if (typeof off === 'function') off(); };
+    const offTeam = (window as any).qf?.settings?.onOpenTeam?.(() => setShowTeamModal(true));
+    const offBiz = (window as any).qf?.settings?.onOpenBusinessAdmin?.(() => setShowBusinessAdminModal(true));
+    return () => {
+      if (typeof off === 'function') off();
+      if (typeof offTeam === 'function') offTeam();
+      if (typeof offBiz === 'function') offBiz();
+    };
   }, []);
   const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string; wilaya?: string; futureDate?: string; futureTime?: string; _ts?: number } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
@@ -4266,6 +4276,30 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             storedAuth={storedAuth}
             officeName={session.office_name}
             onClose={() => { setShowSettingsModal(false); setSettingsVersion(v => v + 1); }}
+            onOpenTeam={() => setShowTeamModal(true)}
+            onOpenBusinessAdmin={() => setShowBusinessAdminModal(true)}
+          />
+        )}
+
+        {/* Team Modal */}
+        {showTeamModal && (
+          <TeamModal
+            organizationId={session.organization_id}
+            callerUserId={session.user_id}
+            callerRole={session.role}
+            locale={locale}
+            onClose={() => setShowTeamModal(false)}
+          />
+        )}
+
+        {/* Business Administration Modal */}
+        {showBusinessAdminModal && (
+          <BusinessAdminModal
+            organizationId={session.organization_id}
+            callerUserId={session.user_id}
+            callerRole={session.role}
+            locale={locale}
+            onClose={() => setShowBusinessAdminModal(false)}
           />
         )}
 

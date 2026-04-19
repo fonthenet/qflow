@@ -5,7 +5,7 @@ import fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { initSentry } from './sentry';
 import { logger } from './logger';
-import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase, getLastRecovery, prepareFreshDatabase } from './db';
+import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, enqueueSync, startAutoBackup, stopAutoBackup, backupDatabase, getLastRecovery, prepareFreshDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -128,6 +128,16 @@ function buildApplicationMenu() {
           label: translate(currentLocale, 'Settings'),
           accelerator: 'CmdOrCtrl+,',
           click: () => { mainWindow?.webContents.send('menu:open-settings'); mainWindow?.show(); mainWindow?.focus(); },
+        },
+        {
+          label: translate(currentLocale, 'Team Access'),
+          accelerator: 'CmdOrCtrl+Shift+T',
+          click: () => { mainWindow?.webContents.send('menu:open-team'); mainWindow?.show(); mainWindow?.focus(); },
+        },
+        {
+          label: translate(currentLocale, 'Business Administration'),
+          accelerator: 'CmdOrCtrl+Shift+B',
+          click: () => { mainWindow?.webContents.send('menu:open-business-admin'); mainWindow?.show(); mainWindow?.focus(); },
         },
         { type: 'separator' },
         { label: translate(currentLocale, 'Quit'), click: () => { mainWindow?.destroy(); app.quit(); } },
@@ -635,10 +645,14 @@ function setupIPC() {
       if (resolvedLocale) syncPayload.locale = resolvedLocale;
       if (ticketNotes) syncPayload.notes = ticketNotes;
 
-      db.prepare(`
-        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-        VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
-      `).run(ticket.id + '-create', ticket.id, JSON.stringify(syncPayload), now);
+      enqueueSync({
+        id: ticket.id + '-create',
+        operation: 'INSERT',
+        table: 'tickets',
+        recordId: ticket.id,
+        payload: syncPayload,
+        createdAt: now,
+      });
     })();
 
     logTicketEvent(ticket.id, 'created', {
@@ -889,13 +903,17 @@ function setupIPC() {
       });
     }
 
-    const syncId = `${ticketId}-${Date.now()}`;
-    db.prepare(`
-      INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-      VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
-    `).run(syncId, ticketId, JSON.stringify(safeUpdates), new Date().toISOString());
+    const syncId = enqueueSync({
+      id: `${ticketId}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'tickets',
+      recordId: ticketId,
+      payload: safeUpdates,
+    });
 
     // Immediately push to cloud so web/mobile displays update within 1-2s
+    // (the enqueue notifier also fires pushImmediate; this is kept for the
+    // named-ID contract used downstream in rewriteOfflineTicket paths)
     syncEngine?.pushImmediate(syncId);
 
     // Push typed SSE event based on status change
@@ -993,11 +1011,13 @@ function setupIPC() {
     }
 
     // 3. Offline fallback: enqueue for sync
-    const syncId = `notes-${ticketId}-${Date.now()}`;
-    db.prepare(`
-      INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-      VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
-    `).run(syncId, ticketId, JSON.stringify({ notes: notes || null }), new Date().toISOString());
+    const syncId = enqueueSync({
+      id: `notes-${ticketId}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'tickets',
+      recordId: ticketId,
+      payload: { notes: notes || null },
+    });
     syncEngine?.pushImmediate(syncId);
     return { ok: true, queued: true };
   });
@@ -1047,10 +1067,13 @@ function setupIPC() {
     // Queue sync to cloud so Supabase stays in sync with Station-UI-driven changes
     // (mobile uses HTTP which already does this; this keeps the two paths consistent).
     try {
-      const syncId = `desk-${deskId}-${Date.now()}`;
-      db.prepare(
-        `INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'UPDATE', 'desks', ?, ?, ?)`,
-      ).run(syncId, deskId, JSON.stringify(safe), new Date().toISOString());
+      const syncId = enqueueSync({
+        id: `desk-${deskId}-${Date.now()}`,
+        operation: 'UPDATE',
+        table: 'desks',
+        recordId: deskId,
+        payload: safe,
+      });
       syncEngine?.pushImmediate(syncId);
     } catch (err: any) {
       logger.warn('IPC', 'Failed to queue desk sync', { deskId, error: err?.message });
@@ -1196,11 +1219,14 @@ function setupIPC() {
         `).get(deskId, staffId, now, candidate.id) as any;
 
         if (ticket) {
-          syncId = `${ticket.id}-call-${callTs}`;
-          db.prepare(`
-            INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-            VALUES (?, 'CALL', 'tickets', ?, ?, ?)
-          `).run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+          syncId = enqueueSync({
+            id: `${ticket.id}-call-${callTs}`,
+            operation: 'CALL',
+            table: 'tickets',
+            recordId: ticket.id,
+            payload: { status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now },
+            createdAt: now,
+          });
           logTicketEvent(ticket.id, 'called', {
             ticketNumber: ticket.ticket_number,
             fromStatus: 'waiting',
@@ -1328,12 +1354,18 @@ function setupIPC() {
 
   // ── Sync Status ───────────────────────────────────────────────────
 
-  ipcMain.handle('sync:status', () => ({
-    isOnline: syncEngine?.isOnline ?? false,
-    pendingCount: syncEngine?.pendingCount ?? 0,
-    lastSyncAt: syncEngine?.lastSyncAt ?? null,
-    connectionQuality: syncEngine?.connectionQuality ?? 'offline',
-  }));
+  ipcMain.handle('sync:status', () => {
+    const health = syncEngine?.getHealth?.() ?? { circuitOpen: false, authExpired: false, oldestPendingAgeMs: null };
+    return {
+      isOnline: syncEngine?.isOnline ?? false,
+      pendingCount: syncEngine?.pendingCount ?? 0,
+      lastSyncAt: syncEngine?.lastSyncAt ?? null,
+      connectionQuality: syncEngine?.connectionQuality ?? 'offline',
+      circuitOpen: health.circuitOpen,
+      authExpired: health.authExpired,
+      oldestPendingAgeMs: health.oldestPendingAgeMs,
+    };
+  });
 
   ipcMain.handle('sync:force', async () => {
     syncEngine?.suppressAuthErrors(); // prevent stale-session race from kicking user out

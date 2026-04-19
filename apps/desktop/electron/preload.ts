@@ -94,6 +94,16 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.on('menu:open-settings', handler);
       return () => ipcRenderer.removeListener('menu:open-settings', handler);
     },
+    onOpenTeam: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('menu:open-team', handler);
+      return () => ipcRenderer.removeListener('menu:open-team', handler);
+    },
+    onOpenBusinessAdmin: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('menu:open-business-admin', handler);
+      return () => ipcRenderer.removeListener('menu:open-business-admin', handler);
+    },
   },
 
   // Connection
