@@ -113,6 +113,7 @@ export default function HistoryScreen() {
   const { history, savedAppointments } = useAppStore();
   const updateAppointment = useAppStore((s) => s.updateAppointment);
   const removeAppointment = useAppStore((s) => s.removeAppointment);
+  const addToHistory = useAppStore((s) => s.addToHistory);
 
   const [refreshing, setRefreshing] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -170,13 +171,33 @@ export default function HistoryScreen() {
               t,
             });
           }
+
+          // Once staff checks the appointment in, a linked ticket is
+          // created. Mirror it into the local history so the customer
+          // can (a) see it under Recent visits and (b) tap through to
+          // the live queue card via setActiveToken. addToHistory
+          // dedupes by token, so calling it on every poll is safe —
+          // the entry simply gets refreshed with the latest status.
+          if (ticket?.qr_token && ticket?.ticket_number) {
+            addToHistory({
+              token: ticket.qr_token,
+              ticketNumber: ticket.ticket_number,
+              officeName: a.businessName ?? 'Unknown',
+              serviceName: a.serviceName ?? a.departmentName ?? 'General',
+              status: ticket.status,
+              date: new Date().toISOString(),
+              officeId: a.officeId ?? undefined,
+              kioskSlug: a.kioskSlug ?? undefined,
+              officeTimezone: a.officeTimezone ?? null,
+            });
+          }
         }
       }),
     );
     } finally {
       refreshingRef.current = false;
     }
-  }, [updateAppointment, t]);
+  }, [updateAppointment, addToHistory, t]);
 
   // Refresh on screen focus
   useFocusEffect(
