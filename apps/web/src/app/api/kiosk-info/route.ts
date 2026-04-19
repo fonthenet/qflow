@@ -73,9 +73,12 @@ export async function GET(request: NextRequest) {
     kiosk_welcome_message: orgSettings.kiosk_welcome_message ?? null,
     kiosk_header_text: orgSettings.kiosk_header_text ?? null,
     kiosk_theme_color: orgSettings.kiosk_theme_color ?? null,
+    priorities_enabled: orgSettings.priorities_enabled !== false,
     kiosk_show_priorities:
-      orgSettings.kiosk_show_priorities ??
-      (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities),
+      orgSettings.priorities_enabled === false
+        ? false
+        : (orgSettings.kiosk_show_priorities ??
+          (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities)),
     kiosk_show_estimated_time: orgSettings.kiosk_show_estimated_time ?? profile.showEstimatedTime,
     kiosk_locked_department_id:
       orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
@@ -83,7 +86,7 @@ export async function GET(request: NextRequest) {
       orgSettings.kiosk_hidden_departments ?? officeSettings.kiosk_hidden_departments ?? [],
     kiosk_hidden_services:
       orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
-    default_check_in_mode: orgSettings.default_check_in_mode ?? 'manual',
+    default_check_in_mode: orgSettings.default_check_in_mode ?? 'hybrid',
     booking_mode: orgSettings.booking_mode ?? 'simple',
     booking_horizon_days: Number(orgSettings.booking_horizon_days ?? 90),
     visit_intake_override_mode:
@@ -132,7 +135,7 @@ export async function GET(request: NextRequest) {
       : null,
     departments,
     services,
-    priorityCategories: priorityCategoriesResult.data || [],
+    priorityCategories: orgSettings.priorities_enabled === false ? [] : (priorityCategoriesResult.data || []),
     settings,
   });
 }

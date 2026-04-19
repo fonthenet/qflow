@@ -400,7 +400,14 @@ export function getTierPreset(tier: TemplateTier): TierPreset {
         rolePolicy: buildRolePolicy(),
         defaultNavigation: LIGHT_NAV,
         defaultSlas: [{ metric: 'average_wait', label: 'Average wait under', targetMinutes: 15 }],
-        starterPriorities: [],
+        // Universal 3-preset pack — Accessible / Senior / Veteran — matches
+        // what the kiosk and mobile priority-step UIs render by default.
+        // Admins can edit or remove them under Setup → Priority Rules.
+        starterPriorities: [
+          { name: 'Accessible', icon: '♿', color: '#0ea5e9', weight: 25 },
+          { name: 'Senior',     icon: '🧓', color: '#f97316', weight: 20 },
+          { name: 'Veteran',    icon: '🎖️', color: '#22c55e', weight: 15 },
+        ],
         recommendedRoles: [...ADMIN_LIKE_ROLES, STAFF_ROLES.RECEPTIONIST, STAFF_ROLES.DESK_OPERATOR],
         enabledModules: ['virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
       };
@@ -417,8 +424,9 @@ export function getTierPreset(tier: TemplateTier): TierPreset {
           { metric: 'average_wait', label: 'Average wait under', targetMinutes: 20 },
         ],
         starterPriorities: [
-          { name: 'Urgent', icon: '⚡', color: '#dc2626', weight: 30 },
-          { name: 'Accessible', icon: '♿', color: '#0284c7', weight: 20 },
+          { name: 'Accessible', icon: '♿', color: '#0ea5e9', weight: 25 },
+          { name: 'Senior',     icon: '🧓', color: '#f97316', weight: 20 },
+          { name: 'Veteran',    icon: '🎖️', color: '#22c55e', weight: 15 },
         ],
         recommendedRoles: [...ADMIN_LIKE_ROLES, STAFF_ROLES.RECEPTIONIST, STAFF_ROLES.DESK_OPERATOR, STAFF_ROLES.FLOOR_MANAGER],
         enabledModules: ['appointments', 'intake_forms', 'display_board', 'priority_categories'],

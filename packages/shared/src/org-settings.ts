@@ -76,7 +76,7 @@ export const ORG_SETTINGS = {
   // ── Queue (settings JSON) ────────────────────────────────────────
   default_check_in_mode: {
     dbKey: 'default_check_in_mode', storage: 'settings_json',
-    default: 'self_service',
+    default: 'hybrid',
     legacyColumn: 'check_in_mode',
   } as SettingDef<string>,
   ticket_number_prefix: {
@@ -183,6 +183,11 @@ export const ORG_SETTINGS = {
   } as SettingDef<boolean>,
   email_otp_required_for_booking: {
     dbKey: 'email_otp_required_for_booking', storage: 'settings_json', default: false,
+  } as SettingDef<boolean>,
+
+  // ── Priorities feature master toggle ───────────────────────────
+  priorities_enabled: {
+    dbKey: 'priorities_enabled', storage: 'settings_json', default: true,
   } as SettingDef<boolean>,
 
   // ── Intake gate (mirrors to offices per Station's convention) ───

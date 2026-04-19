@@ -61,8 +61,10 @@ export default async function KioskPage({ params }: KioskPageProps) {
       vertical: platformConfig.template.vertical,
       mode: orgSettings.kiosk_mode ?? profile.mode,
       showPriorities:
-        orgSettings.kiosk_show_priorities ??
-        (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities),
+        orgSettings.priorities_enabled === false
+          ? false
+          : (orgSettings.kiosk_show_priorities ??
+            (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities)),
       showEstimatedTime: orgSettings.kiosk_show_estimated_time ?? profile.showEstimatedTime,
       hiddenDepartments: orgSettings.kiosk_hidden_departments ?? officeSettings.kiosk_hidden_departments ?? [],
       hiddenServices: orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],

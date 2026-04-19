@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   // Find office by slug
   const { data: offices, error: officesError } = await supabase
     .from('offices')
-    .select('id, name, address, organization_id, settings')
+    .select('id, name, address, organization_id, settings, operating_hours, timezone')
     .eq('is_active', true);
 
   if (officesError) {
@@ -86,6 +86,47 @@ export async function GET(request: NextRequest) {
   const totalWaiting = deptStats.reduce((sum, d) => sum + d.waiting, 0);
   const totalServing = deptStats.reduce((sum, d) => sum + d.serving, 0);
 
+  // Work schedule: normalize operating_hours to a weekday map (mon..sun ->
+  // { open, close } | null). Compute "open now" against the office's timezone.
+  const rawHours = ((office as any).operating_hours ?? {}) as Record<
+    string,
+    { open: string; close: string } | null
+  >;
+  const timezone = ((office as any).timezone as string | null) ?? null;
+  const weekdayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+  const operatingHours: Record<string, { open: string; close: string } | null> = {};
+  for (const d of weekdayKeys) operatingHours[d] = rawHours[d] ?? null;
+
+  let openNow = false;
+  let todayKey: string | null = null;
+  try {
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || undefined,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    const wd = parts.find((p) => p.type === 'weekday')?.value?.toLowerCase() ?? '';
+    const map: Record<string, string> = { mon: 'mon', tue: 'tue', wed: 'wed', thu: 'thu', fri: 'fri', sat: 'sat', sun: 'sun' };
+    todayKey = map[wd] ?? null;
+    const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
+    const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
+    const nowMin = parseInt(hh, 10) * 60 + parseInt(mm, 10);
+    const today = todayKey ? operatingHours[todayKey] : null;
+    if (today) {
+      const [oh, om] = today.open.split(':').map(Number);
+      const [ch, cm] = today.close.split(':').map(Number);
+      const o = oh * 60 + om;
+      const c = ch * 60 + cm;
+      openNow = nowMin >= o && nowMin < c;
+    }
+  } catch {
+    /* ignore */
+  }
+
   return NextResponse.json({
     office: {
       id: office.id,
@@ -96,5 +137,9 @@ export async function GET(request: NextRequest) {
     totalWaiting,
     totalServing,
     bookingMode,
+    operatingHours,
+    timezone,
+    openNow,
+    todayKey,
   });
 }
