@@ -723,38 +723,9 @@ export default function PlacesScreen() {
   };
 
   // =======================================================================
-  // Empty state
-  // =======================================================================
-  if (savedPlaces.length === 0) {
-    return (
-      <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
-        <View
-          style={[
-            styles.emptyIconCircle,
-            { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.infoLight },
-          ]}
-        >
-          <Ionicons name="storefront-outline" size={56} color={colors.primary} />
-        </View>
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('places.noPlaces')}</Text>
-        <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-          {t('places.noPlacesMsg')}
-        </Text>
-        <TouchableOpacity
-          style={[styles.emptyAction, { backgroundColor: colors.primary }]}
-          onPress={() => router.push('/scan' as any)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="qr-code-outline" size={20} color="#fff" />
-          <Text style={styles.emptyActionText}>{t('places.scanQR')}</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // =======================================================================
   // Main view
   // =======================================================================
+  const isEmpty = savedPlaces.length === 0;
   return (
     <>
       <ScrollView
@@ -780,7 +751,11 @@ export default function PlacesScreen() {
             <Ionicons name="search-outline" size={18} color={colors.textMuted} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
-              placeholder={t('places.searchPlaces')}
+              placeholder={
+                isEmpty
+                  ? t('places.findPlaceholder', { defaultValue: 'Search businesses to add…' })
+                  : t('places.searchPlaces')
+              }
               placeholderTextColor={colors.textMuted}
               value={search}
               onChangeText={setSearch}
@@ -919,6 +894,44 @@ export default function PlacesScreen() {
               </View>
             )}
           </>
+        ) : isEmpty ? (
+          <View style={{ alignItems: 'center', paddingTop: spacing.xl, paddingHorizontal: spacing.md }}>
+            <View
+              style={[
+                styles.emptyIconCircle,
+                { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.infoLight },
+              ]}
+            >
+              <Ionicons name="storefront-outline" size={56} color={colors.primary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              {t('places.noPlaces')}
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+              {t('places.noPlacesMsg')}
+            </Text>
+            <Text
+              style={{
+                fontSize: fontSize.sm,
+                color: colors.textMuted,
+                textAlign: 'center',
+                marginBottom: spacing.md,
+                maxWidth: 300,
+              }}
+            >
+              {t('places.searchHint', {
+                defaultValue: 'Search by name, service, or city above — or scan a QR at the counter.',
+              })}
+            </Text>
+            <TouchableOpacity
+              style={[styles.emptyAction, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/scan' as any)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="qr-code-outline" size={20} color="#fff" />
+              <Text style={styles.emptyActionText}>{t('places.scanQR')}</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <>
             {/* Count */}
