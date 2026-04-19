@@ -3588,8 +3588,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {/* Inline SVG instead of 👥 emoji so the icon can be colored
                       (Windows renders the emoji as dim purple, invisible in dark mode). */}
                   <svg
+                    className="client-icon"
                     width="14" height="14" viewBox="0 0 24 24"
-                    fill="none" stroke="#22d3ee" strokeWidth="2.2"
+                    fill="none" strokeWidth="2.2"
                     strokeLinecap="round" strokeLinejoin="round"
                     style={{ flexShrink: 0 }}
                     aria-hidden="true"
