@@ -1095,8 +1095,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // Action buttons rendered by schema (type === 'button'). Keyed by field.key.
   // Handlers receive the live form state so they can read the latest unsaved
   // values (e.g. test the voice with the currently-chosen gender/rate).
+  const [voiceTestResult, setVoiceTestResult] = useState<{ ok: boolean; label: string } | null>(null);
   const buttonHandlers: Record<string, (state: Record<string, any>) => void> = {
-    __voice_test: (state) => {
+    __voice_test: async (state) => {
       const settings = parseVoiceSettings({
         voice_announcements: true, // force on for the test even if toggle is off
         voice_gender: state.voice_gender,
@@ -1104,7 +1105,15 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         voice_rate: state.voice_rate,
       });
       const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
-      void speak(buildSample(fallback), settings, fallback);
+      setVoiceTestResult(null);
+      const result = await speak(buildSample(fallback), settings, fallback);
+      if (result.path === 'kiosk-server') {
+        setVoiceTestResult({ ok: true, label: `✅ Natural: ${result.voice}` });
+      } else if (result.path === 'browser') {
+        setVoiceTestResult({ ok: false, label: `⚠️ Fallback to OS voice (${result.voice}). Reason: ${result.reason ?? 'unknown'}` });
+      } else {
+        setVoiceTestResult({ ok: false, label: `❌ Voice playback failed: ${result.reason ?? 'unknown'}` });
+      }
     },
   };
 
@@ -1356,6 +1365,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     if (f.type === 'button') {
       // Action button (no persisted value). Key -> handler table.
       const handler = buttonHandlers[f.key];
+      const isVoiceTest = f.key === '__voice_test';
       return (
         <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
           <button
@@ -1375,6 +1385,22 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             🔊 {f.label}
           </button>
           {f.help && <div style={helpStyle}>{f.help}</div>}
+          {isVoiceTest && voiceTestResult && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                lineHeight: 1.4,
+                background: voiceTestResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.14)',
+                color: voiceTestResult.ok ? '#22c55e' : '#eab308',
+                border: `1px solid ${voiceTestResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(234,179,8,0.3)'}`,
+              }}
+            >
+              {voiceTestResult.label}
+            </div>
+          )}
         </div>
       );
     }

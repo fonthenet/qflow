@@ -117,51 +117,79 @@ function resolveLocale(settings: VoiceSettings, fallback: string): string {
   return { ar: 'ar-SA', fr: 'fr-FR', en: 'en-US' }[settings.language];
 }
 
-async function speakViaKioskServer(text: string, lang: string, settings: VoiceSettings): Promise<boolean> {
-  // Try the local kiosk-server TTS endpoint (Microsoft Edge neural voices,
-  // free, cached on disk). Falls back to browser speechSynthesis if the
-  // server is unreachable or the endpoint returns non-audio.
-  //
-  // Port discovery matters: the kiosk-server prefers 8080 but falls back to
-  // 8081+ if taken, and the resolved port is exposed via preload's
-  // `getKioskPort()` IPC (not a sync property). Without awaiting it we'd
-  // silently hit the wrong port and think the server was down.
+/** Which path the last speak() call actually used. */
+export type SpeakResult = {
+  path: 'kiosk-server' | 'browser' | 'failed';
+  voice: string;
+  reason?: string;
+};
+
+async function speakViaKioskServer(text: string, lang: string, settings: VoiceSettings): Promise<SpeakResult> {
+  // Create the <audio> element synchronously inside the user gesture so
+  // Electron/Chromium's autoplay policy grants play() permission even if
+  // the fetch below takes a moment to resolve.
+  const audio = new Audio();
+  audio.preload = 'auto';
+
+  let port: number;
   try {
     const qf = (window as any).qf;
-    const port = await (qf?.getKioskPort?.() ?? Promise.resolve(8080));
-    if (!port) return false;
-    const langShort = lang.slice(0, 2).toLowerCase();
-    const url = `http://127.0.0.1:${port}/api/tts`
-      + `?text=${encodeURIComponent(text)}`
-      + `&language=${encodeURIComponent(langShort)}`
-      + `&gender=${encodeURIComponent(settings.gender)}`
-      + `&rate=${encodeURIComponent(settings.rate)}`;
+    port = await (qf?.getKioskPort?.() ?? Promise.resolve(8080));
+    if (!port) return { path: 'failed', voice: '', reason: 'no port' };
+  } catch (e: any) {
+    return { path: 'failed', voice: '', reason: `port: ${e?.message ?? e}` };
+  }
+
+  const langShort = lang.slice(0, 2).toLowerCase();
+  const url = `http://127.0.0.1:${port}/api/tts`
+    + `?text=${encodeURIComponent(text)}`
+    + `&language=${encodeURIComponent(langShort)}`
+    + `&gender=${encodeURIComponent(settings.gender)}`
+    + `&rate=${encodeURIComponent(settings.rate)}`;
+
+  // Pointing <audio>.src directly at the kiosk-server URL (instead of a
+  // blob URL) keeps the playback request in the same tick — no await
+  // between the user click and audio.play(), so autoplay stays granted.
+  try {
     const res = await fetch(url);
-    if (!res.ok) return false;
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { path: 'failed', voice: '', reason: `HTTP ${res.status} ${body.slice(0, 120)}` };
+    }
     const blob = await res.blob();
-    if (!blob.type.startsWith('audio')) return false;
-    const audio = new Audio(URL.createObjectURL(blob));
+    if (!blob.type.startsWith('audio')) {
+      return { path: 'failed', voice: '', reason: `non-audio ${blob.type}` };
+    }
+    audio.src = URL.createObjectURL(blob);
     await audio.play();
-    return true;
-  } catch {
-    return false;
+    // Which voice the server chose — matches the catalog in electron/tts-cache.ts.
+    const voiceName = {
+      fr: { female: 'Vivienne (FR)', male: 'Remy (FR)' },
+      ar: { female: 'Amina (DZ)', male: 'Ismael (DZ)' },
+      en: { female: 'Aria (EN)', male: 'Guy (EN)' },
+    }[langShort as 'fr' | 'ar' | 'en']?.[settings.gender] ?? `${langShort}/${settings.gender}`;
+    return { path: 'kiosk-server', voice: voiceName };
+  } catch (e: any) {
+    return { path: 'failed', voice: '', reason: `play: ${e?.message ?? e}` };
   }
 }
 
 /**
  * Speak a ticket announcement. `text` is the already-localized sentence
- * (e.g. "Ticket R-0079, please go to Salle"). The caller handles
- * translation so this file stays UI-agnostic.
+ * (e.g. "Ticket R-0079, please go to Salle"). Returns a SpeakResult so
+ * callers (e.g. the Test voice button) can surface which path actually
+ * played — natural neural voice via the kiosk-server or the browser's
+ * built-in speechSynthesis as a last resort.
  */
-export async function speak(text: string, settings: VoiceSettings, fallbackLocale = 'en-US'): Promise<void> {
-  if (!settings.enabled) return;
+export async function speak(text: string, settings: VoiceSettings, fallbackLocale = 'en-US'): Promise<SpeakResult> {
+  if (!settings.enabled) return { path: 'failed', voice: '', reason: 'disabled' };
   const lang = resolveLocale(settings, fallbackLocale);
-  // Prefer the natural-voice kiosk-server path. If it fails, fall back to
-  // the browser's speechSynthesis using whatever OS voices are installed.
-  const ok = await speakViaKioskServer(text, lang, settings);
-  if (ok) return;
 
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const result = await speakViaKioskServer(text, lang, settings);
+  if (result.path === 'kiosk-server') return result;
+
+  // Fallback — browser speechSynthesis with whatever OS voices exist.
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return result;
   const voices = await getVoicesAsync();
   const voice = pickVoice(voices, lang, settings.gender);
   const u = new SpeechSynthesisUtterance(text);
@@ -171,6 +199,7 @@ export async function speak(text: string, settings: VoiceSettings, fallbackLocal
   u.volume = 1.0;
   if (voice) u.voice = voice;
   window.speechSynthesis.speak(u);
+  return { path: 'browser', voice: voice?.name ?? '(default)', reason: result.reason };
 }
 
 /** Localized sample used by the "Test voice" button. */
