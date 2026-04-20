@@ -32,23 +32,14 @@ export default async function DesksPage({
         .order('name')
     : { data: [] };
 
-  // Load staff across ALL accessible offices (not only the filtered one).
-  // The Roster view and cross-office picker need the full list, and we also
-  // want to surface staff with no office (or an orphaned closed office) so
-  // admins can fix them instead of them disappearing silently.
-  const { data: staffList } = context.accessibleOfficeIds.length > 0
+  const { data: staffList } = requestedOfficeIds.length > 0
     ? await context.supabase
         .from('staff')
-        .select('id, full_name, office_id, is_active, office:offices(id, name, is_active)')
-        .eq('organization_id', context.staff.organization_id)
+        .select('id, full_name, office_id')
         .eq('is_active', true)
+        .in('office_id', requestedOfficeIds)
         .order('full_name')
     : { data: [] };
-
-  const staffListNormalized = (staffList ?? []).map((s) => ({
-    ...s,
-    office: Array.isArray(s.office) ? s.office[0] ?? null : s.office,
-  }));
 
   let desksQuery = context.supabase
     .from('desks')
@@ -83,10 +74,9 @@ export default async function DesksPage({
         desks={desks ?? []}
         offices={offices ?? []}
         departments={departments ?? []}
-        staffList={staffListNormalized}
+        staffList={staffList ?? []}
         currentOfficeFilter={params.office ?? ''}
         currentDepartmentFilter={params.department ?? ''}
-        currentUserRole={context.staff.role}
       />
     </>
   );

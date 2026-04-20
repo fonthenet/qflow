@@ -49,22 +49,6 @@ export default async function StaffPage() {
     );
   }
 
-  // Desks across accessible offices — powers the "Assigned desk" column
-  // and the assign-to-desk modal on the staff page.
-  const { data: desksRaw } = context.accessibleOfficeIds.length > 0
-    ? await context.supabase
-        .from('desks')
-        .select('id, name, display_name, office_id, department_id, current_staff_id, is_active, office:offices(id, name, is_active), department:departments(id, name)')
-        .in('office_id', context.accessibleOfficeIds)
-        .order('name')
-    : { data: [] };
-
-  const desks = (desksRaw ?? []).map((desk) => ({
-    ...desk,
-    office: Array.isArray(desk.office) ? desk.office[0] ?? null : desk.office,
-    department: Array.isArray(desk.department) ? desk.department[0] ?? null : desk.department,
-  }));
-
   const normalizedDepartments = (departments ?? []).map((department) => ({
     ...department,
     office: Array.isArray(department.office) ? department.office[0] ?? null : department.office,
@@ -77,9 +61,7 @@ export default async function StaffPage() {
         staff={staff ?? []}
         offices={offices ?? []}
         departments={normalizedDepartments}
-        desks={desks}
         roleDefinitions={platformConfig.rolePolicy.roles}
-        currentUserRole={context.staff.role}
       />
     </>
   );
