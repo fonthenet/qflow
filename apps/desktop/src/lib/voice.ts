@@ -175,31 +175,15 @@ async function speakViaKioskServer(text: string, lang: string, settings: VoiceSe
 }
 
 /**
- * Speak a ticket announcement. `text` is the already-localized sentence
- * (e.g. "Ticket R-0079, please go to Salle"). Returns a SpeakResult so
- * callers (e.g. the Test voice button) can surface which path actually
- * played — natural neural voice via the kiosk-server or the browser's
- * built-in speechSynthesis as a last resort.
+ * Speak a ticket announcement. Only uses the natural-voice /api/tts
+ * path. No fallback to the browser's robotic speechSynthesis — if the
+ * kiosk-server can't generate the MP3 the call fails loudly so the
+ * operator can fix the setup instead of the customer hearing "Zira".
  */
 export async function speak(text: string, settings: VoiceSettings, fallbackLocale = 'en-US'): Promise<SpeakResult> {
   if (!settings.enabled) return { path: 'failed', voice: '', reason: 'disabled' };
   const lang = resolveLocale(settings, fallbackLocale);
-
-  const result = await speakViaKioskServer(text, lang, settings);
-  if (result.path === 'kiosk-server') return result;
-
-  // Fallback — browser speechSynthesis with whatever OS voices exist.
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return result;
-  const voices = await getVoicesAsync();
-  const voice = pickVoice(voices, lang, settings.gender);
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang;
-  u.rate = Math.max(0.5, Math.min(1.5, settings.rate / 100));
-  u.pitch = 1.0;
-  u.volume = 1.0;
-  if (voice) u.voice = voice;
-  window.speechSynthesis.speak(u);
-  return { path: 'browser', voice: voice?.name ?? '(default)', reason: result.reason };
+  return speakViaKioskServer(text, lang, settings);
 }
 
 /** Localized sample used by the "Test voice" button. */

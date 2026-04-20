@@ -2415,15 +2415,15 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           var hello = l2 === 'ar' ? 'تم تفعيل الإعلانات'
             : l2 === 'fr' ? 'Annonces activées'
             : 'Announcements ready';
-          // Route through /api/tts so the operator hears the actual
-          // natural voice they'll get for real ticket calls.
           var url = '/api/tts?text=' + encodeURIComponent(hello)
             + '&language=' + encodeURIComponent(l2)
             + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
             + '&rate=' + encodeURIComponent(announcementConfig.rate || 90);
           var audio = getTtsAudioEl();
           audio.src = url;
-          audio.play().catch(function() { speakViaBrowserFallback(hello, requestedLang); });
+          audio.play().catch(function(err) {
+            console.warn('[display] unlock audio play failed — no fallback', err && err.message);
+          });
         } catch (e) {}
       }, 900);
     }
@@ -2527,8 +2527,9 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     }
     // Plays an MP3 through a dedicated <audio> element. The kiosk-server's
     // /api/tts endpoint generates the clip via Microsoft Edge neural TTS
-    // (free, no API key) and caches it on disk — first call for a given
-    // ticket number has a small latency, subsequent calls are instant.
+    // (free, no API key) and caches it on disk. No browser-TTS fallback —
+    // if the neural path fails, the display is silent and logs the reason
+    // so operators fix the real problem instead of customers hearing Zira.
     var ttsAudioEl = null;
     function getTtsAudioEl() {
       if (!ttsAudioEl) {
@@ -2536,19 +2537,6 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         ttsAudioEl.preload = 'auto';
       }
       return ttsAudioEl;
-    }
-    function speakViaBrowserFallback(text, lang) {
-      // Only used when the server-side Edge TTS is unavailable (offline,
-      // firewall blocks). Preserves audible ticket calls using whatever
-      // OS voices are installed.
-      if (!('speechSynthesis' in window)) return;
-      try {
-        var u = new SpeechSynthesisUtterance(text);
-        u.lang = lang;
-        u.rate = Math.max(0.5, Math.min(1.5, (announcementConfig.rate || 90) / 100));
-        u.volume = 1.0;
-        window.speechSynthesis.speak(u);
-      } catch (e) {}
     }
     function speakTicket(ticketNumber, _deskName) {
       if (!announcementConfig.voice) return;
@@ -2564,8 +2552,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       audio.src = url;
       audio.currentTime = 0;
       audio.play().catch(function(err) {
-        console.warn('[display] tts audio play failed, falling back to browser TTS', err && err.message);
-        speakViaBrowserFallback(text, requestedLang);
+        console.warn('[display] natural-voice playback failed — no fallback', err && err.message);
       });
     }
 
