@@ -1321,6 +1321,16 @@
   pingKiosk();
   setInterval(pingKiosk, 10000);
 
+  // Goodbye ping — tell the Station we're going away so the display doesn't
+  // have to wait for the 25s-60s timeout to prune the stale entry. sendBeacon
+  // survives the page teardown; the server treats a bye payload as unregister.
+  window.addEventListener('pagehide', function () {
+    try {
+      var blob = new Blob([JSON.stringify({ id: kioskId, bye: true })], { type: 'application/json' });
+      navigator.sendBeacon(API + '/api/device-ping', blob);
+    } catch (e) { /* best-effort */ }
+  });
+
   // ── SSE: live updates from Station (with heartbeat detection) ──
 
   var sseAlive = false;

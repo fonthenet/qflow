@@ -3,7 +3,7 @@ import https from 'https';
 import { networkInterfaces } from 'os';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname } from 'path';
-import { getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent } from './db';
+import { getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, enqueueSync } from './db';
 import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
@@ -282,7 +282,7 @@ function escapeHtml(str: string): string {
 const sseClients: Set<http.ServerResponse> = new Set();
 
 export interface SSEEvent {
-  type: 'ticket_called' | 'ticket_created' | 'ticket_served' | 'ticket_cancelled' | 'data_refreshed';
+  type: 'ticket_called' | 'ticket_created' | 'ticket_served' | 'ticket_cancelled' | 'data_refreshed' | 'config_changed';
   ticket_number?: string;
   desk_name?: string;
   timestamp: string;
@@ -1057,13 +1057,12 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, ticketPriority, safePriorityCategoryId, safeAppointmentId, customerData, now, isOffline ? 1 : 0, dailySequence, ticketSource);
 
-          db.prepare(`
-            INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-            VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
-          `).run(
-            ticketId + '-create',
-            ticketId,
-            JSON.stringify({
+          enqueueSync({
+            id: ticketId + '-create',
+            operation: 'INSERT',
+            table: 'tickets',
+            recordId: ticketId,
+            payload: {
               id: ticketId,
               ticket_number: ticketNumber,
               office_id: officeId,
@@ -1078,23 +1077,22 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
               qr_token: qrToken,
               daily_sequence: dailySequence,
               source: ticketSource,
-            }),
-            now
-          );
+            },
+            createdAt: now,
+          });
 
           // If appointment_id provided, mark appointment as checked in
           if (safeAppointmentId) {
             try {
               db.prepare("UPDATE appointments SET status = 'checked_in' WHERE id = ?").run(safeAppointmentId);
-              db.prepare(`
-                INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-                VALUES (?, 'UPDATE', 'appointments', ?, ?, ?)
-              `).run(
-                safeAppointmentId + '-checkin',
-                safeAppointmentId,
-                JSON.stringify({ status: 'checked_in' }),
-                now
-              );
+              enqueueSync({
+                id: safeAppointmentId + '-checkin',
+                operation: 'UPDATE',
+                table: 'appointments',
+                recordId: safeAppointmentId,
+                payload: { status: 'checked_in' },
+                createdAt: now,
+              });
             } catch (e: any) { logger.warn('kiosk', 'Failed to update appointment status (table may not exist)', { error: e?.message }); }
           }
         })();
@@ -1777,7 +1775,23 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
   req.on('data', (chunk) => { body += chunk; });
   req.on('end', () => {
     try {
-      const { type, name } = JSON.parse(body);
+      const parsed = JSON.parse(body);
+      const { type, name, bye, id } = parsed;
+
+      // Explicit unregister (sent via sendBeacon on pagehide) — remove the
+      // device immediately so the customer display doesn't hold a stale entry.
+      if (bye) {
+        const clientIP = (req.socket.remoteAddress ?? 'unknown').replace('::ffff:', '');
+        for (const [existingId, d] of devices) {
+          if (existingId === 'station') continue;
+          if (id && existingId === id) { devices.delete(existingId); continue; }
+          if (d.type && existingId.endsWith(`-${clientIP}`)) devices.delete(existingId);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
       if (type) {
         // Key by type + client IP — one entry per physical device per type
         // Multiple tabs from the same device merge; different devices stay separate
@@ -2637,26 +2651,13 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     setInterval(pingDevice, 10000);
 
     // ── Device status warnings ──
-    var disconnectCount = 0;
-    async function checkDevices() {
-      try {
-        var res = await fetch(API + '/api/device-status');
-        var d = await res.json();
-        var disconnected = (d.devices || []).filter(function(dev) { return !dev.connected && dev.type !== 'display'; });
-        var el = document.getElementById('device-warn');
-        if (disconnected.length > 0) {
-          disconnectCount++;
-          if (disconnectCount >= 3) {
-            var names = disconnected.map(function(dev) { return dev.name; }).join(', ');
-            if (el) { el.style.display = 'block'; el.textContent = 'Disconnected: ' + names; }
-          }
-        } else {
-          disconnectCount = 0;
-          if (el) el.style.display = 'none';
-        }
-      } catch(e) {}
-    }
-    setInterval(checkDevices, 10000);
+    // Intentionally no-op on customer-facing displays. Device health (kiosk
+    // closed, operator station offline, etc.) is operator-level info and
+    // belongs in the Station's diagnostics panel — not flashing "Disconnected:
+    // Local Kiosk" at customers every time a lobby kiosk tab is closed.
+    // Keep the element hidden in case the template still ships the div.
+    var __warnEl = document.getElementById('device-warn');
+    if (__warnEl) __warnEl.style.display = 'none';
 
     // ── Clock + countdown — lightweight 1s tick (no DOM rebuild) ──
     var lastActive = [];
@@ -3806,8 +3807,13 @@ function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
     });
   }
 
-  const syncId = `${ticketId}-${Date.now()}`;
-  db.prepare(`INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)`).run(syncId, ticketId, JSON.stringify(safe), new Date().toISOString());
+  const syncId = enqueueSync({
+    id: `${ticketId}-${Date.now()}`,
+    operation: 'UPDATE',
+    table: 'tickets',
+    recordId: ticketId,
+    payload: safe,
+  });
   onTicketCreated?.(syncId);
 
   const tk = db.prepare('SELECT ticket_number FROM tickets WHERE id = ?').get(ticketId) as any;
@@ -3900,10 +3906,13 @@ function handleStationUpdateDesk(body: any, res: http.ServerResponse) {
   }
 
   // Sync to cloud
-  const syncId = `desk-${deskId}-${Date.now()}`;
-  db.prepare(
-    `INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'UPDATE', 'desks', ?, ?, ?)`,
-  ).run(syncId, deskId, JSON.stringify(safe), new Date().toISOString());
+  const syncId = enqueueSync({
+    id: `desk-${deskId}-${Date.now()}`,
+    operation: 'UPDATE',
+    table: 'desks',
+    recordId: deskId,
+    payload: safe,
+  });
   onTicketCreated?.(syncId);
 
   notifyStationClients({ type: 'tickets_changed' });
@@ -3926,9 +3935,14 @@ async function handleStationCallNext(body: any, res: http.ServerResponse) {
     for (const c of candidates) {
       ticket = db.prepare(`UPDATE tickets SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ? WHERE id = ? AND status = 'waiting' RETURNING *`).get(deskId, staffId, now, c.id) as any;
       if (ticket) {
-        syncId = `${ticket.id}-call-${Date.now()}`;
-        db.prepare(`INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'CALL', 'tickets', ?, ?, ?)`)
-          .run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+        syncId = enqueueSync({
+          id: `${ticket.id}-call-${Date.now()}`,
+          operation: 'CALL',
+          table: 'tickets',
+          recordId: ticket.id,
+          payload: { status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now },
+          createdAt: now,
+        });
         logTicketEvent(ticket.id, 'called', { ticketNumber: ticket.ticket_number, fromStatus: 'waiting', toStatus: 'called', source: 'station_web', details: { deskId, staffId } });
         break;
       }
