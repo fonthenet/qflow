@@ -2369,9 +2369,12 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     }
 
     // ── Announcement settings — populated from /api/kiosk-info ──
+    // Default voice = true so the first ticket call after page load
+    // announces even if fetchOfficeInfo hasn't resolved yet. Settings
+    // overwrite this once the office config arrives.
     var announcementConfig = {
       sound: true,
-      voice: false,
+      voice: true,
       gender: 'female',
       language: 'auto',
       rate: 90,
@@ -2525,11 +2528,11 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (l === 'fr') return 'Ticket numéro ' + tn;
       return 'Ticket number ' + tn;
     }
-    // Plays an MP3 through a dedicated <audio> element. The kiosk-server's
-    // /api/tts endpoint generates the clip via Microsoft Edge neural TTS
-    // (free, no API key) and caches it on disk. No browser-TTS fallback —
-    // if the neural path fails, the display is silent and logs the reason
-    // so operators fix the real problem instead of customers hearing Zira.
+    // Plays an MP3 through a fresh <audio> element per call. Reusing a
+    // single Audio object and setting .pause() + .src + .currentTime in
+    // sequence can stall in Chromium because the previous resource isn't
+    // fully released. A new Audio object sidesteps the race entirely and
+    // costs nothing — the browser garbage-collects finished elements.
     var ttsAudioEl = null;
     function getTtsAudioEl() {
       if (!ttsAudioEl) {
@@ -2539,7 +2542,10 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       return ttsAudioEl;
     }
     function speakTicket(ticketNumber, _deskName) {
-      if (!announcementConfig.voice) return;
+      if (!announcementConfig.voice) {
+        console.warn('[display] speakTicket skipped — voice disabled in config');
+        return;
+      }
       var requestedLang = resolveLang(announcementConfig.language, displayLocale);
       var text = buildAnnouncement(ticketNumber, _deskName, requestedLang);
       var langShort = requestedLang.slice(0, 2).toLowerCase();
@@ -2547,10 +2553,9 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         + '&language=' + encodeURIComponent(langShort)
         + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
         + '&rate=' + encodeURIComponent(announcementConfig.rate || 90);
-      var audio = getTtsAudioEl();
-      audio.pause();
-      audio.src = url;
-      audio.currentTime = 0;
+      console.info('[display] speaking ticket', ticketNumber, 'via', url);
+      var audio = new Audio(url);
+      audio.preload = 'auto';
       audio.play().catch(function(err) {
         console.warn('[display] natural-voice playback failed — no fallback', err && err.message);
       });
