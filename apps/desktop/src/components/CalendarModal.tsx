@@ -1515,11 +1515,14 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                     <div key={entry.id} onClick={() => handleActivityClick(entry)} style={{
                       padding: '8px 8px', borderRadius: 8,
                       cursor: 'pointer',
-                      background: isSelected ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.04)',
-                      border: isSelected ? '1px solid rgba(59,130,246,0.3)' : '1px solid transparent',
-                      borderLeft: `3px solid ${meta.color}`,
+                      background: isSelected ? `${meta.color}26` : 'rgba(100,116,139,0.04)',
+                      borderTop: isSelected ? `1px solid ${meta.color}80` : '1px solid transparent',
+                      borderRight: isSelected ? `1px solid ${meta.color}80` : '1px solid transparent',
+                      borderBottom: isSelected ? `1px solid ${meta.color}80` : '1px solid transparent',
+                      borderLeft: `${isSelected ? 5 : 3}px solid ${meta.color}`,
+                      boxShadow: isSelected ? `0 0 0 1px ${meta.color}40` : 'none',
                       fontSize: 10, lineHeight: 1.4,
-                      transition: 'background 0.15s, border 0.15s',
+                      transition: 'background 0.15s, border 0.15s, box-shadow 0.15s',
                     }}
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(100,116,139,0.1)'; }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(100,116,139,0.04)'; }}
@@ -3586,7 +3589,7 @@ function DesktopApptDetail({
             {statusLabel[effectiveStatus] ?? effectiveStatus}
           </span>
           {ticketNumber && (
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#8b5cf6', fontFamily: 'monospace', letterSpacing: 0.5 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: '#8b5cf6', fontFamily: 'monospace', letterSpacing: 0.5 }}>
               🎫 {ticketNumber}
             </span>
           )}
