@@ -2198,6 +2198,24 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
   </style>
 </head>
 <body>
+  <!-- Audio unlock overlay — browsers block speechSynthesis + AudioContext
+       until a user gesture has happened on the page. On an unattended
+       display that never gets clicked, voice announcements would queue up
+       silently. Shown once per session; one tap primes both APIs for the
+       rest of the session. -->
+  <div id="audio-unlock" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:rgba(15,23,42,0.92);color:#f1f5f9;cursor:pointer;backdrop-filter:blur(8px)">
+    <div style="width:96px;height:96px;border-radius:50%;background:rgba(56,189,248,0.15);display:flex;align-items:center;justify-content:center;animation:audio-pulse 2s ease-in-out infinite">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+        <path d="M15.54 8.46a5 5 0 010 7.07"/>
+        <path d="M19.07 4.93a10 10 0 010 14.14"/>
+      </svg>
+    </div>
+    <div style="font-size:28px;font-weight:700;text-align:center">Tap to enable announcements</div>
+    <div style="font-size:16px;color:#94a3b8;max-width:440px;text-align:center">One tap unlocks the chime and voice announcements for this session.</div>
+    <style>@keyframes audio-pulse { 0%,100% { transform: scale(1); opacity: 1 } 50% { transform: scale(1.08); opacity: 0.8 } }</style>
+  </div>
+
   <div class="call-overlay" id="call-overlay">
     <div class="call-label" id="call-overlay-label">NOW CALLING</div>
     <div class="call-number" id="call-overlay-number"></div>
@@ -2314,6 +2332,42 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       rate: 90,
     };
     var displayLocale = 'en';
+
+    // ── Audio unlock — required by Chrome autoplay policy ──
+    // speechSynthesis + AudioContext don't play on kiosk displays until a
+    // user gesture happens. Hide the overlay on first tap, prime both APIs
+    // with silent warmup calls, and remember the unlock for the session.
+    var audioUnlocked = false;
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+      try {
+        // Warm up AudioContext — suspended autoplay contexts need .resume().
+        var ctx = (window.__displayAudioCtx =
+          window.__displayAudioCtx || new (window.AudioContext || window.webkitAudioContext)());
+        if (ctx.state === 'suspended') ctx.resume();
+      } catch (e) {}
+      try {
+        // Warm up speechSynthesis — a short, silent utterance primes the
+        // voice pipeline so subsequent speak() calls fire without a gesture.
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          var u = new SpeechSynthesisUtterance(' ');
+          u.volume = 0;
+          u.rate = 1;
+          window.speechSynthesis.speak(u);
+        }
+      } catch (e) {}
+      var overlay = document.getElementById('audio-unlock');
+      if (overlay) overlay.style.display = 'none';
+    }
+    // The overlay itself is clickable. Any tap/key press anywhere also
+    // unlocks — useful if the overlay was dismissed by CSS on a remote view.
+    var unlockEl = document.getElementById('audio-unlock');
+    if (unlockEl) unlockEl.addEventListener('click', unlockAudio);
+    document.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('keydown', unlockAudio, { once: true });
+    document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
 
     // Two-tone chime — warmer than a single 800Hz beep. Plays briefly before
     // the voice announcement so deaf / hard-of-hearing customers also notice.
