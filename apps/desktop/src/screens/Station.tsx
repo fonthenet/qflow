@@ -1893,8 +1893,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [showToast, locale]);
 
   // ── Sync staff status + queue pause → desk status in Supabase ──
+  // Only fires on explicit user action (Pause / Away / Available toggles).
+  // The initial mount is skipped: on refresh, staffStatus + queuePaused are
+  // rehydrated from defaults and would otherwise stomp admin changes (desk
+  // status=closed, reassignment, etc.) by re-pushing 'open' with the current
+  // staff id. The source of truth for desk.status on mount is Supabase; the
+  // Station adopts it by reading in the "listen for changes" effect below.
+  const deskSyncMountedRef = useRef(false);
   useEffect(() => {
     if (!session.desk_id) return;
+    if (!deskSyncMountedRef.current) {
+      deskSyncMountedRef.current = true;
+      return;
+    }
 
     const deskStatus = staffStatus === 'on_break' ? 'on_break'
       : staffStatus === 'away' ? 'closed'
@@ -1904,10 +1915,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     (async () => {
       const sb = await getSupabase();
 
-      // Read the desk first. Business Admin may have reassigned this desk to
-      // another staff or set status=closed / is_active=false. In those cases
-      // the Station's auto-sync must NOT overwrite the admin's config, or the
-      // change would silently revert on every refresh.
+      // Read the desk first. Business Admin may have reassigned this desk or
+      // set is_active=false; respect those before pushing anything.
       const { data: deskRow } = await sb
         .from('desks')
         .select('current_staff_id, is_active')
@@ -1916,23 +1925,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       const currentOwner = (deskRow as any)?.current_staff_id ?? null;
       const deskActive = (deskRow as any)?.is_active !== false;
 
-      // If admin deactivated the desk, don't push anything — the desk is
-      // administratively offline regardless of staff presence.
       if (!deskActive) return;
+      if (currentOwner && currentOwner !== session.staff_id) return;
 
       const update: Record<string, unknown> = { status: deskStatus };
-
-      // Claim the desk only when unassigned or already ours.
-      if (deskStatus === 'open' && session.staff_id && (currentOwner == null || currentOwner === session.staff_id)) {
+      if (deskStatus === 'open' && session.staff_id && currentOwner == null) {
         update.current_staff_id = session.staff_id;
       }
 
-      // If the desk now belongs to a different staff, DON'T push status either
-      // — the admin handed this desk to someone else and our runtime status is
-      // no longer authoritative for it.
-      if (currentOwner && currentOwner !== session.staff_id) return;
-
-      // Update local SQLite so mobile app (polling via HTTP) sees the change
       window.qf.db.updateDesk?.(session.desk_id, update).catch(() => {});
 
       const { error } = await sb
