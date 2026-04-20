@@ -147,9 +147,9 @@ function QueueActionPill({
 }) {
   const { t, formatTime } = useI18n();
   const toneClass = {
-    secondary: 'border-white/10 bg-white/8 text-white hover:bg-white/12',
-    danger: 'border-rose-400/25 bg-rose-500/15 text-rose-100 hover:bg-rose-500/20',
-    primary: 'border-sky-400/20 bg-sky-500/15 text-sky-50 hover:bg-sky-500/20',
+    secondary: 'border-slate-200 bg-white/80 text-slate-700 hover:bg-white dark:border-white/10 dark:bg-white/8 dark:text-white dark:hover:bg-white/12',
+    danger: 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-400/25 dark:bg-rose-500/15 dark:text-rose-100 dark:hover:bg-rose-500/20',
+    primary: 'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-400/20 dark:bg-sky-500/15 dark:text-sky-50 dark:hover:bg-sky-500/20',
   }[tone];
 
   return (
@@ -182,10 +182,10 @@ function WaitingMetric({
   detailClass?: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
+    <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur dark:border-white/10 dark:bg-white/6 dark:shadow-[0_20px_40px_rgba(2,6,23,0.18)]">
       <p className={`mb-1 text-[11px] font-semibold ${accentClass} ${labelClassName ?? 'uppercase tracking-[0.22em]'}`}>{label}</p>
-      <p className={`text-2xl font-semibold leading-tight tracking-tight text-white sm:text-[28px] ${valueClass ?? ''}`}>{value}</p>
-      <p className={`mt-1 text-[11px] leading-5 text-slate-400 ${detailClass ?? ''}`}>{detail}</p>
+      <p className={`text-2xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-[28px] dark:text-white ${valueClass ?? ''}`}>{value}</p>
+      <p className={`mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400 ${detailClass ?? ''}`}>{detail}</p>
     </div>
   );
 }
@@ -681,9 +681,9 @@ export function QueueStatus({
 
   if (!hasResolvedTrackingStop) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)] px-4 py-10">
-        <div className="w-full max-w-sm rounded-[34px] border border-white/10 bg-slate-950/88 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
-          <p className="text-sm font-medium text-slate-300">{t('Loading...')}</p>
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.10),_transparent_38%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] px-4 py-10 dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]">
+        <div className="w-full max-w-sm rounded-[34px] border border-slate-200 bg-white/85 p-7 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-slate-950/88 dark:shadow-[0_30px_110px_rgba(15,23,42,0.65)]">
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{t('Loading...')}</p>
         </div>
       </div>
     );
@@ -775,13 +775,13 @@ export function QueueStatus({
   if (ticket.status === 'serving') {
     return (
       <>
-        <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-8">
+        <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.10),_transparent_38%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] px-4 py-8 dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
           <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
-                {branchLine ? <p className="mt-1 text-sm font-medium text-slate-300">{branchLine}</p> : null}
-                <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{businessName}</h1>
+                {branchLine ? <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">{branchLine}</p> : null}
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">{syncLabel}</p>
               </div>
               <div className="flex flex-col items-end gap-2">
                 <QueueActionPill
@@ -795,46 +795,46 @@ export function QueueStatus({
               </div>
             </div>
 
-            <div className="mt-8 rounded-[34px] border border-white/10 bg-slate-950/82 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.58)] backdrop-blur">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-400/12 text-sky-100 shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
+            <div className="mt-8 rounded-[34px] border border-slate-200 bg-white/85 p-7 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-slate-950/82 dark:shadow-[0_30px_110px_rgba(15,23,42,0.58)]">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-100 text-sky-700 shadow-[0_12px_30px_rgba(56,189,248,0.20)] dark:bg-sky-400/12 dark:text-sky-100 dark:shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
                 <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
 
-              <div className={`mt-6 rounded-full bg-sky-400/12 px-4 py-2 text-xs font-semibold text-sky-100 ${compactPillClass}`}>
-                {t('With staff now')}
+              <div className={`mt-6 rounded-full bg-sky-500/15 px-4 py-2 text-xs font-semibold text-sky-700 dark:bg-sky-400/12 dark:text-sky-100 ${compactPillClass}`}>
+                {t('Being Served')}
               </div>
 
-              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white">{t('You are being served')}</h2>
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{t('Being Served')}</h2>
 
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
                 <WaitingMetric
                   label={t('Ticket')}
                   value={ticketNumber}
                   detail={t('Keep this visible in case the team asks for your number again.')}
-                  accentClass="bg-sky-400/15 text-sky-100"
+                  accentClass="bg-sky-500/15 text-sky-700 dark:bg-sky-400/15 dark:text-sky-100"
                   labelClassName={compactLabelClass}
                 />
                 <WaitingMetric
                   label={t('Desk')}
                   value={deskName ?? t('Desk')}
                   detail={t('This is the current service point handling your visit.')}
-                  accentClass="bg-emerald-400/15 text-emerald-100"
+                  accentClass="bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-100"
                   labelClassName={compactLabelClass}
                 />
                 <WaitingMetric
                   label={t('Time spent')}
                   value={formatServingElapsed(servingElapsedSeconds, t)}
                   detail={t('Service time since the desk started helping you.')}
-                  accentClass="bg-amber-400/15 text-amber-100"
+                  accentClass="bg-amber-500/20 text-amber-800 dark:bg-amber-400/15 dark:text-amber-100"
                   labelClassName={compactLabelClass}
                 />
               </div>
             </div>
 
             {stopError ? (
-              <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              <div className="mt-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
                 {stopError}
               </div>
             ) : null}
@@ -858,20 +858,20 @@ export function QueueStatus({
     );
   }
 
-  const accentLabel = ticket.status === 'serving' ? t('Now at desk') : t('Waiting in line');
+  const accentLabel = ticket.status === 'serving' ? t('Being Served') : t('In Queue');
   const accentTone =
     ticket.status === 'serving'
-      ? 'bg-sky-400/15 text-sky-100'
-      : 'bg-amber-300/15 text-amber-100';
+      ? 'bg-sky-500/15 text-sky-700 dark:bg-sky-400/15 dark:text-sky-100'
+      : 'bg-amber-400/20 text-amber-800 dark:bg-amber-300/15 dark:text-amber-100';
 
   return (
     <>
-      <div className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),radial-gradient(circle_at_80%_20%,_rgba(249,115,22,0.18),_transparent_26%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]">
+      <div className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.10),_transparent_38%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),radial-gradient(circle_at_80%_20%,_rgba(249,115,22,0.18),_transparent_26%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]">
         {showBuzzFlash ? (
-          <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
-            <div className="text-center">
-              <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-              <p className="mt-3 text-xl font-bold text-white">{t('Attention needed now')}</p>
+          <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-3 rounded-full border border-rose-400/30 bg-rose-500/90 px-5 py-2.5 text-white shadow-[0_10px_40px_rgba(244,63,94,0.45)] backdrop-blur">
+              <span className="text-lg" aria-hidden>📳</span>
+              <p className="text-sm font-semibold tracking-wide">{t('Attention needed now')}</p>
             </div>
           </div>
         ) : null}
@@ -882,14 +882,14 @@ export function QueueStatus({
           officeId={ticket.office_id}
         />
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_62%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.05),_transparent_62%)] dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_62%)]" />
 
           <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-5 pt-5">
             <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
-              {branchLine ? <p className="mt-1 text-sm font-medium text-slate-400">{branchLine}</p> : null}
-              <p className="mt-1 text-sm text-slate-400">{syncLabel}</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{businessName}</h1>
+              {branchLine ? <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{branchLine}</p> : null}
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{syncLabel}</p>
             </div>
             <div className="flex flex-col items-end gap-2">
               <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${compactPillClass} ${accentTone}`}>
@@ -915,69 +915,64 @@ export function QueueStatus({
             </div>
           </div>
 
-          <section className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
+          <section className="rounded-[32px] border border-slate-200 bg-white/85 p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-white/6 dark:shadow-[0_36px_120px_rgba(2,6,23,0.35)]">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className={`text-[11px] font-medium text-slate-400 ${compactMetaClass}`}>{t('Ticket')}</p>
-                <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-white sm:text-[42px]">
+                <p className={`text-[11px] font-medium text-slate-500 dark:text-slate-400 ${compactMetaClass}`}>{t('Ticket')}</p>
+                <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-slate-900 sm:text-[42px] dark:text-white">
                   {ticketNumber}
                 </p>
-                {serviceLabel ? <p className="mt-2 text-sm font-medium text-slate-300">{serviceLabel}</p> : null}
+                {serviceLabel ? <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">{serviceLabel}</p> : null}
               </div>
 
               <div className="text-right">
-                <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
-                <p className="mt-2 text-sm leading-5 text-cyan-50/70">
+                <p className="mt-2 text-5xl font-semibold leading-none text-slate-900 dark:text-white">{position ? `#${position}` : '--'}</p>
+                <p className="mt-2 text-sm leading-5 text-sky-700/80 dark:text-cyan-50/70">
                   {position === 1
-                    ? t('Almost there')
+                    ? t('Get ready!')
                     : position && position <= 3
-                      ? t('You are nearly up')
+                      ? t('Almost there!')
                       : position
-                        ? t('{count} ahead of you', { count: position - 1 })
+                        ? t('{count} Ahead', { count: position - 1 })
                         : '--'}
                 </p>
               </div>
             </div>
 
             <div className="mt-5">
-              <div className={`mb-2 flex items-center justify-between text-[11px] font-medium text-slate-400 ${compactMetaClass}`}>
+              <div className={`mb-2 flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400 ${compactMetaClass}`}>
                 <span>{t('Queue progress')}</span>
-                <span className={ticket.status !== 'serving' ? 'animate-pulse text-emerald-400' : ''}>
-                  {ticket.status === 'serving' ? t('At the desk') : position ? `#${position} ${t('in line')}` : '--'}
+                <span className={ticket.status !== 'serving' ? 'animate-pulse text-emerald-600 dark:text-emerald-400' : ''}>
+                  {ticket.status === 'serving' ? t('Being Served') : position ? `#${position} ${t('In Queue')}` : '--'}
                 </span>
               </div>
-              <div className="h-3 rounded-full bg-white/8">
+              <div className="h-3 rounded-full bg-slate-200 dark:bg-white/8">
                 <div
-                  className="h-3 rounded-full bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 transition-all duration-700"
+                  className="h-3 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-emerald-400 transition-all duration-700 dark:from-cyan-300 dark:via-sky-300 dark:to-emerald-300"
                   style={{ width: `${progressPercent(position) * 100}%` }}
                 />
               </div>
             </div>
           </section>
 
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          {/* Two metrics — mirrors the mobile ticket layout. The previous third
+              "Alerts" tile is redundant with the banner immediately below. */}
+          <div className="mt-4 grid grid-cols-2 gap-3">
               <WaitingMetric
                 label={t('Wait')}
                 value={estimatedWait != null ? `${estimatedWait} min` : '--'}
                 detail={estimatedWait != null ? t('Approximate timing') : t('Calculating time')}
-                accentClass="text-sky-400"
+                accentClass="text-sky-600 dark:text-sky-400"
                 labelClassName={compactLabelClass}
               />
               <WaitingMetric
                 label={t('Now serving')}
                 value={nowServing ?? '--'}
                 detail={t('Current desk activity')}
-                accentClass="text-emerald-400"
+                accentClass="text-emerald-600 dark:text-emerald-400"
                 labelClassName={compactLabelClass}
                 valueClass="text-[18px] leading-tight sm:text-[22px]"
                 detailClass="text-[10px] leading-4"
-              />
-              <WaitingMetric
-                label={t('Alerts')}
-                value={alertsEnabled ? t('Ready') : t('Off')}
-                detail={alertsEnabled ? t('Background alerts on') : t('Turn alerts on')}
-                accentClass="text-amber-400"
-                labelClassName={compactLabelClass}
               />
           </div>
 
@@ -985,19 +980,19 @@ export function QueueStatus({
             <button
               type="button"
               onClick={() => void handleEnableAlerts()}
-              className="mt-4 flex w-full items-center gap-3 rounded-full border border-amber-400/20 bg-amber-500/10 px-5 py-3 text-left transition hover:bg-amber-500/15"
+              className="mt-4 flex w-full items-center gap-3 rounded-full border border-amber-400/40 bg-amber-400/15 px-5 py-3 text-left transition hover:bg-amber-400/25 dark:border-amber-400/20 dark:bg-amber-500/10 dark:hover:bg-amber-500/15"
             >
-              <BellRing className="h-4 w-4 shrink-0 text-amber-400" />
-              <span className="text-sm font-medium text-amber-50">
+              <BellRing className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span className="text-sm font-medium text-amber-900 dark:text-amber-50">
                 {shouldShowIosSetupLabel
                   ? t('Set up alerts — we’ll notify you when it’s your turn')
                   : t('Enable alerts — we’ll notify you when it’s your turn')}
               </span>
             </button>
           ) : (
-            <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-white/8 bg-white/5 px-5 py-3">
-              <BellRing className="h-4 w-4 shrink-0 text-emerald-400" />
-              <span className="text-sm font-medium text-slate-300">{t('Alerts enabled — we’ll notify you when it’s your turn')}</span>
+            <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-slate-200 bg-white/80 px-5 py-3 dark:border-white/8 dark:bg-white/5">
+              <BellRing className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{t('Alerts enabled — we’ll notify you when it’s your turn')}</span>
             </div>
           )}
 
@@ -1055,7 +1050,7 @@ export function QueueStatus({
           ) : null}
 
           <div className="mt-auto pt-4 text-center">
-            <p className={`text-xs text-slate-500 ${compactMetaClass}`}>POWERED BY QFLO</p>
+            <p className={`text-xs text-slate-500 dark:text-slate-500 ${compactMetaClass}`}>POWERED BY QFLO</p>
           </div>
         </div>
       </div>

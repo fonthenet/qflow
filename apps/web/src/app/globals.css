@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Enable Tailwind v4 `dark:` variants via the user's system preference.
+   Pages opt in per-component by writing `dark:` classes; everything without
+   them stays on the light palette defined below. */
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
 @theme {
   --color-background: #f4f6f9;
   --color-foreground: #0a0a0a;
