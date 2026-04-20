@@ -4448,9 +4448,25 @@ async function confirmBooking(
     .select('settings')
     .eq('id', session.organization_id)
     .single();
-  const requireApproval = Boolean(
+  let requireApproval = Boolean(
     (orgRowApproval?.settings as any)?.require_appointment_approval ?? true,
   );
+  // Per-customer override: when a customer row in this org is flagged
+  // `auto_approve_reservations`, their WhatsApp/Messenger bookings are
+  // auto-confirmed regardless of the org setting. `identifier` is the phone
+  // number — same key the Station UI writes the flag against.
+  if (requireApproval && identifier && session.organization_id) {
+    try {
+      const { isCustomerAutoApprove } = await import('@/lib/customer-auto-approve');
+      const trusted = await isCustomerAutoApprove(
+        supabase,
+        session.organization_id,
+        identifier,
+        bookingOrgTz,
+      );
+      if (trusted) requireApproval = false;
+    } catch { /* best-effort */ }
+  }
   const initialStatus = requireApproval ? 'pending' : 'confirmed';
 
   const { data: appointment, error } = await supabase
