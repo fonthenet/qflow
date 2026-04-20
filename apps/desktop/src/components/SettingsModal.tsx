@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { PrioritiesEditor } from './PrioritiesEditor';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { TeamModal } from './TeamModal';
+import { BusinessAdminModal } from './BusinessAdminModal';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { speak, buildSample, parseVoiceSettings } from '../lib/voice';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
 import { ALGERIA_WILAYAS, getCommunes } from '../lib/algeria-wilayas';
@@ -93,6 +96,9 @@ interface Props {
   locale: DesktopLocale;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   officeName?: string;
+  callerUserId?: string;
+  callerRole?: string;
+  initialSection?: string;
   onClose: () => void;
   onSaved?: () => void;
   onOpenTeam?: () => void;
@@ -134,7 +140,7 @@ const TIMEZONES = [
 
 type SettingsShape = Record<string, any>;
 
-type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon' | 'stepper' | 'color' | 'header';
+type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon' | 'stepper' | 'color' | 'header' | 'button';
 
 interface FieldDef {
   key: string;
@@ -181,7 +187,7 @@ function coerceArr(v: any, def: string[]): string[] {
 }
 
 // ─── Component ─────────────────────────────────────────────────────────
-export function SettingsModal({ organizationId, officeId, locale, storedAuth, officeName, onClose, onSaved, onOpenTeam, onOpenBusinessAdmin }: Props) {
+export function SettingsModal({ organizationId, officeId, locale, storedAuth, officeName, callerUserId, callerRole, initialSection, onClose, onSaved, onOpenTeam, onOpenBusinessAdmin }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
 
   const [loading, setLoading] = useState(true);
@@ -190,7 +196,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState('');
-  const [activeSection, setActiveSection] = useState('booking');
+  const [activeSection, setActiveSection] = useState(initialSection ?? 'booking');
   const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments' | 'priorities'>('intake');
   const [expandedIntakeField, setExpandedIntakeField] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
@@ -397,9 +403,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       ],
     },
     {
-      id: 'display',
-      icon: '🖥',
-      title: t('sm.section.display'),
+      id: 'kiosk',
+      icon: '🛎',
+      title: t('sm.section.kiosk'),
       fields: [
         // ── Kiosk flow ───────────────────────────────────────────────
         { key: '__hdr_kiosk_flow', label: t('sm.hdr.kiosk_flow'), type: 'header', default: null, help: t('sm.hdr.kiosk_flow_help') },
@@ -419,11 +425,29 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         { key: 'kiosk_theme_color', label: t('sm.field.kiosk_theme'), type: 'color', default: '#3b82f6', placeholder: '#3b82f6', help: t('sm.help.kiosk_theme') },
         { key: 'kiosk_show_logo', label: t('sm.field.kiosk_show_logo'), type: 'bool', default: true, help: t('sm.help.kiosk_show_logo') },
         { key: 'kiosk_logo_url', label: t('sm.field.kiosk_logo_url'), type: 'text', default: '', placeholder: 'https://…/logo.png', help: t('sm.help.kiosk_logo_url') },
-
+      ],
+    },
+    {
+      id: 'display',
+      icon: '🖥',
+      title: t('sm.section.display'),
+      fields: [
         // ── Sound & announcements ───────────────────────────────────
-        { key: '__hdr_sound', label: t('sm.hdr.sound'), type: 'header', default: null },
+        { key: '__hdr_sound', label: t('sm.hdr.sound'), type: 'header', default: null, help: t('sm.hdr.sound_help') },
         { key: 'announcement_sound_enabled', label: t('sm.field.announcement_sound'), type: 'bool', default: true, help: t('sm.help.announcement_sound') },
         { key: 'voice_announcements', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
+        { key: 'voice_gender', label: t('sm.field.voice_gender'), type: 'enum', default: 'female', options: [
+          { value: 'female', label: t('sm.voice_gender.female') },
+          { value: 'male', label: t('sm.voice_gender.male') },
+        ], help: t('sm.help.voice_gender') },
+        { key: 'voice_language', label: t('sm.field.voice_language'), type: 'enum', default: 'auto', options: [
+          { value: 'auto', label: t('sm.voice_language.auto') },
+          { value: 'ar', label: t('sm.voice_language.ar') },
+          { value: 'fr', label: t('sm.voice_language.fr') },
+          { value: 'en', label: t('sm.voice_language.en') },
+        ], help: t('sm.help.voice_language') },
+        { key: 'voice_rate', label: t('sm.field.voice_rate'), type: 'num', default: 90, min: 60, max: 130, help: t('sm.help.voice_rate') },
+        { key: '__voice_test', label: t('sm.field.voice_test'), type: 'button', default: null, help: t('sm.help.voice_test') },
       ],
     },
     {
@@ -836,7 +860,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       sections.forEach(sec => {
         const allFields = [...sec.fields, ...(sec._allFields ?? [])];
         allFields.forEach(f => {
-          if (f.type === 'header') return;
+          if (f.type === 'header' || f.type === 'button') return;
+          if (f.key.startsWith('__')) return;
           const v = values[f.key];
           if (f.key === 'booking_mode') {
             partial.booking_mode = v ? 'simple' : 'disabled';
@@ -1055,6 +1080,24 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       }} />
     </button>
   );
+
+  // Action buttons rendered by schema (type === 'button'). Keyed by field.key.
+  // Handlers receive the live form state so they can read the latest unsaved
+  // values (e.g. test the voice with the currently-chosen gender/rate).
+  const buttonHandlers: Record<string, (state: Record<string, any>) => void> = {
+    __voice_test: (state) => {
+      const settings = parseVoiceSettings({
+        voice_announcements: true, // force on for the test even if toggle is off
+        voice_gender: state.voice_gender,
+        voice_language: state.voice_language,
+        voice_rate: state.voice_rate,
+      });
+      const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
+      void speak(buildSample(fallback), settings, fallback);
+    },
+  };
+
+  const formState = values;
 
   function renderField(f: FieldDef) {
     const v = values[f.key];
@@ -1296,6 +1339,31 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           </div>
           {f.help && <div style={helpStyle}>{f.help}</div>}
           {err && <div style={errStyle}>{err}</div>}
+        </div>
+      );
+    }
+    if (f.type === 'button') {
+      // Action button (no persisted value). Key -> handler table.
+      const handler = buttonHandlers[f.key];
+      return (
+        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
+          <button
+            type="button"
+            onClick={() => handler?.(formState)}
+            style={{
+              padding: '10px 18px',
+              borderRadius: 8,
+              border: '1px solid var(--border, #334155)',
+              background: 'var(--surface, #1e293b)',
+              color: 'var(--text, #f1f5f9)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            🔊 {f.label}
+          </button>
+          {f.help && <div style={helpStyle}>{f.help}</div>}
         </div>
       );
     }
@@ -2507,7 +2575,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)',
-          width: 1000, maxWidth: '96vw', height: '88vh',
+          width: 1400, maxWidth: '96vw', height: '90vh',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
         }}
@@ -2578,14 +2646,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                       key={item.id}
                       type="button"
                       onClick={() => {
-                        if (item.id === 'team') {
-                          if (onOpenTeam) { onClose(); setTimeout(() => onOpenTeam(), 0); }
-                          return;
-                        }
-                        if (item.id === 'business_admin') {
-                          if (onOpenBusinessAdmin) { onClose(); setTimeout(() => onOpenBusinessAdmin(), 0); }
-                          return;
-                        }
                         setActiveSection(item.id);
                       }}
                       style={{
@@ -2609,10 +2669,38 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
 
               {/* RIGHT: Content panel */}
               <div style={{
-                flex: 1, overflowY: 'auto', padding: '16px 22px',
+                flex: 1, overflowY: 'auto',
+                padding: (activeSection === 'team' || activeSection === 'business_admin') ? 0 : '16px 22px',
+                display: 'flex', flexDirection: 'column', minHeight: 0,
               }}>
                 {activeSection === 'diagnostics' ? (
                   <DiagnosticsPanel t={t} />
+                ) : activeSection === 'team' ? (
+                  callerUserId ? (
+                    <TeamModal
+                      embedded
+                      organizationId={organizationId}
+                      callerUserId={callerUserId}
+                      callerRole={callerRole ?? ''}
+                      locale={locale}
+                      onClose={onClose}
+                    />
+                  ) : (
+                    <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>{t('Loading...')}</p>
+                  )
+                ) : activeSection === 'business_admin' ? (
+                  callerUserId ? (
+                    <BusinessAdminModal
+                      embedded
+                      organizationId={organizationId}
+                      callerUserId={callerUserId}
+                      callerRole={callerRole ?? ''}
+                      locale={locale}
+                      onClose={onClose}
+                    />
+                  ) : (
+                    <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>{t('Loading...')}</p>
+                  )
                 ) : activeSection === 'account' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>

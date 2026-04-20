@@ -904,6 +904,13 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     business_hours: businessStatus,
     visit_intake_override_mode: visitIntakeOverrideMode,
     kiosk_config: kioskConfig,
+    display_config: {
+      announcement_sound_enabled: organizationSettings.announcement_sound_enabled ?? true,
+      voice_announcements: organizationSettings.voice_announcements ?? false,
+      voice_gender: organizationSettings.voice_gender || 'female',
+      voice_language: organizationSettings.voice_language || 'auto',
+      voice_rate: organizationSettings.voice_rate ?? 90,
+    },
     default_check_in_mode: organizationSettings.default_check_in_mode || 'hybrid',
     whatsapp_phone: whatsappPhone,
     messenger_page_id: messengerPageId,
@@ -2298,19 +2305,119 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (text) { text.textContent = online ? 'Connected' : 'Local Mode'; }
     }
 
-    // Simple chime via Web Audio API
+    // ── Announcement settings — populated from /api/kiosk-info ──
+    var announcementConfig = {
+      sound: true,
+      voice: false,
+      gender: 'female',
+      language: 'auto',
+      rate: 90,
+    };
+    var displayLocale = 'en';
+
+    // Two-tone chime — warmer than a single 800Hz beep. Plays briefly before
+    // the voice announcement so deaf / hard-of-hearing customers also notice.
     function playChime() {
+      if (!announcementConfig.sound) return;
       try {
         var ctx = new (window.AudioContext || window.webkitAudioContext)();
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.frequency.value = 800;
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.5);
+        [880, 660].forEach(function(freq, i) {
+          var osc = ctx.createOscillator();
+          var gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          var t0 = ctx.currentTime + i * 0.18;
+          gain.gain.setValueAtTime(0.28, t0);
+          gain.gain.exponentialRampToValueAtTime(0.01, t0 + 0.35);
+          osc.start(t0);
+          osc.stop(t0 + 0.35);
+        });
       } catch(e) {}
+    }
+
+    // Voice announcement. Chooses the best available OS voice matching the
+    // configured gender + language, then speaks a localized sentence.
+    var _cachedVoices = null;
+    function loadVoices() {
+      return new Promise(function(resolve) {
+        if (!('speechSynthesis' in window)) { resolve([]); return; }
+        var voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length) { resolve(voices); return; }
+        var handler = function() {
+          window.speechSynthesis.removeEventListener('voiceschanged', handler);
+          resolve(window.speechSynthesis.getVoices());
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', handler);
+        setTimeout(function() { resolve(window.speechSynthesis.getVoices() || []); }, 1500);
+      });
+    }
+    var FEMALE_HINTS = ['female','woman','femme','zira','hazel','susan','samantha','allison','ava','victoria','kate','serena','karen','moira','tessa','fiona','hoda','amina','salma','mona','amelie','aurelie','audrey','marie','virginie','celine','nova','shimmer','alloy'];
+    var MALE_HINTS = ['male','man','homme','david','mark','george','alex','daniel','tom','fred','oliver','rishi','maged','tarik','hamed','thomas','henri','antoine','nicolas','echo','fable','onyx','ash'];
+    function voiceGender(v) {
+      var n = v.name.toLowerCase();
+      for (var i = 0; i < FEMALE_HINTS.length; i++) if (n.indexOf(FEMALE_HINTS[i]) >= 0) return 'female';
+      for (var j = 0; j < MALE_HINTS.length; j++) if (n.indexOf(MALE_HINTS[j]) >= 0) return 'male';
+      return null;
+    }
+    function isHQ(v) {
+      var n = v.name.toLowerCase();
+      return n.indexOf('natural') >= 0 || n.indexOf('neural') >= 0 || n.indexOf('premium') >= 0 || n.indexOf('enhanced') >= 0;
+    }
+    function pickVoice(voices, lang, gender) {
+      if (!voices || !voices.length) return null;
+      var langPrefix = lang.slice(0, 2).toLowerCase();
+      var sameLang = voices.filter(function(v){ return v.lang.toLowerCase().indexOf(langPrefix) === 0; });
+      var pool = sameLang.length ? sameLang : voices;
+      var matches = pool.filter(function(v){ return voiceGender(v) === gender; });
+      var candidates = matches.length ? matches : pool;
+      for (var i = 0; i < candidates.length; i++) if (isHQ(candidates[i])) return candidates[i];
+      return candidates[0] || null;
+    }
+    function resolveLang(setting, fallback) {
+      if (setting === 'ar') return 'ar-SA';
+      if (setting === 'fr') return 'fr-FR';
+      if (setting === 'en') return 'en-US';
+      var f = (fallback || 'en').slice(0, 2).toLowerCase();
+      if (f === 'ar') return 'ar-SA';
+      if (f === 'fr') return 'fr-FR';
+      return 'en-US';
+    }
+    function buildAnnouncement(ticketNumber, deskName, lang) {
+      var l = lang.slice(0, 2).toLowerCase();
+      var tn = String(ticketNumber || '').trim();
+      var dn = String(deskName || '').trim();
+      if (l === 'ar') {
+        return dn
+          ? 'التذكرة ' + tn + '، توجه إلى ' + dn + '.'
+          : 'التذكرة ' + tn + '.';
+      }
+      if (l === 'fr') {
+        return dn
+          ? 'Ticket ' + tn + ', veuillez vous rendre au ' + dn + '.'
+          : 'Ticket ' + tn + '.';
+      }
+      return dn
+        ? 'Ticket ' + tn + ', please proceed to ' + dn + '.'
+        : 'Ticket ' + tn + '.';
+    }
+    function speakTicket(ticketNumber, deskName) {
+      if (!announcementConfig.voice) return;
+      if (!('speechSynthesis' in window)) return;
+      loadVoices().then(function(voices) {
+        var lang = resolveLang(announcementConfig.language, displayLocale);
+        var voice = pickVoice(voices, lang, announcementConfig.gender);
+        var text = buildAnnouncement(ticketNumber, deskName, lang);
+        try {
+          var u = new SpeechSynthesisUtterance(text);
+          u.lang = lang;
+          u.rate = Math.max(0.5, Math.min(1.5, (announcementConfig.rate || 90) / 100));
+          u.pitch = 1.0;
+          u.volume = 1.0;
+          if (voice) u.voice = voice;
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(u);
+        } catch (e) {}
+      });
     }
 
     function updateText(id, val) {
@@ -2570,6 +2677,15 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           }
           officeLoaded = true;
         }
+        // Announcement settings — refreshed every 5 min along with office info.
+        if (officeData.display_config) {
+          announcementConfig.sound = officeData.display_config.announcement_sound_enabled !== false;
+          announcementConfig.voice = !!officeData.display_config.voice_announcements;
+          announcementConfig.gender = officeData.display_config.voice_gender === 'male' ? 'male' : 'female';
+          announcementConfig.language = officeData.display_config.voice_language || 'auto';
+          announcementConfig.rate = officeData.display_config.voice_rate || 90;
+        }
+        if (officeData.locale) displayLocale = officeData.locale;
       } catch(e) {}
     }
     fetchOfficeInfo();
@@ -2699,6 +2815,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           var evt = JSON.parse(e.data);
           if (evt.type === 'ticket_called' && evt.ticket_number) {
             playChime();
+            // Speak a moment after the chime so they don't stomp on each other.
+            setTimeout(function() { speakTicket(evt.ticket_number, evt.desk_name); }, 900);
             pendingCallFlash = evt.ticket_number;
             // Fetch immediately for ticket_called (user expects instant feedback)
             if (debounceTimer) clearTimeout(debounceTimer);
