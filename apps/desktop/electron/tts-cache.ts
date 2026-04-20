@@ -18,7 +18,9 @@
 import { app } from 'electron';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
+import { spawn } from 'child_process';
 import { join } from 'path';
+import { tmpdir } from 'os';
 import { logger } from './logger';
 
 // Voice catalog — (gender, language) -> Edge neural voice name. Picked
@@ -86,28 +88,50 @@ export async function getTtsAudio(
     // fall through to generate
   }
 
+  // Shell out to the Python `edge-tts` CLI. We also have the npm
+  // `msedge-tts` package, but inside Electron main the Undici-backed
+  // global WebSocket can't reach speech.platform.bing.com reliably and
+  // hangs the handshake. The Python CLI uses its own WebSocket client
+  // and generates audio consistently. Python + edge-tts are a soft
+  // dependency — if they're missing we fall back to browser TTS.
+  const OVERALL_TIMEOUT_MS = 10000;
+  const tmpFile = join(tmpdir(), `qflo-tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp3`);
+  // edge-tts rate: "+N%" / "-N%". Our rate is 60-130 = percentage of normal.
+  const pct = Math.round(rate - 100);
+  const sign = pct >= 0 ? '+' : '';
+  const ratePct = `${sign}${pct}%`;
+
   try {
-    // Dynamic import keeps msedge-tts out of the startup critical path.
-    const { MsEdgeTTS, OUTPUT_FORMAT } = await import('msedge-tts');
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    // msedge-tts rate is "+N%"/"-N%". Our rate is 60-130 as percentage of
-    // normal; convert so 90% becomes -10% etc.
-    const pct = Math.round(rate - 100);
-    const sign = pct >= 0 ? '+' : '';
-    const ratePct = `${sign}${pct}%`;
-    const result = await tts.toStream(text, { rate: ratePct });
-    const chunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
-      result.audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
-      result.audioStream.on('close', () => resolve());
-      result.audioStream.on('error', reject);
+      const proc = spawn('edge-tts', [
+        '--voice', voice,
+        // Use =value form — argparse otherwise misreads +0% as a new flag
+        `--rate=${ratePct}`,
+        '--text', text,
+        '--write-media', tmpFile,
+      ], { windowsHide: true });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      const timer = setTimeout(() => {
+        proc.kill();
+        reject(new Error('edge-tts timeout'));
+      }, OVERALL_TIMEOUT_MS);
+      proc.on('error', (err) => { clearTimeout(timer); reject(err); });
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(`edge-tts exited ${code}: ${stderr.slice(0, 300)}`));
+      });
     });
-    const buffer = Buffer.concat(chunks);
+    const buffer = await fs.readFile(tmpFile);
+    fs.unlink(tmpFile).catch(() => {});
     // Write cache asynchronously — don't block the response on disk I/O.
     fs.writeFile(file, buffer).catch((err) => logger.warn('tts', 'cache write failed', { error: err?.message }));
+    logger.info('tts', 'generated', { voice, bytes: buffer.length });
     return buffer;
   } catch (err: any) {
+    // Cleanup any partial temp file.
+    fs.unlink(tmpFile).catch(() => {});
     logger.warn('tts', 'generation failed — display will fall back to browser TTS', {
       voice,
       error: err?.message,
