@@ -1,5 +1,7 @@
 import { getStaffContext } from '@/lib/authz';
 import { PrioritiesClient } from './priorities-client';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { STRUCTURE_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function PrioritiesPage() {
   const context = await getStaffContext();
@@ -20,5 +22,10 @@ export default async function PrioritiesPage() {
     );
   }
 
-  return <PrioritiesClient priorities={priorities ?? []} />;
+  return (
+    <>
+      <PageTabs tabs={STRUCTURE_TABS} />
+      <PrioritiesClient priorities={priorities ?? []} />
+    </>
+  );
 }

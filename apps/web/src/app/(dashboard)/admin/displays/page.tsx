@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext } from '@/lib/authz';
 import { DisplaysManager } from '@/components/admin/display-settings';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { PUBLIC_SCREEN_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function DisplaysAdminPage() {
   const context = await getStaffContext();
@@ -32,10 +34,13 @@ export default async function DisplaysAdminPage() {
     : { data: [] };
 
   return (
-    <DisplaysManager
-      screens={screens ?? []}
-      offices={offices ?? []}
-      departments={departments ?? []}
-    />
+    <>
+      <PageTabs tabs={PUBLIC_SCREEN_TABS} />
+      <DisplaysManager
+        screens={screens ?? []}
+        offices={offices ?? []}
+        departments={departments ?? []}
+      />
+    </>
   );
 }

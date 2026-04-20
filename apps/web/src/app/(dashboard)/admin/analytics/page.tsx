@@ -16,6 +16,8 @@ import {
   getNoShowRate,
 } from '@/lib/actions/analytics-actions';
 import { AnalyticsDashboard } from './analytics-dashboard';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { INSIGHTS_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function AnalyticsPage() {
   const context = await getStaffContext();
@@ -56,21 +58,24 @@ export default async function AnalyticsPage() {
   ]);
 
   return (
-    <AnalyticsDashboard
-      initialSummary={summary}
-      initialTicketsByHour={ticketsByHour}
-      initialTicketsByDepartment={ticketsByDepartment}
-      initialWaitTimeTrend={waitTimeTrend}
-      initialStaffPerformance={staffPerformance}
-      initialFeedbackSummary={feedbackSummary}
-      initialTemplateHealth={templateHealth}
-      initialTemplatePerformance={templatePerformance}
-      initialHourlyHeatmap={hourlyHeatmap}
-      initialServiceBreakdown={serviceBreakdown}
-      initialWeeklyTrends={weeklyTrends}
-      initialNoShowRate={noShowRate}
-      offices={filterOptions.offices}
-      departments={filterOptions.departments}
-    />
+    <>
+      <PageTabs tabs={INSIGHTS_TABS} />
+      <AnalyticsDashboard
+        initialSummary={summary}
+        initialTicketsByHour={ticketsByHour}
+        initialTicketsByDepartment={ticketsByDepartment}
+        initialWaitTimeTrend={waitTimeTrend}
+        initialStaffPerformance={staffPerformance}
+        initialFeedbackSummary={feedbackSummary}
+        initialTemplateHealth={templateHealth}
+        initialTemplatePerformance={templatePerformance}
+        initialHourlyHeatmap={hourlyHeatmap}
+        initialServiceBreakdown={serviceBreakdown}
+        initialWeeklyTrends={weeklyTrends}
+        initialNoShowRate={noShowRate}
+        offices={filterOptions.offices}
+        departments={filterOptions.departments}
+      />
+    </>
   );
 }

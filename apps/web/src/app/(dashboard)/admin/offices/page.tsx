@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, isStaffLinkError } from '@/lib/authz';
 import { OfficesClient } from './offices-client';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { STRUCTURE_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function OfficesPage() {
   let context;
@@ -30,5 +32,10 @@ export default async function OfficesPage() {
     );
   }
 
-  return <OfficesClient offices={offices ?? []} />;
+  return (
+    <>
+      <PageTabs tabs={STRUCTURE_TABS} />
+      <OfficesClient offices={offices ?? []} />
+    </>
+  );
 }

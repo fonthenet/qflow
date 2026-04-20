@@ -4,21 +4,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Building2,
-  Layers,
   Cog,
-  Users,
   BarChart3,
-  Monitor,
   LogOut,
   TicketCheck,
-  Grid3X3,
-  Star,
   QrCode,
   Contact,
   Tablet,
-  Tv,
-  Sparkles,
-  ScrollText,
   GitBranchPlus,
   CalendarDays,
   CalendarRange,
@@ -64,25 +56,56 @@ interface SidebarProps {
   };
 }
 
-const adminNav = [
+// Grouped sidebar — related routes collapse behind a single entry whose
+// internal tab bar (rendered via <PageTabs>) exposes the siblings. `siblings`
+// lists the routes that should also highlight this entry as active.
+const adminNav: Array<{
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  section: string;
+  siblings?: string[];
+}> = [
   { href: '/admin/overview', label: 'Business Map', icon: LayoutDashboard, section: 'Work' },
   { href: '/admin/setup-wizard', label: 'Setup Wizard', icon: Rocket, section: 'Work' },
   { href: '/admin/template-governance', label: 'Template Updates', icon: GitBranchPlus, section: 'Setup' },
-  { href: '/admin/offices', label: 'Locations', icon: Building2, section: 'Setup' },
-  { href: '/admin/departments', label: 'Departments', icon: Layers, section: 'Setup' },
-  { href: '/admin/services', label: 'Services', icon: Grid3X3, section: 'Setup' },
-  { href: '/admin/desks', label: 'Desks', icon: Monitor, section: 'Setup' },
-  { href: '/admin/staff', label: 'Team', icon: Users, section: 'Setup' },
-  { href: '/admin/priorities', label: 'Priority Rules', icon: Star, section: 'Setup' },
+
+  // Business Structure — 6 related admin pages grouped behind one entry.
+  // Clicking it lands on Locations; the in-page tab bar reveals the rest.
+  {
+    href: '/admin/offices',
+    label: 'Business Structure',
+    icon: Building2,
+    section: 'Setup',
+    siblings: ['/admin/departments', '/admin/services', '/admin/desks', '/admin/staff', '/admin/priorities'],
+  },
+
   { href: '/admin/calendar', label: 'Calendar', icon: CalendarRange, section: 'Customers' },
   { href: '/admin/bookings', label: 'Bookings', icon: CalendarDays, section: 'Customers' },
   { href: '/admin/customers', label: 'Customers', icon: Contact, section: 'Customers' },
+
   { href: '/admin/virtual-codes', label: 'Join Links & QR', icon: QrCode, section: 'Channels' },
-  { href: '/admin/kiosk', label: 'Lobby Kiosk', icon: Tablet, section: 'Channels' },
-  { href: '/admin/displays', label: 'Display Screens', icon: Tv, section: 'Channels' },
-  { href: '/admin/analytics', label: 'Reports', icon: BarChart3, section: 'Insights' },
-  { href: '/admin/audit', label: 'Activity Log', icon: ScrollText, section: 'Insights' },
+
+  // Kiosk + Display share one entry; opens to Kiosk, tabs swap between them.
+  {
+    href: '/admin/kiosk',
+    label: 'Public Screens',
+    icon: Tablet,
+    section: 'Channels',
+    siblings: ['/admin/displays'],
+  },
+
   { href: '/admin/broadcast', label: 'Broadcast', icon: Megaphone, section: 'Channels' },
+
+  // Reports + Activity Log merged under Insights.
+  {
+    href: '/admin/analytics',
+    label: 'Insights',
+    icon: BarChart3,
+    section: 'Insights',
+    siblings: ['/admin/audit'],
+  },
+
   { href: '/admin/settings', label: 'Business Settings', icon: Cog, section: 'Insights' },
 ];
 
@@ -122,10 +145,23 @@ export function Sidebar({
   const { t } = useI18n();
   const pathname = usePathname();
   const navItems = [...deskNav, ...adminNav]
+    // Hide desk link during signup (before template is confirmed).
+    // For grouped items, keep the group visible when the role has access to
+    // ANY sibling; retarget the primary href to the first allowed sibling
+    // so clicking the group still lands somewhere the user can open.
+    .map((item) => {
+      const anyItem = item as typeof item & { siblings?: string[] };
+      const siblings = anyItem.siblings ?? [];
+      if (siblings.length === 0) return item;
+      if (allowedNavigation.includes(item.href)) return item;
+      const firstAllowedSibling = siblings.find((s) => allowedNavigation.includes(s));
+      return firstAllowedSibling ? { ...item, href: firstAllowedSibling } : item;
+    })
     .filter((item) => {
-      // Hide desk link during signup (before template is confirmed)
       if (item.href === '/desk' && !templateConfigured) return false;
-      return allowedNavigation.includes(item.href);
+      const anyItem = item as typeof item & { siblings?: string[] };
+      const allHrefs = [item.href, ...(anyItem.siblings ?? [])];
+      return allHrefs.some((h) => allowedNavigation.includes(h));
     })
     .sort((a, b) => {
       const desiredOrder = [
@@ -195,7 +231,9 @@ export function Sidebar({
             </p>
             <div className="space-y-1">
               {group.items.map((item) => {
-                const isActive = pathname.startsWith(item.href);
+                const anyItem = item as typeof item & { siblings?: string[] };
+                const activePaths = [item.href, ...(anyItem.siblings ?? [])];
+                const isActive = activePaths.some((p) => pathname === p || pathname.startsWith(p + '/'));
                 return (
                   <Link
                     key={item.href}

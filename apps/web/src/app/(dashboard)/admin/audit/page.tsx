@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, isOrganizationWideRole, requireAuditAccess } from '@/lib/authz';
 import { getServerI18n } from '@/lib/i18n';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { INSIGHTS_TABS } from '@/components/layout/admin-nav-groups';
 
 function formatMetadata(value: unknown) {
   if (!value || typeof value !== 'object') {
@@ -61,6 +63,7 @@ export default async function AuditPage() {
 
   return (
     <div className="space-y-6">
+      <PageTabs tabs={INSIGHTS_TABS} />
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Audit Log</h1>

@@ -1,5 +1,7 @@
 import { getStaffContext } from '@/lib/authz';
 import { DesksClient } from './desks-client';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { STRUCTURE_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function DesksPage({
   searchParams,
@@ -30,14 +32,23 @@ export default async function DesksPage({
         .order('name')
     : { data: [] };
 
-  const { data: staffList } = requestedOfficeIds.length > 0
+  // Load staff across ALL accessible offices (not only the filtered one).
+  // The Roster view and cross-office picker need the full list, and we also
+  // want to surface staff with no office (or an orphaned closed office) so
+  // admins can fix them instead of them disappearing silently.
+  const { data: staffList } = context.accessibleOfficeIds.length > 0
     ? await context.supabase
         .from('staff')
-        .select('id, full_name, office_id')
+        .select('id, full_name, office_id, is_active, office:offices(id, name, is_active)')
+        .eq('organization_id', context.staff.organization_id)
         .eq('is_active', true)
-        .in('office_id', requestedOfficeIds)
         .order('full_name')
     : { data: [] };
+
+  const staffListNormalized = (staffList ?? []).map((s) => ({
+    ...s,
+    office: Array.isArray(s.office) ? s.office[0] ?? null : s.office,
+  }));
 
   let desksQuery = context.supabase
     .from('desks')
@@ -66,13 +77,17 @@ export default async function DesksPage({
   }
 
   return (
-    <DesksClient
-      desks={desks ?? []}
-      offices={offices ?? []}
-      departments={departments ?? []}
-      staffList={staffList ?? []}
-      currentOfficeFilter={params.office ?? ''}
-      currentDepartmentFilter={params.department ?? ''}
-    />
+    <>
+      <PageTabs tabs={STRUCTURE_TABS} />
+      <DesksClient
+        desks={desks ?? []}
+        offices={offices ?? []}
+        departments={departments ?? []}
+        staffList={staffListNormalized}
+        currentOfficeFilter={params.office ?? ''}
+        currentDepartmentFilter={params.department ?? ''}
+        currentUserRole={context.staff.role}
+      />
+    </>
   );
 }

@@ -1,5 +1,7 @@
 import { getStaffContext } from '@/lib/authz';
 import { DepartmentsClient } from './departments-client';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { STRUCTURE_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function DepartmentsPage({
   searchParams,
@@ -40,10 +42,13 @@ export default async function DepartmentsPage({
   }
 
   return (
-    <DepartmentsClient
-      departments={departments ?? []}
-      offices={offices ?? []}
-      currentOfficeFilter={params.office ?? ''}
-    />
+    <>
+      <PageTabs tabs={STRUCTURE_TABS} />
+      <DepartmentsClient
+        departments={departments ?? []}
+        offices={offices ?? []}
+        currentOfficeFilter={params.office ?? ''}
+      />
+    </>
   );
 }

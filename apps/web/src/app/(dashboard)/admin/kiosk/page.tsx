@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { KioskSettings } from '@/components/admin/kiosk-settings';
 import { resolvePlatformConfig } from '@/lib/platform/config';
+import { PageTabs } from '@/components/layout/page-tabs';
+import { PUBLIC_SCREEN_TABS } from '@/components/layout/admin-nav-groups';
 
 export default async function KioskAdminPage() {
   const supabase = await createClient();
@@ -49,12 +51,15 @@ export default async function KioskAdminPage() {
     .order('sort_order');
 
   return (
-    <KioskSettings
-      organization={organization}
-      offices={offices ?? []}
-      departments={departments ?? []}
-      templateDefaults={platformConfig.experienceProfile.kiosk}
-      priorityMode={platformConfig.queuePolicy.priorityMode}
-    />
+    <>
+      <PageTabs tabs={PUBLIC_SCREEN_TABS} />
+      <KioskSettings
+        organization={organization}
+        offices={offices ?? []}
+        departments={departments ?? []}
+        templateDefaults={platformConfig.experienceProfile.kiosk}
+        priorityMode={platformConfig.queuePolicy.priorityMode}
+      />
+    </>
   );
 }
