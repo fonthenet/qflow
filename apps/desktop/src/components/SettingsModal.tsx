@@ -154,6 +154,13 @@ interface FieldDef {
   help?: string;
   unlimitedWhenZero?: boolean;
   placeholder?: string;
+  /** For sections that expose sub-tabs: which tab this field belongs to. */
+  tab?: string;
+}
+
+interface SectionTabDef {
+  id: string;
+  label: string;
 }
 
 interface SectionDef {
@@ -163,6 +170,10 @@ interface SectionDef {
   fields: FieldDef[];
   /** Extra fields not in `fields` but still need init/save (for merged sections with sub-tabs) */
   _allFields?: FieldDef[];
+  /** Optional sub-tabs rendered at the top of the section content. Fields
+   * carry a `tab` matching one of these ids; only matching fields render
+   * when the tab is active. */
+  tabs?: SectionTabDef[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
@@ -197,6 +208,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState('');
   const [activeSection, setActiveSection] = useState(initialSection ?? 'booking');
+  // Sub-tab state for sections that declare a `tabs` array. Keyed by section
+  // id so switching sections and coming back restores the last-used tab.
+  const [activeSectionTab, setActiveSectionTab] = useState<Record<string, string>>({});
   const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments' | 'priorities'>('intake');
   const [expandedIntakeField, setExpandedIntakeField] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
@@ -403,51 +417,48 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       ],
     },
     {
-      id: 'kiosk',
-      icon: '🛎',
-      title: t('sm.section.kiosk'),
+      id: 'display',
+      icon: '🖥',
+      title: t('sm.section.display_kiosk'),
+      tabs: [
+        { id: 'kiosk', label: t('sm.section.kiosk') },
+        { id: 'display', label: t('sm.section.display') },
+      ],
       fields: [
-        // ── Kiosk flow ───────────────────────────────────────────────
-        { key: '__hdr_kiosk_flow', label: t('sm.hdr.kiosk_flow'), type: 'header', default: null, help: t('sm.hdr.kiosk_flow_help') },
-        { key: 'kiosk_mode', label: t('sm.field.kiosk_mode'), type: 'enum', default: 'normal', options: [
+        // ── Kiosk tab ─────────────────────────────────────────────────
+        { key: '__hdr_kiosk_flow', tab: 'kiosk', label: t('sm.hdr.kiosk_flow'), type: 'header', default: null, help: t('sm.hdr.kiosk_flow_help') },
+        { key: 'kiosk_mode', tab: 'kiosk', label: t('sm.field.kiosk_mode'), type: 'enum', default: 'normal', options: [
           { value: 'normal', label: t('sm.kiosk_mode.normal') },
           { value: 'quick_book', label: t('sm.kiosk_mode.quick_book') },
         ], help: t('sm.help.kiosk_mode') },
-        { key: 'kiosk_idle_timeout', label: t('sm.field.kiosk_idle'), type: 'num', default: 60, min: 10, help: t('sm.help.kiosk_idle') },
-        { key: 'kiosk_show_estimated_time', label: t('sm.field.kiosk_show_eta'), type: 'bool', default: true },
-        { key: 'kiosk_show_priorities', label: t('sm.field.kiosk_show_priorities'), type: 'bool', default: false },
+        { key: 'kiosk_idle_timeout', tab: 'kiosk', label: t('sm.field.kiosk_idle'), type: 'num', default: 60, min: 10, help: t('sm.help.kiosk_idle') },
+        { key: 'kiosk_show_estimated_time', tab: 'kiosk', label: t('sm.field.kiosk_show_eta'), type: 'bool', default: true },
+        { key: 'kiosk_show_priorities', tab: 'kiosk', label: t('sm.field.kiosk_show_priorities'), type: 'bool', default: false },
 
-        // ── Kiosk copy & branding ───────────────────────────────────
-        { key: '__hdr_kiosk_brand', label: t('sm.hdr.kiosk_brand'), type: 'header', default: null },
-        { key: 'kiosk_welcome_message', label: t('sm.field.kiosk_welcome'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_welcome') },
-        { key: 'kiosk_header_text', label: t('sm.field.kiosk_header'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_header') },
-        { key: 'kiosk_button_label', label: t('sm.field.kiosk_button'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_button') },
-        { key: 'kiosk_theme_color', label: t('sm.field.kiosk_theme'), type: 'color', default: '#3b82f6', placeholder: '#3b82f6', help: t('sm.help.kiosk_theme') },
-        { key: 'kiosk_show_logo', label: t('sm.field.kiosk_show_logo'), type: 'bool', default: true, help: t('sm.help.kiosk_show_logo') },
-        { key: 'kiosk_logo_url', label: t('sm.field.kiosk_logo_url'), type: 'text', default: '', placeholder: 'https://…/logo.png', help: t('sm.help.kiosk_logo_url') },
-      ],
-    },
-    {
-      id: 'display',
-      icon: '🖥',
-      title: t('sm.section.display'),
-      fields: [
-        // ── Sound & announcements ───────────────────────────────────
-        { key: '__hdr_sound', label: t('sm.hdr.sound'), type: 'header', default: null, help: t('sm.hdr.sound_help') },
-        { key: 'announcement_sound_enabled', label: t('sm.field.announcement_sound'), type: 'bool', default: true, help: t('sm.help.announcement_sound') },
-        { key: 'voice_announcements', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
-        { key: 'voice_gender', label: t('sm.field.voice_gender'), type: 'enum', default: 'female', options: [
+        { key: '__hdr_kiosk_brand', tab: 'kiosk', label: t('sm.hdr.kiosk_brand'), type: 'header', default: null },
+        { key: 'kiosk_welcome_message', tab: 'kiosk', label: t('sm.field.kiosk_welcome'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_welcome') },
+        { key: 'kiosk_header_text', tab: 'kiosk', label: t('sm.field.kiosk_header'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_header') },
+        { key: 'kiosk_button_label', tab: 'kiosk', label: t('sm.field.kiosk_button'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_button') },
+        { key: 'kiosk_theme_color', tab: 'kiosk', label: t('sm.field.kiosk_theme'), type: 'color', default: '#3b82f6', placeholder: '#3b82f6', help: t('sm.help.kiosk_theme') },
+        { key: 'kiosk_show_logo', tab: 'kiosk', label: t('sm.field.kiosk_show_logo'), type: 'bool', default: true, help: t('sm.help.kiosk_show_logo') },
+        { key: 'kiosk_logo_url', tab: 'kiosk', label: t('sm.field.kiosk_logo_url'), type: 'text', default: '', placeholder: 'https://…/logo.png', help: t('sm.help.kiosk_logo_url') },
+
+        // ── Display tab ───────────────────────────────────────────────
+        { key: '__hdr_sound', tab: 'display', label: t('sm.hdr.sound'), type: 'header', default: null, help: t('sm.hdr.sound_help') },
+        { key: 'announcement_sound_enabled', tab: 'display', label: t('sm.field.announcement_sound'), type: 'bool', default: true, help: t('sm.help.announcement_sound') },
+        { key: 'voice_announcements', tab: 'display', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
+        { key: 'voice_gender', tab: 'display', label: t('sm.field.voice_gender'), type: 'enum', default: 'female', options: [
           { value: 'female', label: t('sm.voice_gender.female') },
           { value: 'male', label: t('sm.voice_gender.male') },
         ], help: t('sm.help.voice_gender') },
-        { key: 'voice_language', label: t('sm.field.voice_language'), type: 'enum', default: 'auto', options: [
+        { key: 'voice_language', tab: 'display', label: t('sm.field.voice_language'), type: 'enum', default: 'auto', options: [
           { value: 'auto', label: t('sm.voice_language.auto') },
           { value: 'ar', label: t('sm.voice_language.ar') },
           { value: 'fr', label: t('sm.voice_language.fr') },
           { value: 'en', label: t('sm.voice_language.en') },
         ], help: t('sm.help.voice_language') },
-        { key: 'voice_rate', label: t('sm.field.voice_rate'), type: 'num', default: 90, min: 60, max: 130, help: t('sm.help.voice_rate') },
-        { key: '__voice_test', label: t('sm.field.voice_test'), type: 'button', default: null, help: t('sm.help.voice_test') },
+        { key: 'voice_rate', tab: 'display', label: t('sm.field.voice_rate'), type: 'num', default: 90, min: 60, max: 130, help: t('sm.help.voice_rate') },
+        { key: '__voice_test', tab: 'display', label: t('sm.field.voice_test'), type: 'button', default: null, help: t('sm.help.voice_test') },
       ],
     },
     {
@@ -2545,14 +2556,62 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             </div>
           </div>
         )}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          columnGap: 20,
-          rowGap: 0,
-        }}>
-          {sec.fields.map(renderField)}
-        </div>
+        {(() => {
+          const tabs = sec.tabs;
+          const fields = sec.fields;
+          // In search mode, flatten and show all matching fields across tabs.
+          if (!tabs || tabs.length === 0 || q) {
+            return (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                columnGap: 20,
+                rowGap: 0,
+              }}>
+                {fields.map(renderField)}
+              </div>
+            );
+          }
+          const current = activeSectionTab[sec.id] ?? tabs[0].id;
+          const filtered = fields.filter(f => (f.tab ?? tabs[0].id) === current);
+          return (
+            <>
+              <div style={{
+                display: 'flex', gap: 4, marginBottom: 14, padding: 4,
+                background: 'var(--surface, #0f172a)',
+                border: '1px solid var(--border, #334155)',
+                borderRadius: 10, width: 'fit-content',
+              }}>
+                {tabs.map(tb => {
+                  const active = tb.id === current;
+                  return (
+                    <button
+                      key={tb.id}
+                      type="button"
+                      onClick={() => setActiveSectionTab(prev => ({ ...prev, [sec.id]: tb.id }))}
+                      style={{
+                        padding: '8px 18px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                        background: active ? 'var(--accent, #3b82f6)' : 'transparent',
+                        color: active ? '#fff' : 'var(--text2, #94a3b8)',
+                        fontSize: 13, fontWeight: 600, transition: 'background 120ms ease',
+                      }}
+                    >
+                      {tb.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                columnGap: 20,
+                rowGap: 0,
+              }}>
+                {filtered.map(renderField)}
+              </div>
+            </>
+          );
+        })()}
       </div>
     );
   }
