@@ -111,7 +111,22 @@ export async function POST(request: NextRequest) {
       // One combined message: "approved" header + full ticket details.
       // Ticket already exists (JOIN flow), so use the sameday template
       // which doesn't say "you'll receive a ticket when you arrive".
-      const approvedHeader = tMsg('approval_approved_sameday', locale, { name: orgName });
+      // Resolve service name + ticket time so {time}/{service} render properly.
+      let approvedServiceName = '—';
+      if (ticket.service_id) {
+        try {
+          const { data: svc } = await supabase.from('services').select('name').eq('id', ticket.service_id).maybeSingle();
+          if (svc?.name) approvedServiceName = svc.name;
+        } catch { /* ignore */ }
+      }
+      const apprLocTag = locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR';
+      const apprWhenDt = (ticket as any).checked_in_at ? new Date((ticket as any).checked_in_at) : new Date();
+      const approvedTime = apprWhenDt.toLocaleTimeString(apprLocTag, { hour: '2-digit', minute: '2-digit', hour12: false });
+      const approvedHeader = tMsg('approval_approved_sameday', locale, {
+        name: orgName,
+        time: approvedTime,
+        service: approvedServiceName,
+      });
       const joinedBody = approvedHeader + tMsg('joined_details', locale, {
         ticket: ticket.ticket_number,
         position: formatPosition(pos, locale),
