@@ -15,9 +15,7 @@
  * simply follows the org-level setting.
  */
 import { normalizePhone } from '@qflo/shared';
-import { phoneVariants } from '@/lib/upsert-customer';
 
-// Minimal local toLocal copy to avoid importing the non-exported helper.
 function toLocalPhone(e164: string): string {
   if (!e164) return e164;
   if (e164.startsWith('213') && e164.length === 12) return '0' + e164.slice(3);
@@ -26,6 +24,17 @@ function toLocalPhone(e164: string): string {
   if (e164.startsWith('216') && e164.length === 11) return e164.slice(3);
   if (e164.startsWith('212') && e164.length === 12) return '0' + e164.slice(3);
   return e164;
+}
+
+function phoneVariants(rawPhone: string, e164: string, localPhone: string): string[] {
+  const set = new Set<string>();
+  if (rawPhone) set.add(rawPhone);
+  if (e164) {
+    set.add(e164);
+    set.add('+' + e164);
+  }
+  if (localPhone) set.add(localPhone);
+  return Array.from(set).filter(Boolean);
 }
 
 export async function isCustomerAutoApprove(
