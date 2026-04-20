@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { getSupabase, ensureAuth, verifyAuthWorks } from '../lib/supabase';
+import { speak as speakNatural, parseVoiceSettings } from '../lib/voice';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
@@ -2829,6 +2830,28 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       }
       fetchTickets();
       if (isSmallScreen) setSidebarVisible(false);
+      // Speak the ticket number aloud on the Station's own speakers using
+      // the same neural-voice pipeline the customer display uses. Operator
+      // hears confirmation without needing the separate display tab open.
+      try {
+        const ticketNumber = (result as any)?.ticket_number;
+        if (ticketNumber && orgSettings.voice_announcements !== false) {
+          const settings = parseVoiceSettings({
+            voice_announcements: true,
+            voice_gender: orgSettings.voice_gender,
+            voice_language: orgSettings.voice_language,
+            voice_rate: orgSettings.voice_rate,
+          });
+          const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
+          const lang = settings.language === 'auto' ? fallback
+            : settings.language === 'ar' ? 'ar-SA'
+            : settings.language === 'fr' ? 'fr-FR' : 'en-US';
+          const text = lang.startsWith('ar') ? `التذكرة رقم ${ticketNumber}`
+            : lang.startsWith('fr') ? `Ticket numéro ${ticketNumber}`
+            : `Ticket number ${ticketNumber}`;
+          void speakNatural(text, settings, fallback);
+        }
+      } catch { /* non-fatal — voice is a nicety, not a blocker */ }
     } catch (err: any) {
       showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
