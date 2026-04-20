@@ -121,9 +121,16 @@ async function speakViaKioskServer(text: string, lang: string, settings: VoiceSe
   // Try the local kiosk-server TTS endpoint (Microsoft Edge neural voices,
   // free, cached on disk). Falls back to browser speechSynthesis if the
   // server is unreachable or the endpoint returns non-audio.
+  //
+  // Port discovery matters: the kiosk-server prefers 8080 but falls back to
+  // 8081+ if taken, and the resolved port is exposed via preload's
+  // `getKioskPort()` IPC (not a sync property). Without awaiting it we'd
+  // silently hit the wrong port and think the server was down.
   try {
+    const qf = (window as any).qf;
+    const port = await (qf?.getKioskPort?.() ?? Promise.resolve(8080));
+    if (!port) return false;
     const langShort = lang.slice(0, 2).toLowerCase();
-    const port = (window as any).qf?.kioskPort ?? 8080;
     const url = `http://127.0.0.1:${port}/api/tts`
       + `?text=${encodeURIComponent(text)}`
       + `&language=${encodeURIComponent(langShort)}`
