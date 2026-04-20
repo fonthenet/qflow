@@ -2367,21 +2367,24 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       // not just the unlock being forgotten.
       setTimeout(function() { playChime(); }, 100);
       setTimeout(function() {
-        // Speak a short hello in the display language. Once this is heard,
-        // the voice pipeline is primed for real ticket calls.
         try {
           if (!('speechSynthesis' in window)) return;
-          var lang = resolveLang(announcementConfig.language, displayLocale);
-          var hello = lang.slice(0, 2) === 'ar' ? 'تم تفعيل الإعلانات'
-            : lang.slice(0, 2) === 'fr' ? 'Annonces activées'
-            : 'Announcements ready';
+          var requestedLang = resolveLang(announcementConfig.language, displayLocale);
           loadVoices().then(function(voices) {
-            var voice = pickVoice(voices, lang, announcementConfig.gender);
+            var voice = pickVoice(voices, requestedLang, announcementConfig.gender);
+            var langPrefix = requestedLang.slice(0, 2).toLowerCase();
+            var voiceMatchesLang = voice && voice.lang.toLowerCase().indexOf(langPrefix) === 0;
+            var effectiveLang = voiceMatchesLang ? requestedLang : (voice ? voice.lang : 'en-US');
+            var l2 = effectiveLang.slice(0, 2).toLowerCase();
+            var hello = l2 === 'ar' ? 'تم تفعيل الإعلانات'
+              : l2 === 'fr' ? 'Annonces activées'
+              : 'Announcements ready';
             var u = new SpeechSynthesisUtterance(hello);
-            u.lang = lang;
+            u.lang = effectiveLang;
             u.rate = 0.95;
             u.volume = 1;
-            if (voice) u.voice = voice;
+            if (voiceMatchesLang) u.voice = voice;
+            u.onerror = function(ev) { console.warn('[display] unlock tts error', ev.error); };
             window.speechSynthesis.speak(u);
           });
         } catch (e) {}
@@ -2489,19 +2492,30 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (!announcementConfig.voice) return;
       if (!('speechSynthesis' in window)) return;
       loadVoices().then(function(voices) {
-        var lang = resolveLang(announcementConfig.language, displayLocale);
-        var voice = pickVoice(voices, lang, announcementConfig.gender);
-        var text = buildAnnouncement(ticketNumber, deskName, lang);
+        // Resolve language -> find a voice for that language. If none
+        // exists on this machine (common: French requested, OS only has
+        // English voices installed), fall back to English so we still
+        // speak audibly instead of silently dropping the utterance.
+        var requestedLang = resolveLang(announcementConfig.language, displayLocale);
+        var voice = pickVoice(voices, requestedLang, announcementConfig.gender);
+        var langPrefix = requestedLang.slice(0, 2).toLowerCase();
+        var voiceMatchesLang = voice && voice.lang.toLowerCase().indexOf(langPrefix) === 0;
+        var effectiveLang = voiceMatchesLang ? requestedLang : (voice ? voice.lang : 'en-US');
+        var text = buildAnnouncement(ticketNumber, deskName, effectiveLang);
         try {
           var u = new SpeechSynthesisUtterance(text);
-          u.lang = lang;
+          u.lang = effectiveLang;
           u.rate = Math.max(0.5, Math.min(1.5, (announcementConfig.rate || 90) / 100));
           u.pitch = 1.0;
           u.volume = 1.0;
-          if (voice) u.voice = voice;
-          window.speechSynthesis.cancel();
+          // Only assign a voice when its language matches the utterance.
+          // Mismatched voice + lang makes Chrome silently drop speak().
+          if (voiceMatchesLang) u.voice = voice;
+          u.onerror = function(ev) { console.warn('[display] tts error', ev.error, 'voice=' + (voice && voice.name), 'lang=' + effectiveLang); };
+          // DON'T cancel() before speak — on Chrome the cancel+speak race
+          // can swallow the new utterance entirely.
           window.speechSynthesis.speak(u);
-        } catch (e) {}
+        } catch (e) { console.warn('[display] speak threw', e); }
       });
     }
 
