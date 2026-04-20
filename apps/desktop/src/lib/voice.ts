@@ -117,6 +117,30 @@ function resolveLocale(settings: VoiceSettings, fallback: string): string {
   return { ar: 'ar-SA', fr: 'fr-FR', en: 'en-US' }[settings.language];
 }
 
+async function speakViaKioskServer(text: string, lang: string, settings: VoiceSettings): Promise<boolean> {
+  // Try the local kiosk-server TTS endpoint (Microsoft Edge neural voices,
+  // free, cached on disk). Falls back to browser speechSynthesis if the
+  // server is unreachable or the endpoint returns non-audio.
+  try {
+    const langShort = lang.slice(0, 2).toLowerCase();
+    const port = (window as any).qf?.kioskPort ?? 8080;
+    const url = `http://127.0.0.1:${port}/api/tts`
+      + `?text=${encodeURIComponent(text)}`
+      + `&language=${encodeURIComponent(langShort)}`
+      + `&gender=${encodeURIComponent(settings.gender)}`
+      + `&rate=${encodeURIComponent(settings.rate)}`;
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    if (!blob.type.startsWith('audio')) return false;
+    const audio = new Audio(URL.createObjectURL(blob));
+    await audio.play();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Speak a ticket announcement. `text` is the already-localized sentence
  * (e.g. "Ticket R-0079, please go to Salle"). The caller handles
@@ -124,9 +148,14 @@ function resolveLocale(settings: VoiceSettings, fallback: string): string {
  */
 export async function speak(text: string, settings: VoiceSettings, fallbackLocale = 'en-US'): Promise<void> {
   if (!settings.enabled) return;
+  const lang = resolveLocale(settings, fallbackLocale);
+  // Prefer the natural-voice kiosk-server path. If it fails, fall back to
+  // the browser's speechSynthesis using whatever OS voices are installed.
+  const ok = await speakViaKioskServer(text, lang, settings);
+  if (ok) return;
+
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   const voices = await getVoicesAsync();
-  const lang = resolveLocale(settings, fallbackLocale);
   const voice = pickVoice(voices, lang, settings.gender);
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang;
@@ -134,8 +163,6 @@ export async function speak(text: string, settings: VoiceSettings, fallbackLocal
   u.pitch = 1.0;
   u.volume = 1.0;
   if (voice) u.voice = voice;
-  // Cancel anything currently queued so the new announcement is immediate.
-  window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);
 }
 

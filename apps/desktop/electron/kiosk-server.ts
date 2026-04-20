@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
 import { normalizeLocale } from '../src/lib/i18n';
+import { getTtsAudio, pickVoice as pickTtsVoice } from './tts-cache';
 import { isValidTransition, resolveDialCode } from '@qflo/shared';
 import { logger } from './logger';
 
@@ -519,6 +520,8 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', version: CONFIG.APP_VERSION, cloud: isCloudReachable ? CLOUD_URL : '' }));
+      } else if (path === '/api/tts' && req.method === 'GET') {
+        void handleTts(url, res);
       } else if (path === '/api/check-appointment' && req.method === 'POST') {
         handleCheckAppointment(req, res);
       } else if (path === '/api/customer-lookup' && req.method === 'GET') {
@@ -769,6 +772,45 @@ function resolveRequestedOffice(url: URL) {
 }
 
 // ── API Handlers ──────────────────────────────────────────────────
+
+/**
+ * GET /api/tts?text=...&language=fr|ar|en&gender=female|male&rate=90
+ * Returns MP3 audio for the customer display. First call generates via
+ * Microsoft Edge neural TTS (free, no API key); subsequent calls hit the
+ * on-disk cache. Returns 503 if generation failed so the display can fall
+ * back to browser speechSynthesis.
+ */
+async function handleTts(url: URL, res: http.ServerResponse) {
+  const text = url.searchParams.get('text');
+  const language = (url.searchParams.get('language') ?? 'en').toLowerCase();
+  const gender = (url.searchParams.get('gender') ?? 'female').toLowerCase();
+  const rate = Math.max(60, Math.min(130, Number(url.searchParams.get('rate') ?? 90)));
+  if (!text) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'text required' }));
+    return;
+  }
+  if (text.length > 400) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'text too long' }));
+    return;
+  }
+  const voice = pickTtsVoice(language, gender);
+  const audio = await getTtsAudio(text, voice, rate);
+  if (!audio) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'tts unavailable' }));
+    return;
+  }
+  res.writeHead(200, {
+    'Content-Type': 'audio/mpeg',
+    'Content-Length': audio.length,
+    // Cached for a day on the display/browser side too — layered on top of
+    // the server-side on-disk cache for extra speed on repeat ticket calls.
+    'Cache-Control': 'public, max-age=86400',
+  });
+  res.end(audio);
+}
 
 async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const db = getDB();
@@ -2368,25 +2410,20 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       setTimeout(function() { playChime(); }, 100);
       setTimeout(function() {
         try {
-          if (!('speechSynthesis' in window)) return;
           var requestedLang = resolveLang(announcementConfig.language, displayLocale);
-          loadVoices().then(function(voices) {
-            var voice = pickVoice(voices, requestedLang, announcementConfig.gender);
-            var langPrefix = requestedLang.slice(0, 2).toLowerCase();
-            var voiceMatchesLang = voice && voice.lang.toLowerCase().indexOf(langPrefix) === 0;
-            var effectiveLang = voiceMatchesLang ? requestedLang : (voice ? voice.lang : 'en-US');
-            var l2 = effectiveLang.slice(0, 2).toLowerCase();
-            var hello = l2 === 'ar' ? 'تم تفعيل الإعلانات'
-              : l2 === 'fr' ? 'Annonces activées'
-              : 'Announcements ready';
-            var u = new SpeechSynthesisUtterance(hello);
-            u.lang = effectiveLang;
-            u.rate = 0.95;
-            u.volume = 1;
-            if (voiceMatchesLang) u.voice = voice;
-            u.onerror = function(ev) { console.warn('[display] unlock tts error', ev.error); };
-            window.speechSynthesis.speak(u);
-          });
+          var l2 = requestedLang.slice(0, 2).toLowerCase();
+          var hello = l2 === 'ar' ? 'تم تفعيل الإعلانات'
+            : l2 === 'fr' ? 'Annonces activées'
+            : 'Announcements ready';
+          // Route through /api/tts so the operator hears the actual
+          // natural voice they'll get for real ticket calls.
+          var url = '/api/tts?text=' + encodeURIComponent(hello)
+            + '&language=' + encodeURIComponent(l2)
+            + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
+            + '&rate=' + encodeURIComponent(announcementConfig.rate || 90);
+          var audio = getTtsAudioEl();
+          audio.src = url;
+          audio.play().catch(function() { speakViaBrowserFallback(hello, requestedLang); });
         } catch (e) {}
       }, 900);
     }
@@ -2488,34 +2525,47 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (l === 'fr') return 'Ticket numéro ' + tn;
       return 'Ticket number ' + tn;
     }
-    function speakTicket(ticketNumber, deskName) {
-      if (!announcementConfig.voice) return;
+    // Plays an MP3 through a dedicated <audio> element. The kiosk-server's
+    // /api/tts endpoint generates the clip via Microsoft Edge neural TTS
+    // (free, no API key) and caches it on disk — first call for a given
+    // ticket number has a small latency, subsequent calls are instant.
+    var ttsAudioEl = null;
+    function getTtsAudioEl() {
+      if (!ttsAudioEl) {
+        ttsAudioEl = new Audio();
+        ttsAudioEl.preload = 'auto';
+      }
+      return ttsAudioEl;
+    }
+    function speakViaBrowserFallback(text, lang) {
+      // Only used when the server-side Edge TTS is unavailable (offline,
+      // firewall blocks). Preserves audible ticket calls using whatever
+      // OS voices are installed.
       if (!('speechSynthesis' in window)) return;
-      loadVoices().then(function(voices) {
-        // Resolve language -> find a voice for that language. If none
-        // exists on this machine (common: French requested, OS only has
-        // English voices installed), fall back to English so we still
-        // speak audibly instead of silently dropping the utterance.
-        var requestedLang = resolveLang(announcementConfig.language, displayLocale);
-        var voice = pickVoice(voices, requestedLang, announcementConfig.gender);
-        var langPrefix = requestedLang.slice(0, 2).toLowerCase();
-        var voiceMatchesLang = voice && voice.lang.toLowerCase().indexOf(langPrefix) === 0;
-        var effectiveLang = voiceMatchesLang ? requestedLang : (voice ? voice.lang : 'en-US');
-        var text = buildAnnouncement(ticketNumber, deskName, effectiveLang);
-        try {
-          var u = new SpeechSynthesisUtterance(text);
-          u.lang = effectiveLang;
-          u.rate = Math.max(0.5, Math.min(1.5, (announcementConfig.rate || 90) / 100));
-          u.pitch = 1.0;
-          u.volume = 1.0;
-          // Only assign a voice when its language matches the utterance.
-          // Mismatched voice + lang makes Chrome silently drop speak().
-          if (voiceMatchesLang) u.voice = voice;
-          u.onerror = function(ev) { console.warn('[display] tts error', ev.error, 'voice=' + (voice && voice.name), 'lang=' + effectiveLang); };
-          // DON'T cancel() before speak — on Chrome the cancel+speak race
-          // can swallow the new utterance entirely.
-          window.speechSynthesis.speak(u);
-        } catch (e) { console.warn('[display] speak threw', e); }
+      try {
+        var u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        u.rate = Math.max(0.5, Math.min(1.5, (announcementConfig.rate || 90) / 100));
+        u.volume = 1.0;
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+    function speakTicket(ticketNumber, _deskName) {
+      if (!announcementConfig.voice) return;
+      var requestedLang = resolveLang(announcementConfig.language, displayLocale);
+      var text = buildAnnouncement(ticketNumber, _deskName, requestedLang);
+      var langShort = requestedLang.slice(0, 2).toLowerCase();
+      var url = '/api/tts?text=' + encodeURIComponent(text)
+        + '&language=' + encodeURIComponent(langShort)
+        + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
+        + '&rate=' + encodeURIComponent(announcementConfig.rate || 90);
+      var audio = getTtsAudioEl();
+      audio.pause();
+      audio.src = url;
+      audio.currentTime = 0;
+      audio.play().catch(function(err) {
+        console.warn('[display] tts audio play failed, falling back to browser TTS', err && err.message);
+        speakViaBrowserFallback(text, requestedLang);
       });
     }
 

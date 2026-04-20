@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.12.94",
+  "version": "1.12.95",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",
@@ -23,9 +23,11 @@
     "posttest": "cd ../../node_modules/.pnpm/better-sqlite3@11.10.0/node_modules/better-sqlite3 && npx --yes prebuild-install --runtime=electron --target=35.7.5 --arch=x64"
   },
   "dependencies": {
+    "@sentry/electron": "^7",
     "@supabase/supabase-js": "^2.49.4",
     "better-sqlite3": "^11.10.0",
     "electron-updater": "^6.3.9",
+    "msedge-tts": "^2.0.5",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
