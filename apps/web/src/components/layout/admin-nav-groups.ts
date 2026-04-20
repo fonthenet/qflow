@@ -4,37 +4,32 @@
  * in the sidebar (pointing at the first tab) and the group's tabs
  * render inside the page via `<PageTabs>`.
  *
- * Keep the primary (first) entry stable — the sidebar link targets it.
+ * NOTE: tab data is plain JSON (no function/component refs) because
+ * these arrays are imported by server components and passed as props
+ * into a client component. React Server Components can't serialize
+ * function references across the boundary — icons are looked up on
+ * the client via PageTabs.ICONS_BY_HREF.
  */
-import type { PageTab } from './page-tabs';
-import {
-  Building2,
-  Layers,
-  Grid3X3,
-  Monitor,
-  Users,
-  Star,
-  Tablet,
-  Tv,
-  BarChart3,
-  ScrollText,
-} from 'lucide-react';
+export interface PageTab {
+  href: string;
+  label: string;
+}
 
 export const STRUCTURE_TABS: PageTab[] = [
-  { href: '/admin/offices', label: 'Locations', icon: Building2 },
-  { href: '/admin/departments', label: 'Departments', icon: Layers },
-  { href: '/admin/services', label: 'Services', icon: Grid3X3 },
-  { href: '/admin/desks', label: 'Desks', icon: Monitor },
-  { href: '/admin/staff', label: 'Team', icon: Users },
-  { href: '/admin/priorities', label: 'Priority Rules', icon: Star },
+  { href: '/admin/offices', label: 'Locations' },
+  { href: '/admin/departments', label: 'Departments' },
+  { href: '/admin/services', label: 'Services' },
+  { href: '/admin/desks', label: 'Desks' },
+  { href: '/admin/staff', label: 'Team' },
+  { href: '/admin/priorities', label: 'Priority Rules' },
 ];
 
 export const PUBLIC_SCREEN_TABS: PageTab[] = [
-  { href: '/admin/kiosk', label: 'Kiosk', icon: Tablet },
-  { href: '/admin/displays', label: 'Display', icon: Tv },
+  { href: '/admin/kiosk', label: 'Kiosk' },
+  { href: '/admin/displays', label: 'Display' },
 ];
 
 export const INSIGHTS_TABS: PageTab[] = [
-  { href: '/admin/analytics', label: 'Reports', icon: BarChart3 },
-  { href: '/admin/audit', label: 'Activity Log', icon: ScrollText },
+  { href: '/admin/analytics', label: 'Reports' },
+  { href: '/admin/audit', label: 'Activity Log' },
 ];

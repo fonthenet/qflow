@@ -2,13 +2,38 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import {
+  Building2,
+  Layers,
+  Grid3X3,
+  Monitor,
+  Users,
+  Star,
+  Tablet,
+  Tv,
+  BarChart3,
+  ScrollText,
+} from 'lucide-react';
 import { useI18n } from '@/components/providers/locale-provider';
+import type { PageTab } from './admin-nav-groups';
 
-export interface PageTab {
-  href: string;
-  label: string;
-  icon?: React.ComponentType<{ className?: string }>;
-}
+/**
+ * Icons looked up by href so tab data stays serializable when passed from
+ * a server component into this client component. Keys must match the
+ * tab `href` values declared in `admin-nav-groups.ts`.
+ */
+const ICON_BY_HREF: Record<string, React.ComponentType<{ className?: string }>> = {
+  '/admin/offices': Building2,
+  '/admin/departments': Layers,
+  '/admin/services': Grid3X3,
+  '/admin/desks': Monitor,
+  '/admin/staff': Users,
+  '/admin/priorities': Star,
+  '/admin/kiosk': Tablet,
+  '/admin/displays': Tv,
+  '/admin/analytics': BarChart3,
+  '/admin/audit': ScrollText,
+};
 
 /**
  * Horizontal tab strip used to group related admin routes under one sidebar
@@ -30,7 +55,7 @@ export function PageTabs({ tabs, allowed }: { tabs: PageTab[]; allowed?: string[
     <div className="mb-5 flex flex-wrap gap-1 rounded-xl border border-border bg-muted/40 p-1">
       {visible.map((tb) => {
         const isActive = pathname === tb.href || pathname.startsWith(tb.href + '/');
-        const Icon = tb.icon;
+        const Icon = ICON_BY_HREF[tb.href];
         return (
           <Link
             key={tb.href}
