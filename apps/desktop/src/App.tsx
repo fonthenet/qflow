@@ -223,7 +223,23 @@ export function App() {
     // Initial status
     window.qf.sync.getStatus().then(setSyncStatus);
 
-    return () => { unsub1(); unsub2(); unsub3(); };
+    // Refresh health fields (circuit breaker, auth-expired, oldest pending
+    // age) every 5s so the StatusBar banners stay honest without waiting
+    // for a status-change event.
+    const healthPoll = setInterval(() => {
+      window.qf.sync.getStatus().then((s: any) => {
+        setSyncStatus((prev) => ({
+          ...prev,
+          circuitOpen: s?.circuitOpen ?? false,
+          authExpired: s?.authExpired ?? false,
+          oldestPendingAgeMs: s?.oldestPendingAgeMs ?? null,
+          connectionQuality: s?.connectionQuality ?? prev.connectionQuality,
+          lastSyncAt: s?.lastSyncAt ?? prev.lastSyncAt,
+        }));
+      }).catch(() => {});
+    }, 5000);
+
+    return () => { unsub1(); unsub2(); unsub3(); clearInterval(healthPoll); };
   }, []);
 
   useEffect(() => {
@@ -381,6 +397,11 @@ export function App() {
             queuePaused={queuePaused}
             onStaffStatusChange={setStaffStatus}
             onQueuePausedChange={setQueuePaused}
+            onSessionPatch={(patch) => {
+              const next = { ...session, ...patch };
+              setSession(next);
+              window.qf.session.save(next).catch(() => {});
+            }}
           />
         ) : isHttpBridge ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16, padding: 40, textAlign: 'center', background: 'var(--bg)', color: 'var(--text)' }}>

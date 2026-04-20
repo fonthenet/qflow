@@ -1232,6 +1232,7 @@ interface Props {
   queuePaused: boolean;
   onStaffStatusChange: (status: 'available' | 'on_break' | 'away') => void;
   onQueuePausedChange: (paused: boolean) => void;
+  onSessionPatch?: (patch: Partial<StaffSession>) => void;
 }
 
 function statusColor(status: string): string {
@@ -1586,7 +1587,7 @@ function RemoteSupportSection({ t, locale }: { t: (key: string, values?: Record<
   );
 }
 
-export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
+export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange, onSessionPatch }: Props) {
   const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
   const BOOKING_WIDTH_KEY = 'qflo_station_booking_width';
   const SHOW_ACTIVITY_KEY = 'qflo_station_show_activity';
@@ -1942,6 +1943,34 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       if (error) console.warn('[Station] desk status sync error:', error.message);
     })();
   }, [staffStatus, queuePaused, session.desk_id, session.staff_id]);
+
+  // ── Follow admin reassignment: if the logged-in staff has been moved
+  // to a different desk via Business Admin, adopt that desk as the new
+  // session desk. Runs on mount and when config-changed realtime fires.
+  useEffect(() => {
+    if (!session.staff_id || !onSessionPatch) return;
+    let cancelled = false;
+    const syncAssignedDesk = async () => {
+      try {
+        const sb = await getSupabase();
+        const { data } = await sb
+          .from('desks')
+          .select('id, name')
+          .eq('current_staff_id', session.staff_id)
+          .limit(1)
+          .maybeSingle();
+        const assignedDeskId = (data as any)?.id ?? null;
+        if (cancelled) return;
+        if (assignedDeskId && assignedDeskId !== session.desk_id) {
+          const assignedDeskName = (data as any)?.name ?? '';
+          onSessionPatch({ desk_id: assignedDeskId, desk_name: assignedDeskName } as any);
+        }
+      } catch { /* best-effort */ }
+    };
+    void syncAssignedDesk();
+    const unsub = (window.qf as any).sync?.onConfigChanged?.(() => { void syncAssignedDesk(); });
+    return () => { cancelled = true; unsub?.(); };
+  }, [session.staff_id, session.desk_id, onSessionPatch]);
 
   // ── Listen for desk status changes from other platforms ─────────
   useEffect(() => {
