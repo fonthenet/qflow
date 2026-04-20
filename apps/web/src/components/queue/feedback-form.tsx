@@ -167,9 +167,9 @@ export function FeedbackForm({
 
   if (isCheckingExisting) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
-        <div className="w-full max-w-sm rounded-[34px] border border-white/10 bg-slate-950/88 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
-          <p className="text-sm font-medium text-slate-300">{t('Loading...')}</p>
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.08),_transparent_40%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] px-4 py-10 dark:bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
+        <div className="w-full max-w-sm rounded-[34px] border border-slate-200 bg-white/90 p-7 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-slate-950/88 dark:shadow-[0_30px_110px_rgba(15,23,42,0.65)]">
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{t('Loading...')}</p>
         </div>
       </div>
     );
@@ -177,29 +177,29 @@ export function FeedbackForm({
 
   if (isSubmitted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.20),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
-        <div className="w-full max-w-sm rounded-[34px] border border-white/10 bg-slate-950/88 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-emerald-500/12 text-emerald-200">
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.08),_transparent_40%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] px-4 py-10 dark:bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.20),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
+        <div className="w-full max-w-sm rounded-[34px] border border-slate-200 bg-white/90 p-7 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-slate-950/88 dark:shadow-[0_30px_110px_rgba(15,23,42,0.65)]">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-200">
             <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
 
-          <h1 className="mt-5 text-2xl font-semibold text-white">{t('Visit complete')}</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-300">
+          <h1 className="mt-5 text-2xl font-semibold text-slate-900 dark:text-white">{t('Visit complete')}</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
             {t('Thanks for sharing your feedback. Your visit on ticket {number} is all wrapped up.', {
               number: ticket.ticket_number,
             })}
           </p>
 
-          <div className="mt-4 rounded-[18px] border border-white/10 bg-white/5 px-3.5 py-2.5">
+          <div className="mt-4 rounded-[18px] border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-white/10 dark:bg-white/5">
             <div className="flex items-center justify-between gap-3">
-              <p className={`text-[10px] font-semibold text-slate-400 ${compactPillClass}`}>{t('Your rating')}</p>
+              <p className={`text-[10px] font-semibold text-slate-500 dark:text-slate-400 ${compactPillClass}`}>{t('Your rating')}</p>
               <div className="flex justify-center gap-0.5">
               {[1, 2, 3, 4, 5].map((star) => (
                 <svg
                   key={star}
-                  className={`h-4 w-4 ${star <= (existingRating ?? rating) ? 'text-amber-300' : 'text-slate-600'}`}
+                  className={`h-4 w-4 ${star <= (existingRating ?? rating) ? 'text-amber-500 dark:text-amber-300' : 'text-slate-300 dark:text-slate-600'}`}
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
@@ -214,7 +214,7 @@ export function FeedbackForm({
             type="button"
             onClick={() => void handleFinish()}
             disabled={isFinishing}
-            className="mt-6 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 disabled:opacity-60"
+            className="mt-6 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
           >
             {isFinishing ? t('Closing...') : t('Done')}
           </button>
@@ -226,27 +226,27 @@ export function FeedbackForm({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
+    <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.08),_transparent_40%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-8">
-        <div className="rounded-[34px] border border-white/10 bg-slate-950/80 p-7 shadow-[0_30px_110px_rgba(15,23,42,0.55)] backdrop-blur">
+        <div className="rounded-[34px] border border-slate-200 bg-white/90 p-7 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-slate-950/80 dark:shadow-[0_30px_110px_rgba(15,23,42,0.55)]">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className={`text-xs font-semibold text-slate-400 ${compactLabelClass}`}>{officeName}</p>
-              <h1 className="mt-3 whitespace-nowrap text-3xl font-semibold tracking-tight text-white">{t('Thanks for visiting')}</h1>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
+              <p className={`text-xs font-semibold text-slate-500 dark:text-slate-400 ${compactLabelClass}`}>{officeName}</p>
+              <h1 className="mt-3 whitespace-nowrap text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{t('Thanks for visiting')}</h1>
+              <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
                 {t('Ticket {number} is complete. If you have a moment, tell us how this visit felt.', {
                   number: ticket.ticket_number,
                 })}
               </p>
             </div>
-            <div className={`rounded-full bg-emerald-500/12 px-3 py-1 text-xs font-semibold text-emerald-100 ${compactPillClass}`}>
+            <div className={`rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-100 ${compactPillClass}`}>
               {t('Complete')}
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8">
-            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-              <p className={`text-xs font-semibold text-slate-400 ${compactMetaClass}`}>{t('Your rating')}</p>
+            <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/5">
+              <p className={`text-xs font-semibold text-slate-500 dark:text-slate-400 ${compactMetaClass}`}>{t('Your rating')}</p>
               <div className="mt-5 flex justify-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -261,8 +261,8 @@ export function FeedbackForm({
                     <svg
                       className={`h-11 w-11 transition-colors ${
                         star <= (hoveredRating || rating)
-                          ? 'text-amber-300 drop-shadow-[0_6px_14px_rgba(252,211,77,0.2)]'
-                          : 'text-slate-700'
+                          ? 'text-amber-500 drop-shadow-[0_6px_14px_rgba(252,211,77,0.35)] dark:text-amber-300 dark:drop-shadow-[0_6px_14px_rgba(252,211,77,0.2)]'
+                          : 'text-slate-300 dark:text-slate-700'
                       }`}
                       fill="currentColor"
                       viewBox="0 0 24 24"
@@ -274,19 +274,19 @@ export function FeedbackForm({
               </div>
 
               {ratingLabel ? (
-                <p className="mt-4 text-center text-sm font-semibold text-slate-200">{ratingLabel}</p>
+                <p className="mt-4 text-center text-sm font-semibold text-slate-700 dark:text-slate-200">{ratingLabel}</p>
               ) : null}
             </div>
 
-            <div className="mt-4 rounded-[28px] border border-white/10 bg-white/5 p-5">
-              <label htmlFor="comment" className="text-sm font-semibold text-white">
+            <div className="mt-4 rounded-[28px] border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/5">
+              <label htmlFor="comment" className="text-sm font-semibold text-slate-900 dark:text-white">
                 {t('Anything we should know?')}
               </label>
-              <p className="mt-1 text-sm text-slate-300">{t('Optional notes help the team improve the next visit.')}</p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('Optional notes help the team improve the next visit.')}</p>
               <textarea
                 id="comment"
                 rows={4}
-                className="mt-4 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-base text-white outline-none transition-colors placeholder:text-slate-500 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                className="mt-4 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-300/40 dark:focus:ring-sky-300/20"
                 placeholder={t('Share what went well or what could be smoother...')}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -294,7 +294,7 @@ export function FeedbackForm({
             </div>
 
             {error ? (
-              <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              <div className="mt-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
                 {error}
               </div>
             ) : null}
@@ -303,7 +303,7 @@ export function FeedbackForm({
               <button
                 type="submit"
                 disabled={rating === 0 || isSubmitting}
-                className="w-full rounded-2xl bg-white px-6 py-4 text-base font-semibold text-slate-950 shadow-[0_18px_45px_rgba(255,255,255,0.10)] transition hover:bg-slate-100 active:scale-[0.99] disabled:opacity-40"
+                className="w-full rounded-2xl bg-slate-900 px-6 py-4 text-base font-semibold text-white shadow-[0_18px_45px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 active:scale-[0.99] disabled:opacity-40 dark:bg-white dark:text-slate-950 dark:shadow-[0_18px_45px_rgba(255,255,255,0.10)] dark:hover:bg-slate-100"
               >
                 {isSubmitting ? t('Submitting...') : t('Submit feedback')}
               </button>
@@ -312,7 +312,7 @@ export function FeedbackForm({
                 type="button"
                 onClick={() => void handleFinish()}
                 disabled={isFinishing}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm font-semibold text-slate-100 transition hover:bg-white/8 disabled:opacity-60"
+                className="w-full rounded-2xl border border-slate-200 bg-white/80 px-6 py-4 text-sm font-semibold text-slate-700 transition hover:bg-white disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/8"
               >
                 {isFinishing ? t('Closing...') : t('Finish without feedback')}
               </button>

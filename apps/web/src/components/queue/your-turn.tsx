@@ -56,9 +56,9 @@ function QueueActionPill({
 }) {
   const { t } = useI18n();
   const toneClass = {
-    secondary: 'border-white/12 bg-white/10 text-white hover:bg-white/14',
-    danger: 'border-rose-200/20 bg-rose-500/15 text-rose-50 hover:bg-rose-500/22',
-    primary: 'border-white/12 bg-white text-slate-950 hover:bg-slate-100',
+    secondary: 'border-slate-200 bg-white/80 text-slate-700 hover:bg-white dark:border-white/12 dark:bg-white/10 dark:text-white dark:hover:bg-white/14',
+    danger: 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-200/20 dark:bg-rose-500/15 dark:text-rose-50 dark:hover:bg-rose-500/22',
+    primary: 'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-white/12 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100',
   }[tone];
 
   return (
@@ -521,22 +521,25 @@ export function YourTurn({
     }
   }, [sandboxMode, calledAt, ticketNumber, ticket.id, deskName]);
 
-  const backgroundClass = {
-    green: 'from-[#1f8758] via-[#1a6f49] to-[#0d4d32]',
-    yellow: 'from-[#f1b72b] via-[#dca126] to-[#b97613]',
-    red: 'from-[#b42828] via-[#8e1f1f] to-[#5f1414]',
+  // Phase color is reserved for the countdown ring + icon — the page background
+  // stays neutral (light or dark) so the urgency cue is focused and not a
+  // full-viewport flash.
+  const phaseAccent = {
+    green: '#10b981',
+    yellow: '#f59e0b',
+    red: '#f43f5e',
   }[phase];
 
   const ringClass = {
-    green: 'bg-white/12 shadow-[0_0_80px_rgba(16,185,129,0.28)]',
-    yellow: 'bg-white/14 shadow-[0_0_80px_rgba(251,191,36,0.28)]',
-    red: 'bg-white/14 shadow-[0_0_95px_rgba(244,63,94,0.38)]',
+    green: 'bg-emerald-100/70 shadow-[0_0_80px_rgba(16,185,129,0.25)] dark:bg-emerald-400/15 dark:shadow-[0_0_80px_rgba(16,185,129,0.28)]',
+    yellow: 'bg-amber-100/80 shadow-[0_0_80px_rgba(251,191,36,0.25)] dark:bg-amber-400/15 dark:shadow-[0_0_80px_rgba(251,191,36,0.28)]',
+    red: 'bg-rose-100/80 shadow-[0_0_90px_rgba(244,63,94,0.30)] dark:bg-rose-400/15 dark:shadow-[0_0_95px_rgba(244,63,94,0.38)]',
   }[phase];
 
   const countdownCircleClass = {
-    green: 'border-white/30 bg-white/15 text-white',
-    yellow: 'border-white/30 bg-white/15 text-white',
-    red: 'border-white/30 bg-white/15 text-white',
+    green: 'border-emerald-400/60 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-100',
+    yellow: 'border-amber-400/60 bg-amber-50 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100',
+    red: 'border-rose-400/60 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-100',
   }[phase];
 
   const message =
@@ -552,28 +555,31 @@ export function YourTurn({
   const compactTimerClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.3em]';
 
   return (
-    <div className={`relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-b ${backgroundClass}`}>
+    <div
+      className="relative flex min-h-screen flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.08),_transparent_42%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]"
+      style={{ ['--phase-accent' as string]: phaseAccent }}
+    >
       {showBuzzFlash ? (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
-          <div className="text-center">
-            <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-            <p className="mt-3 text-xl font-bold text-white">{t('Go to your desk now')}</p>
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-full border border-rose-400/30 bg-rose-500/90 px-5 py-2.5 text-white shadow-[0_10px_40px_rgba(244,63,94,0.45)] backdrop-blur">
+            <span className="text-lg" aria-hidden>📳</span>
+            <p className="text-sm font-semibold tracking-wide">{t('Go to your desk now')}</p>
           </div>
         </div>
       ) : null}
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),_transparent_58%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.05),_transparent_58%)] dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),_transparent_58%)]" />
 
       <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
-        <div className="flex items-start justify-between gap-3 text-white">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className={`text-xs font-bold text-white/80 ${compactLabelClass}`}>{officeName}</p>
-            <p className="mt-1 text-sm font-medium text-white/65">{serviceName}</p>
-            <p className="mt-0.5 text-xs text-white/50">{syncLabel}</p>
+            <p className={`text-xs font-bold text-slate-600 dark:text-white/80 ${compactLabelClass}`}>{officeName}</p>
+            <p className="mt-1 text-sm font-medium text-slate-500 dark:text-white/65">{serviceName}</p>
+            <p className="mt-0.5 text-xs text-slate-400 dark:text-white/50">{syncLabel}</p>
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            <div className={`rounded-full border border-white/15 bg-white/14 px-4 py-1.5 text-xs font-semibold text-white/88 ${compactPillClass}`}>
+            <div className={`rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold text-slate-700 dark:border-white/15 dark:bg-white/14 dark:text-white/88 ${compactPillClass}`}>
               {t('Ticket {number}', { number: ticketNumber })}
             </div>
             <div className="flex items-center gap-2">
@@ -591,13 +597,13 @@ export function YourTurn({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-1 flex-col items-center justify-center text-center text-white">
+        <div className="mt-4 flex flex-1 flex-col items-center justify-center text-center text-slate-900 dark:text-white">
           <div className="relative flex h-32 w-32 items-center justify-center sm:h-36 sm:w-36">
             <div className={`absolute inset-0 rounded-full ${ringClass} ${bellShouldRipple && phase === 'red' ? 'animate-pulse' : ''}`} />
-            <div className={`absolute inset-4 rounded-full bg-white/12 ${bellShouldRipple ? 'animate-ping [animation-duration:2.4s]' : ''}`} />
-            <div className="absolute inset-9 rounded-full bg-white/18" />
-            <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-white/22 shadow-[0_16px_50px_rgba(15,23,42,0.2)] sm:h-24 sm:w-24">
-              <svg className="h-11 w-11 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+            <div className={`absolute inset-4 rounded-full bg-white/60 dark:bg-white/12 ${bellShouldRipple ? 'animate-ping [animation-duration:2.4s]' : ''}`} />
+            <div className="absolute inset-9 rounded-full bg-white/70 dark:bg-white/18" />
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-[0_12px_30px_rgba(15,23,42,0.12)] sm:h-24 sm:w-24 dark:bg-white/22 dark:shadow-[0_16px_50px_rgba(15,23,42,0.2)]" style={{ color: phaseAccent }}>
+              <svg className="h-11 w-11" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
             </div>
@@ -606,7 +612,7 @@ export function YourTurn({
           <h2 className="mt-6 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">{t('Go to {deskName}', { deskName })}</h2>
 
           {recallCount > 0 ? (
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-white/15 dark:bg-black/12 dark:text-white">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
@@ -614,56 +620,56 @@ export function YourTurn({
             </div>
           ) : null}
 
-          <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border backdrop-blur sm:h-44 sm:w-44 ${countdownCircleClass}`}>
+          <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border-2 backdrop-blur sm:h-44 sm:w-44 ${countdownCircleClass}`}>
             <p className="mt-2 text-5xl font-black tabular-nums sm:text-6xl">{countdown}</p>
-            <p className={`mt-2 text-xs font-semibold text-white/70 ${compactTimerClass}`}>
+            <p className={`mt-2 text-xs font-semibold opacity-75 ${compactTimerClass}`}>
               {countdown === 0 ? t('Expired') : t('Seconds')}
             </p>
           </div>
 
-          <p className="mt-6 whitespace-nowrap text-base text-white/80">{message}</p>
+          <p className="mt-6 whitespace-nowrap text-base text-slate-600 dark:text-white/80">{message}</p>
 
-          <div className="mt-7 w-full rounded-[28px] border border-white/12 bg-black/12 p-5 text-left shadow-[0_25px_90px_rgba(2,6,23,0.2)] backdrop-blur">
+          <div className="mt-7 w-full rounded-[28px] border border-slate-200 bg-white/85 p-5 text-left shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur dark:border-white/12 dark:bg-black/12 dark:shadow-[0_25px_90px_rgba(2,6,23,0.2)]">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15">
-                  <Info className="h-5 w-5 text-white/80" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-white/15">
+                  <Info className="h-5 w-5 text-slate-600 dark:text-white/80" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-white/55">{t('Where to go')}</p>
-                  <p className="text-base font-semibold text-white">{deskName}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-white/55">{t('Where to go')}</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{deskName}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15">
-                  <Contact className="h-5 w-5 text-white/80" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-white/15">
+                  <Contact className="h-5 w-5 text-slate-600 dark:text-white/80" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-white/55">{t('What to show')}</p>
-                  <p className="text-base font-semibold text-white">{t('Ticket {number}', { number: ticketNumber })}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-white/55">{t('What to show')}</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{t('Ticket {number}', { number: ticketNumber })}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15">
-                  <Clock className="h-5 w-5 text-white/80" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-white/15">
+                  <Clock className="h-5 w-5 text-slate-600 dark:text-white/80" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-white/55">{t('What to do now')}</p>
-                  <p className="text-base font-semibold text-white">{t('Walk straight to the desk while the countdown is active.')}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-white/55">{t('What to do now')}</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{t('Walk straight to the desk while the countdown is active.')}</p>
                 </div>
               </div>
             </div>
           </div>
 
           {stopError ? (
-            <div className="mt-4 w-full rounded-2xl border border-rose-200/20 bg-rose-500/14 px-4 py-3 text-sm text-rose-50">
+            <div className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-200/20 dark:bg-rose-500/14 dark:text-rose-50">
               {stopError}
             </div>
           ) : null}
         </div>
 
         <div className="pt-6 text-center">
-          <p className={`text-xs text-white/42 ${compactFooterClass}`}>POWERED BY QFLO</p>
+          <p className={`text-xs text-slate-400 dark:text-white/42 ${compactFooterClass}`}>POWERED BY QFLO</p>
         </div>
       </div>
     </div>

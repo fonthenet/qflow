@@ -1011,14 +1011,14 @@ export function QueueStatus({
                   {t('Get Messenger notifications')}
                 </span>
               </a>
-              <p className="mt-1.5 text-center text-xs text-slate-400">
-                {t('If prompted, send:')} <strong className="text-blue-300">JOIN {ticket.qr_token}</strong>
+              <p className="mt-1.5 text-center text-xs text-slate-600 dark:text-slate-400">
+                {t('If prompted, send:')} <strong className="text-blue-600 dark:text-blue-300">JOIN {ticket.qr_token}</strong>
               </p>
             </div>
           )}
 
           {sandboxMode ? (
-            <div className="mt-4 rounded-2xl border border-sky-200/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            <div className="mt-4 rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-200/20 dark:bg-sky-500/10 dark:text-sky-100">
               {t('Sandbox preview. Customer editing and live alert setup stay disabled here so the page never touches real data.')}
             </div>
           ) : (
