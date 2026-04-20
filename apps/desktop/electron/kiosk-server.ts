@@ -906,7 +906,10 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     kiosk_config: kioskConfig,
     display_config: {
       announcement_sound_enabled: organizationSettings.announcement_sound_enabled ?? true,
-      voice_announcements: organizationSettings.voice_announcements ?? false,
+      // Default voice announcements ON — customers expect a human voice to
+      // read the ticket number when it's called. Operators can still disable
+      // it in Settings > Display.
+      voice_announcements: organizationSettings.voice_announcements ?? true,
       voice_gender: organizationSettings.voice_gender || 'female',
       voice_language: organizationSettings.voice_language || 'auto',
       voice_rate: organizationSettings.voice_rate ?? 90,
@@ -2335,34 +2338,55 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
     // ── Audio unlock — required by Chrome autoplay policy ──
     // speechSynthesis + AudioContext don't play on kiosk displays until a
-    // user gesture happens. Hide the overlay on first tap, prime both APIs
-    // with silent warmup calls, and remember the unlock for the session.
+    // user gesture happens. Hide the overlay on first tap, prime both APIs,
+    // and play an audible confirmation so the operator immediately knows
+    // audio is working (before any ticket has been called).
     var audioUnlocked = false;
     function unlockAudio() {
       if (audioUnlocked) return;
       audioUnlocked = true;
       try {
-        // Warm up AudioContext — suspended autoplay contexts need .resume().
-        var ctx = (window.__displayAudioCtx =
-          window.__displayAudioCtx || new (window.AudioContext || window.webkitAudioContext)());
-        if (ctx.state === 'suspended') ctx.resume();
+        var ctx = getAudioContext();
+        if (ctx && ctx.state === 'suspended') ctx.resume();
       } catch (e) {}
       try {
-        // Warm up speechSynthesis — a short, silent utterance primes the
-        // voice pipeline so subsequent speak() calls fire without a gesture.
         if ('speechSynthesis' in window) {
           window.speechSynthesis.cancel();
-          var u = new SpeechSynthesisUtterance(' ');
-          u.volume = 0;
-          u.rate = 1;
-          window.speechSynthesis.speak(u);
+          // Prime silently, THEN play the audible confirmation. Two-step
+          // avoids some browsers swallowing the first real utterance.
+          var warm = new SpeechSynthesisUtterance(' ');
+          warm.volume = 0;
+          warm.rate = 1;
+          window.speechSynthesis.speak(warm);
         }
       } catch (e) {}
       var overlay = document.getElementById('audio-unlock');
       if (overlay) overlay.style.display = 'none';
+      // Audible confirmation — the operator hears exactly what a ticket
+      // call will sound like, so any subsequent silence is a real bug and
+      // not just the unlock being forgotten.
+      setTimeout(function() { playChime(); }, 100);
+      setTimeout(function() {
+        // Speak a short hello in the display language. Once this is heard,
+        // the voice pipeline is primed for real ticket calls.
+        try {
+          if (!('speechSynthesis' in window)) return;
+          var lang = resolveLang(announcementConfig.language, displayLocale);
+          var hello = lang.slice(0, 2) === 'ar' ? 'تم تفعيل الإعلانات'
+            : lang.slice(0, 2) === 'fr' ? 'Annonces activées'
+            : 'Announcements ready';
+          loadVoices().then(function(voices) {
+            var voice = pickVoice(voices, lang, announcementConfig.gender);
+            var u = new SpeechSynthesisUtterance(hello);
+            u.lang = lang;
+            u.rate = 0.95;
+            u.volume = 1;
+            if (voice) u.voice = voice;
+            window.speechSynthesis.speak(u);
+          });
+        } catch (e) {}
+      }, 900);
     }
-    // The overlay itself is clickable. Any tap/key press anywhere also
-    // unlocks — useful if the overlay was dismissed by CSS on a remote view.
     var unlockEl = document.getElementById('audio-unlock');
     if (unlockEl) unlockEl.addEventListener('click', unlockAudio);
     document.addEventListener('click', unlockAudio, { once: true });
@@ -2371,10 +2395,25 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
     // Two-tone chime — warmer than a single 800Hz beep. Plays briefly before
     // the voice announcement so deaf / hard-of-hearing customers also notice.
+    //
+    // Reuses a single persistent AudioContext (stored on window). Chrome
+    // suspends newly-created contexts when autoplay is blocked, so the
+    // previous approach of new-AudioContext-per-chime often produced one
+    // successful tone and then silence. The unlock handler below calls
+    // .resume() on this shared context once.
+    function getAudioContext() {
+      var w = window;
+      if (!w.__displayAudioCtx) {
+        try { w.__displayAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      }
+      return w.__displayAudioCtx || null;
+    }
     function playChime() {
       if (!announcementConfig.sound) return;
+      var ctx = getAudioContext();
+      if (!ctx) return;
       try {
-        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume();
         [880, 660].forEach(function(freq, i) {
           var osc = ctx.createOscillator();
           var gain = ctx.createGain();
@@ -2436,23 +2475,15 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (f === 'fr') return 'fr-FR';
       return 'en-US';
     }
-    function buildAnnouncement(ticketNumber, deskName, lang) {
+    // Keep the announcement short — just the ticket number. Extra words
+    // ("please proceed to desk 1") add latency and noise on a busy display;
+    // the on-screen call overlay already shows where to go.
+    function buildAnnouncement(ticketNumber, _deskName, lang) {
       var l = lang.slice(0, 2).toLowerCase();
       var tn = String(ticketNumber || '').trim();
-      var dn = String(deskName || '').trim();
-      if (l === 'ar') {
-        return dn
-          ? 'التذكرة ' + tn + '، توجه إلى ' + dn + '.'
-          : 'التذكرة ' + tn + '.';
-      }
-      if (l === 'fr') {
-        return dn
-          ? 'Ticket ' + tn + ', veuillez vous rendre au ' + dn + '.'
-          : 'Ticket ' + tn + '.';
-      }
-      return dn
-        ? 'Ticket ' + tn + ', please proceed to ' + dn + '.'
-        : 'Ticket ' + tn + '.';
+      if (l === 'ar') return 'التذكرة رقم ' + tn;
+      if (l === 'fr') return 'Ticket numéro ' + tn;
+      return 'Ticket number ' + tn;
     }
     function speakTicket(ticketNumber, deskName) {
       if (!announcementConfig.voice) return;
