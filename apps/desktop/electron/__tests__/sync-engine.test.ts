@@ -4,6 +4,10 @@ import { createTestDB } from './helpers';
 
 // Mock electron safeStorage
 vi.mock('electron', () => ({
+  app: {
+    isPackaged: true,
+    getPath: () => '/tmp',
+  },
   safeStorage: {
     isEncryptionAvailable: () => false,
     decryptString: () => '',

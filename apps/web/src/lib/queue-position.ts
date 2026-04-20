@@ -128,7 +128,7 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
 
   let avgServiceTime = 5; // default 5 min per ticket
   if (recentServed && recentServed.length > 0) {
-    const totalMinutes = recentServed.reduce((sum, t) => {
+    const totalMinutes = recentServed.reduce((sum: number, t: any) => {
       const start = new Date(t.serving_started_at).getTime();
       const end = new Date(t.completed_at).getTime();
       return sum + (end - start) / 60000;
