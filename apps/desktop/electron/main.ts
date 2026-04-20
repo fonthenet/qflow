@@ -282,9 +282,14 @@ function createWindow() {
           `script-src 'self' 'unsafe-inline'; ` +
           `style-src 'self' 'unsafe-inline'; ` +
           `img-src 'self' data: https: blob:; ` +
-          `connect-src 'self' https://${supabaseDomain} wss://${supabaseDomain} ${CONFIG.CLOUD_URL} http://localhost:*; ` +
+          // connect-src lists BOTH localhost and 127.0.0.1 — the renderer's
+          // fetch to /api/tts uses 127.0.0.1 (loopback, doesn't hit DNS),
+          // and browsers treat the two as distinct origins for CSP.
+          `connect-src 'self' https://${supabaseDomain} wss://${supabaseDomain} ${CONFIG.CLOUD_URL} http://localhost:* http://127.0.0.1:*; ` +
           `font-src 'self' data:; ` +
-          `media-src 'self' data:;`
+          // Same reasoning for media-src (<audio>) + blob: for blob-URL
+          // playback from in-memory audio fetched via blob().
+          `media-src 'self' data: blob: http://localhost:* http://127.0.0.1:*;`
         ],
       },
     });
@@ -1022,6 +1027,43 @@ function setupIPC() {
     return { ok: true, queued: true };
   });
 
+  // Customer draft cache — local-only safety net for the Clients panel's
+  // rich-text "customer file" + notes fields. The UI writes here on every
+  // keystroke debounce alongside the Supabase write, and clears the row once
+  // cloud save succeeds. If Supabase is unreachable (offline, token expired)
+  // the draft survives a Station restart.
+  ipcMain.handle('customer-drafts:save', (_e, customerId: string, notes: string | null, customerFile: string | null) => {
+    if (!customerId || typeof customerId !== 'string') return { error: 'invalid_customer' };
+    try {
+      db.prepare(`
+        INSERT INTO customer_drafts (customer_id, notes, customer_file, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(customer_id) DO UPDATE SET
+          notes = excluded.notes,
+          customer_file = excluded.customer_file,
+          updated_at = excluded.updated_at
+      `).run(customerId, notes ?? null, customerFile ?? null, Date.now());
+      return { ok: true };
+    } catch (e: any) {
+      return { error: e?.message || 'draft_save_failed' };
+    }
+  });
+
+  ipcMain.handle('customer-drafts:get', (_e, customerId: string) => {
+    if (!customerId || typeof customerId !== 'string') return null;
+    try {
+      return db.prepare('SELECT notes, customer_file, updated_at FROM customer_drafts WHERE customer_id = ?').get(customerId) || null;
+    } catch { return null; }
+  });
+
+  ipcMain.handle('customer-drafts:clear', (_e, customerId: string) => {
+    if (!customerId || typeof customerId !== 'string') return { error: 'invalid_customer' };
+    try {
+      db.prepare('DELETE FROM customer_drafts WHERE customer_id = ?').run(customerId);
+      return { ok: true };
+    } catch (e: any) { return { error: e?.message || 'draft_clear_failed' }; }
+  });
+
   ipcMain.handle('db:query', (_e, table: string, officeIds: string[]) => {
     if (!officeIds?.length || !Array.isArray(officeIds)) return [];
     // Strict whitelist — only allowed tables can be queried
@@ -1372,6 +1414,10 @@ function setupIPC() {
     await syncEngine?.syncNow();
     await syncEngine?.pullLatest();
     // pullLatest already fires onDataPulled -> notifyDisplays
+  });
+
+  ipcMain.handle('sync:refresh-config', async () => {
+    await syncEngine?.refreshConfig();
   });
 
   ipcMain.handle('sync:pending-details', () => {
@@ -2267,6 +2313,11 @@ app.whenReady().then(async () => {
       }
     },
   );
+  syncEngine.setConfigChangedCallback(() => {
+    mainWindow?.webContents.send('config:changed');
+    notifyDisplays({ type: 'config_changed', timestamp: new Date().toISOString() });
+    notifyStationClients({ type: 'config_changed' });
+  });
   syncEngine.start();
 
   // ── Startup token validation ──────────────────────────────────────
