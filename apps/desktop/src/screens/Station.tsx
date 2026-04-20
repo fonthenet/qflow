@@ -1901,23 +1901,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       : queuePaused ? 'on_break'
       : 'open';
 
-    const update: Record<string, unknown> = { status: deskStatus };
-    // When going available/open, also claim the desk for this staff
-    if (deskStatus === 'open' && session.staff_id) {
-      update.current_staff_id = session.staff_id;
-    }
+    (async () => {
+      const sb = await getSupabase();
+      const update: Record<string, unknown> = { status: deskStatus };
 
-    // Update local SQLite so mobile app (polling via HTTP) sees the change
-    window.qf.db.updateDesk?.(session.desk_id, update).catch(() => {});
+      // Only claim current_staff_id when going open, AND only if the desk is
+      // currently unassigned or already held by this staff. Otherwise an admin
+      // may have just reassigned this desk to someone else via Business Admin,
+      // and our auto-claim would silently stomp that change on every refresh.
+      if (deskStatus === 'open' && session.staff_id) {
+        const { data: deskRow } = await sb
+          .from('desks')
+          .select('current_staff_id')
+          .eq('id', session.desk_id)
+          .maybeSingle();
+        const currentOwner = (deskRow as any)?.current_staff_id ?? null;
+        if (currentOwner == null || currentOwner === session.staff_id) {
+          update.current_staff_id = session.staff_id;
+        }
+      }
 
-    getSupabase().then((sb) => {
-      sb.from('desks')
+      // Update local SQLite so mobile app (polling via HTTP) sees the change
+      window.qf.db.updateDesk?.(session.desk_id, update).catch(() => {});
+
+      const { error } = await sb
+        .from('desks')
         .update(update)
-        .eq('id', session.desk_id)
-        .then(({ error }: { error: any }) => {
-          if (error) console.warn('[Station] desk status sync error:', error.message);
-        });
-    });
+        .eq('id', session.desk_id);
+      if (error) console.warn('[Station] desk status sync error:', error.message);
+    })();
   }, [staffStatus, queuePaused, session.desk_id, session.staff_id]);
 
   // ── Listen for desk status changes from other platforms ─────────
