@@ -784,6 +784,7 @@ async function handleTts(url: URL, res: http.ServerResponse) {
   const text = url.searchParams.get('text');
   const language = (url.searchParams.get('language') ?? 'en').toLowerCase();
   const gender = (url.searchParams.get('gender') ?? 'female').toLowerCase();
+  const voiceId = url.searchParams.get('voice'); // explicit Edge voice id
   const rate = Math.max(60, Math.min(130, Number(url.searchParams.get('rate') ?? 90)));
   if (!text) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -795,7 +796,7 @@ async function handleTts(url: URL, res: http.ServerResponse) {
     res.end(JSON.stringify({ error: 'text too long' }));
     return;
   }
-  const voice = pickTtsVoice(language, gender);
+  const voice = pickTtsVoice(language, gender, voiceId);
   const audio = await getTtsAudio(text, voice, rate);
   if (!audio) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -955,6 +956,10 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
       voice_gender: organizationSettings.voice_gender || 'female',
       voice_language: organizationSettings.voice_language || 'auto',
       voice_rate: organizationSettings.voice_rate ?? 90,
+      // Explicit voice id (e.g. 'fr-FR-VivienneMultilingualNeural') chosen
+      // by the admin in Settings > Display. When absent, the server falls
+      // back to the catalog default for (voice_gender, voice_language).
+      voice_id: organizationSettings.voice_id || null,
     },
     default_check_in_mode: organizationSettings.default_check_in_mode || 'hybrid',
     whatsapp_phone: whatsappPhone,
@@ -2378,6 +2383,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       gender: 'female',
       language: 'auto',
       rate: 90,
+      voiceId: null,
     };
     var displayLocale = 'en';
 
@@ -2421,7 +2427,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           var url = '/api/tts?text=' + encodeURIComponent(hello)
             + '&language=' + encodeURIComponent(l2)
             + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
-            + '&rate=' + encodeURIComponent(announcementConfig.rate || 90);
+            + '&rate=' + encodeURIComponent(announcementConfig.rate || 90)
+            + (announcementConfig.voiceId ? '&voice=' + encodeURIComponent(announcementConfig.voiceId) : '');
           var audio = getTtsAudioEl();
           audio.src = url;
           audio.play().catch(function(err) {
@@ -2552,7 +2559,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       var url = '/api/tts?text=' + encodeURIComponent(text)
         + '&language=' + encodeURIComponent(langShort)
         + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
-        + '&rate=' + encodeURIComponent(announcementConfig.rate || 90);
+        + '&rate=' + encodeURIComponent(announcementConfig.rate || 90)
+        + (announcementConfig.voiceId ? '&voice=' + encodeURIComponent(announcementConfig.voiceId) : '');
       console.info('[display] speaking ticket', ticketNumber, 'via', url);
       var audio = new Audio(url);
       audio.preload = 'auto';
@@ -2825,6 +2833,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           announcementConfig.gender = officeData.display_config.voice_gender === 'male' ? 'male' : 'female';
           announcementConfig.language = officeData.display_config.voice_language || 'auto';
           announcementConfig.rate = officeData.display_config.voice_rate || 90;
+          announcementConfig.voiceId = officeData.display_config.voice_id || null;
         }
         if (officeData.locale) displayLocale = officeData.locale;
       } catch(e) {}

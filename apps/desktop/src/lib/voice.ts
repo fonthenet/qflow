@@ -25,6 +25,9 @@ export interface VoiceSettings {
   language: VoiceLang;
   /** 60-130 (stored as percentage). 100 = normal rate. */
   rate: number;
+  /** Explicit Edge voice id (e.g. 'fr-FR-VivienneMultilingualNeural').
+   *  When set, overrides gender+language. */
+  voiceId?: string | null;
 }
 
 /** Read settings from an office_settings-like object with sensible defaults. */
@@ -35,6 +38,7 @@ export function parseVoiceSettings(source: Record<string, unknown> | null | unde
     gender: (s.voice_gender === 'male' ? 'male' : 'female'),
     language: (['auto', 'ar', 'fr', 'en'].includes(String(s.voice_language ?? 'auto')) ? s.voice_language : 'auto') as VoiceLang,
     rate: typeof s.voice_rate === 'number' ? Math.max(60, Math.min(130, s.voice_rate)) : 90,
+    voiceId: typeof s.voice_id === 'string' && s.voice_id ? s.voice_id : null,
   };
 }
 
@@ -145,7 +149,8 @@ async function speakViaKioskServer(text: string, lang: string, settings: VoiceSe
     + `?text=${encodeURIComponent(text)}`
     + `&language=${encodeURIComponent(langShort)}`
     + `&gender=${encodeURIComponent(settings.gender)}`
-    + `&rate=${encodeURIComponent(settings.rate)}`;
+    + `&rate=${encodeURIComponent(settings.rate)}`
+    + (settings.voiceId ? `&voice=${encodeURIComponent(settings.voiceId)}` : '');
 
   // Pointing <audio>.src directly at the kiosk-server URL (instead of a
   // blob URL) keeps the playback request in the same tick — no await
@@ -187,15 +192,13 @@ async function speakViaMainProcess(text: string, lang: string, settings: VoiceSe
       language: lang.slice(0, 2).toLowerCase(),
       gender: settings.gender,
       rate: settings.rate,
+      voiceId: settings.voiceId ?? null,
     });
     if (res?.ok) {
-      const langShort = lang.slice(0, 2).toLowerCase();
-      const voiceName = {
-        fr: { female: 'Vivienne (FR)', male: 'Remy (FR)' },
-        ar: { female: 'Amina (DZ)', male: 'Ismael (DZ)' },
-        en: { female: 'Aria (EN)', male: 'Guy (EN)' },
-      }[langShort as 'fr' | 'ar' | 'en']?.[settings.gender] ?? res.voice ?? `${langShort}/${settings.gender}`;
-      return { path: 'kiosk-server', voice: voiceName };
+      // Prefer showing the actual voice short-name the main process
+      // resolved (e.g. 'fr-FR-VivienneMultilingualNeural'). The settings
+      // UI can map this to the friendly catalog name.
+      return { path: 'kiosk-server', voice: res.voice ?? settings.voiceId ?? '' };
     }
     return { path: 'failed', voice: '', reason: res?.error ?? 'unknown' };
   } catch (e: any) {

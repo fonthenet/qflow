@@ -6,6 +6,7 @@ import { TeamModal } from './TeamModal';
 import { BusinessAdminModal } from './BusinessAdminModal';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { speak, buildSample, parseVoiceSettings } from '../lib/voice';
+import { VOICE_CATALOG } from '@qflo/shared';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
 import { ALGERIA_WILAYAS, getCommunes } from '../lib/algeria-wilayas';
@@ -447,16 +448,23 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         { key: '__hdr_sound', tab: 'display', label: t('sm.hdr.sound'), type: 'header', default: null, help: t('sm.hdr.sound_help') },
         { key: 'announcement_sound_enabled', tab: 'display', label: t('sm.field.announcement_sound'), type: 'bool', default: true, help: t('sm.help.announcement_sound') },
         { key: 'voice_announcements', tab: 'display', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
-        { key: 'voice_gender', tab: 'display', label: t('sm.field.voice_gender'), type: 'enum', default: 'female', options: [
-          { value: 'female', label: t('sm.voice_gender.female') },
-          { value: 'male', label: t('sm.voice_gender.male') },
-        ], help: t('sm.help.voice_gender') },
-        { key: 'voice_language', tab: 'display', label: t('sm.field.voice_language'), type: 'enum', default: 'auto', options: [
+        { key: 'voice_language', tab: 'display', label: t('sm.field.voice_language'), type: 'enum', default: 'fr', options: [
           { value: 'auto', label: t('sm.voice_language.auto') },
           { value: 'ar', label: t('sm.voice_language.ar') },
           { value: 'fr', label: t('sm.voice_language.fr') },
           { value: 'en', label: t('sm.voice_language.en') },
         ], help: t('sm.help.voice_language') },
+        { key: 'voice_gender', tab: 'display', label: t('sm.field.voice_gender'), type: 'enum', default: 'female', options: [
+          { value: 'female', label: t('sm.voice_gender.female') },
+          { value: 'male', label: t('sm.voice_gender.male') },
+        ], help: t('sm.help.voice_gender') },
+        { key: 'voice_id', tab: 'display', label: t('sm.field.voice_name'), type: 'enum', default: '', options: [
+          { value: '', label: t('sm.voice_name.auto') },
+          ...VOICE_CATALOG.map((v) => ({
+            value: v.id,
+            label: `${v.displayName} — ${t('sm.voice_language.' + v.language)} (${t('sm.voice_gender.' + v.gender)}) · ${v.description}`,
+          })),
+        ], help: t('sm.help.voice_name') },
         { key: 'voice_rate', tab: 'display', label: t('sm.field.voice_rate'), type: 'num', default: 90, min: 60, max: 130, help: t('sm.help.voice_rate') },
         { key: '__voice_test', tab: 'display', label: t('sm.field.voice_test'), type: 'button', default: null, help: t('sm.help.voice_test') },
       ],
@@ -1103,6 +1111,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         voice_gender: state.voice_gender,
         voice_language: state.voice_language,
         voice_rate: state.voice_rate,
+        voice_id: state.voice_id,
       });
       const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
       setVoiceTestResult(null);

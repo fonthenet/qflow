@@ -1428,7 +1428,7 @@ function setupIPC() {
   // an error string so the caller can surface it.
   ipcMain.handle('voice:announce', async (
     _e,
-    args: { text: string; language: string; gender: string; rate: number },
+    args: { text: string; language: string; gender: string; rate: number; voiceId?: string },
   ): Promise<{ ok: boolean; error?: string; voice?: string }> => {
     try {
       const text = String(args?.text ?? '').trim();
@@ -1436,7 +1436,7 @@ function setupIPC() {
       const lang = String(args?.language ?? 'en').toLowerCase();
       const gender = args?.gender === 'male' ? 'male' : 'female';
       const rate = Math.max(60, Math.min(130, Number(args?.rate ?? 90)));
-      const voice = pickTtsVoice(lang, gender);
+      const voice = pickTtsVoice(lang, gender, args?.voiceId);
       const buf = await getTtsAudio(text, voice, rate);
       if (!buf) return { ok: false, error: 'tts generation failed', voice };
 

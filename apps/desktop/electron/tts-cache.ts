@@ -21,31 +21,20 @@ import { promises as fs } from 'fs';
 import { spawn } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { resolveVoiceId } from '@qflo/shared';
 import { logger } from './logger';
 
-// Voice catalog — (gender, language) -> Edge neural voice name. Picked
-// after listening to samples; the Multilingual Neural variants are the
-// newest and most natural-sounding. Arabic uses Algerian voices to match
-// the primary customer base.
-const VOICES: Record<string, Record<string, string>> = {
-  fr: {
-    female: 'fr-FR-VivienneMultilingualNeural',
-    male: 'fr-FR-RemyMultilingualNeural',
-  },
-  ar: {
-    female: 'ar-DZ-AminaNeural',
-    male: 'ar-DZ-IsmaelNeural',
-  },
-  en: {
-    female: 'en-US-AriaNeural',
-    male: 'en-US-GuyNeural',
-  },
-};
-
-export function pickVoice(language: string, gender: string): string {
-  const lang = (language || 'en').slice(0, 2).toLowerCase();
-  const g = gender === 'male' ? 'male' : 'female';
-  return (VOICES[lang] || VOICES.en)[g];
+/**
+ * Pick the Edge neural voice short-name. Defers to the shared catalog
+ * so the Station, the portal, and the TTS server all agree on names,
+ * defaults, and fallbacks.
+ *
+ * `explicitId` wins when present (user picked a specific voice like
+ * 'Zariyah' or 'Denise'); otherwise falls back to the default for the
+ * requested (language, gender) pair.
+ */
+export function pickVoice(language: string, gender: string, explicitId?: string | null): string {
+  return resolveVoiceId(explicitId ?? null, language, gender);
 }
 
 function cacheDir(): string {

@@ -2841,6 +2841,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             voice_gender: orgSettings.voice_gender,
             voice_language: orgSettings.voice_language,
             voice_rate: orgSettings.voice_rate,
+            voice_id: orgSettings.voice_id,
           });
           const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
           const lang = settings.language === 'auto' ? fallback
