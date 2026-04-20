@@ -1903,23 +1903,34 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
     (async () => {
       const sb = await getSupabase();
+
+      // Read the desk first. Business Admin may have reassigned this desk to
+      // another staff or set status=closed / is_active=false. In those cases
+      // the Station's auto-sync must NOT overwrite the admin's config, or the
+      // change would silently revert on every refresh.
+      const { data: deskRow } = await sb
+        .from('desks')
+        .select('current_staff_id, is_active')
+        .eq('id', session.desk_id)
+        .maybeSingle();
+      const currentOwner = (deskRow as any)?.current_staff_id ?? null;
+      const deskActive = (deskRow as any)?.is_active !== false;
+
+      // If admin deactivated the desk, don't push anything — the desk is
+      // administratively offline regardless of staff presence.
+      if (!deskActive) return;
+
       const update: Record<string, unknown> = { status: deskStatus };
 
-      // Only claim current_staff_id when going open, AND only if the desk is
-      // currently unassigned or already held by this staff. Otherwise an admin
-      // may have just reassigned this desk to someone else via Business Admin,
-      // and our auto-claim would silently stomp that change on every refresh.
-      if (deskStatus === 'open' && session.staff_id) {
-        const { data: deskRow } = await sb
-          .from('desks')
-          .select('current_staff_id')
-          .eq('id', session.desk_id)
-          .maybeSingle();
-        const currentOwner = (deskRow as any)?.current_staff_id ?? null;
-        if (currentOwner == null || currentOwner === session.staff_id) {
-          update.current_staff_id = session.staff_id;
-        }
+      // Claim the desk only when unassigned or already ours.
+      if (deskStatus === 'open' && session.staff_id && (currentOwner == null || currentOwner === session.staff_id)) {
+        update.current_staff_id = session.staff_id;
       }
+
+      // If the desk now belongs to a different staff, DON'T push status either
+      // — the admin handed this desk to someone else and our runtime status is
+      // no longer authoritative for it.
+      if (currentOwner && currentOwner !== session.staff_id) return;
 
       // Update local SQLite so mobile app (polling via HTTP) sees the change
       window.qf.db.updateDesk?.(session.desk_id, update).catch(() => {});
