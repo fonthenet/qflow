@@ -47,6 +47,9 @@ importers:
       react-router-dom:
         specifier: ^7.6.1
         version: 7.13.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      sound-play:
+        specifier: ^1.1.0
+        version: 1.1.0
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
@@ -8041,6 +8044,9 @@ packages:
   socks@2.8.7:
     resolution: {integrity: sha512-HLpt+uLy/pxB+bum/9DzAgiKS8CX1EvbWxI4zlmgGCExImLdiad2iCwXT5Z4c9c3Eq8rP2318mPW2c+QbtjK8A==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
+
+  sound-play@1.1.0:
+    resolution: {integrity: sha512-Bd/L0AoCwITFeOnpNLMsfPXrV5GG5NhrC/T6odveahYbhPZkdTnrFXRia9FCC5WBWdUTw1d+yvLBvi4wnD1xOA==}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -19014,6 +19020,8 @@ snapshots:
     dependencies:
       ip-address: 10.1.0
       smart-buffer: 4.2.0
+
+  sound-play@1.1.0: {}
 
   source-map-js@1.2.1: {}
 

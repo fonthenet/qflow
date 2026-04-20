@@ -174,16 +174,54 @@ async function speakViaKioskServer(text: string, lang: string, settings: VoiceSe
   }
 }
 
+async function speakViaMainProcess(text: string, lang: string, settings: VoiceSettings): Promise<SpeakResult> {
+  // Main-process playback: Electron main spawns Python edge-tts, caches
+  // the MP3, and plays it through the OS audio stack (sound-play ->
+  // PowerShell MediaPlayer on Windows). No browser involvement — no CSP,
+  // no autoplay gesture, no tab reload. This is the commercial-grade path.
+  const api = (window as any).qf?.voice?.announce;
+  if (!api) return { path: 'failed', voice: '', reason: 'preload missing voice.announce' };
+  try {
+    const res = await api({
+      text,
+      language: lang.slice(0, 2).toLowerCase(),
+      gender: settings.gender,
+      rate: settings.rate,
+    });
+    if (res?.ok) {
+      const langShort = lang.slice(0, 2).toLowerCase();
+      const voiceName = {
+        fr: { female: 'Vivienne (FR)', male: 'Remy (FR)' },
+        ar: { female: 'Amina (DZ)', male: 'Ismael (DZ)' },
+        en: { female: 'Aria (EN)', male: 'Guy (EN)' },
+      }[langShort as 'fr' | 'ar' | 'en']?.[settings.gender] ?? res.voice ?? `${langShort}/${settings.gender}`;
+      return { path: 'kiosk-server', voice: voiceName };
+    }
+    return { path: 'failed', voice: '', reason: res?.error ?? 'unknown' };
+  } catch (e: any) {
+    return { path: 'failed', voice: '', reason: `ipc: ${e?.message ?? e}` };
+  }
+}
+
 /**
- * Speak a ticket announcement. Only uses the natural-voice /api/tts
- * path. No fallback to the browser's robotic speechSynthesis — if the
- * kiosk-server can't generate the MP3 the call fails loudly so the
- * operator can fix the setup instead of the customer hearing "Zira".
+ * Speak a ticket announcement. Uses Electron main-process audio
+ * playback (sound-play) via the new `voice:announce` IPC — no renderer
+ * autoplay/CSP hurdles. Falls back to the HTTP /api/tts path only if
+ * the IPC isn't available (older build). No browser speechSynthesis
+ * fallback anywhere — silence > Zira.
  */
 export async function speak(text: string, settings: VoiceSettings, fallbackLocale = 'en-US'): Promise<SpeakResult> {
   if (!settings.enabled) return { path: 'failed', voice: '', reason: 'disabled' };
   const lang = resolveLocale(settings, fallbackLocale);
-  return speakViaKioskServer(text, lang, settings);
+
+  const mainResult = await speakViaMainProcess(text, lang, settings);
+  if (mainResult.path === 'kiosk-server') return mainResult;
+
+  // Fallback: older builds without the IPC — try the HTTP fetch path.
+  const httpResult = await speakViaKioskServer(text, lang, settings);
+  if (httpResult.path === 'kiosk-server') return httpResult;
+
+  return { path: 'failed', voice: '', reason: `main: ${mainResult.reason}; http: ${httpResult.reason}` };
 }
 
 /** Localized sample used by the "Test voice" button. */

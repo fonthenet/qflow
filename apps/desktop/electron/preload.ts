@@ -63,6 +63,12 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.on('sync:error', handler);
       return () => ipcRenderer.removeListener('sync:error', handler);
     },
+    refreshConfig: () => ipcRenderer.invoke('sync:refresh-config'),
+    onConfigChanged: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('config:changed', handler);
+      return () => ipcRenderer.removeListener('config:changed', handler);
+    },
   },
 
   // Session
@@ -71,6 +77,16 @@ contextBridge.exposeInMainWorld('qf', {
     load: () => ipcRenderer.invoke('session:load'),
     clear: () => ipcRenderer.invoke('session:clear'),
     getStationToken: () => ipcRenderer.invoke('session:get-station-token'),
+  },
+
+  // Customer rich-text drafts — offline safety net for the Clients panel.
+  customerDrafts: {
+    save: (customerId: string, notes: string | null, customerFile: string | null) =>
+      ipcRenderer.invoke('customer-drafts:save', customerId, notes, customerFile),
+    get: (customerId: string) =>
+      ipcRenderer.invoke('customer-drafts:get', customerId),
+    clear: (customerId: string) =>
+      ipcRenderer.invoke('customer-drafts:clear', customerId),
   },
 
   // Broadcast templates (local SQLite)
@@ -111,6 +127,13 @@ contextBridge.exposeInMainWorld('qf', {
 
   // Kiosk
   getKioskPort: () => ipcRenderer.invoke('kiosk:get-port'),
+
+  // Main-process natural-voice announcement. Plays through the OS audio
+  // stack — no browser CSP / autoplay / tab-reload problems.
+  voice: {
+    announce: (args: { text: string; language: string; gender: string; rate: number }) =>
+      ipcRenderer.invoke('voice:announce', args),
+  },
 
   // Updater
   updater: {

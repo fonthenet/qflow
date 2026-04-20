@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.13.4",
+  "version": "1.13.5",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",
@@ -31,7 +31,8 @@
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.1"
+    "react-router-dom": "^7.6.1",
+    "sound-play": "^1.1.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

@@ -7,6 +7,7 @@ import { initSentry } from './sentry';
 import { logger } from './logger';
 import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, enqueueSync, startAutoBackup, stopAutoBackup, backupDatabase, getLastRecovery, prepareFreshDatabase } from './db';
 import { SyncEngine } from './sync';
+import { getTtsAudio, pickVoice as pickTtsVoice } from './tts-cache';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 
@@ -1418,6 +1419,53 @@ function setupIPC() {
 
   ipcMain.handle('sync:refresh-config', async () => {
     await syncEngine?.refreshConfig();
+  });
+
+  // Natural-voice announcement played by the MAIN process through the OS
+  // audio stack (sound-play -> PowerShell MediaPlayer on Windows). Avoids
+  // every renderer pitfall at once: no CSP, no autoplay gesture, no tab
+  // reload, no browser involvement. If generation fails the IPC returns
+  // an error string so the caller can surface it.
+  ipcMain.handle('voice:announce', async (
+    _e,
+    args: { text: string; language: string; gender: string; rate: number },
+  ): Promise<{ ok: boolean; error?: string; voice?: string }> => {
+    try {
+      const text = String(args?.text ?? '').trim();
+      if (!text) return { ok: false, error: 'empty text' };
+      const lang = String(args?.language ?? 'en').toLowerCase();
+      const gender = args?.gender === 'male' ? 'male' : 'female';
+      const rate = Math.max(60, Math.min(130, Number(args?.rate ?? 90)));
+      const voice = pickTtsVoice(lang, gender);
+      const buf = await getTtsAudio(text, voice, rate);
+      if (!buf) return { ok: false, error: 'tts generation failed', voice };
+
+      // Write to a temp file for sound-play (needs a file path, not a buffer).
+      // Keep the file around — reusing the cache file would be cleaner but
+      // sound-play on Windows shells out to PowerShell which sometimes
+      // doesn't release the handle right away.
+      const tmp = path.join(app.getPath('temp'), `qflo-voice-${Date.now()}.mp3`);
+      await fs.promises.writeFile(tmp, buf);
+      try {
+        // sound-play ships no types. Untyped dynamic import keeps tsc happy.
+        const soundPlay = await import('sound-play' as any);
+        const play = (soundPlay as any).play ?? (soundPlay as any).default?.play;
+        if (!play) throw new Error('sound-play: play() not found');
+        // Don't await — let it play in the background. Failures surface via
+        // the promise rejection we ignore below; the IPC still returns ok
+        // because the generation + write succeeded.
+        void play(tmp, 1).finally(() => {
+          // Best-effort cleanup 30s after playback (file is ~15 KB).
+          setTimeout(() => { fs.promises.unlink(tmp).catch(() => {}); }, 30000);
+        });
+      } catch (err: any) {
+        logger.warn('voice', 'sound-play failed', { error: err?.message });
+        return { ok: false, error: `playback: ${err?.message ?? err}`, voice };
+      }
+      return { ok: true, voice };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
   });
 
   ipcMain.handle('sync:pending-details', () => {
