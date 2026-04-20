@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   // Fetch ticket (must still be pending_approval to be moderated)
   const { data: ticket, error: fetchErr } = await supabase
     .from('tickets')
-    .select('id, office_id, ticket_number, status, source, customer_data, qr_token, department_id, service_id, locale, appointment_id')
+    .select('id, office_id, ticket_number, status, source, customer_data, qr_token, department_id, service_id, locale, appointment_id, checked_in_at')
     .eq('id', ticketId)
     .single();
 
@@ -173,8 +173,24 @@ export async function POST(request: NextRequest) {
     // don't ship a message that ends in "\n\n" with nothing after it.
     const reasonText = declineReason
       || (locale === 'ar' ? 'لم يتم تقديم سبب.' : locale === 'en' ? 'No reason provided.' : 'Aucune raison fournie.');
+    // Resolve service name + use ticket check-in time for {date}/{time} so the
+    // decline message matches the pending_approval message the customer got.
+    let declinedServiceName = '—';
+    if (ticket.service_id) {
+      try {
+        const { data: svc } = await supabase.from('services').select('name').eq('id', ticket.service_id).maybeSingle();
+        if (svc?.name) declinedServiceName = svc.name;
+      } catch { /* ignore */ }
+    }
+    const locTag = locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR';
+    const whenDt = (ticket as any).checked_in_at ? new Date((ticket as any).checked_in_at) : new Date();
+    const declinedDate = whenDt.toLocaleDateString(locTag, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const declinedTime = whenDt.toLocaleTimeString(locTag, { hour: '2-digit', minute: '2-digit', hour12: false });
     const declinedBody = tMsg('approval_declined', locale, {
       name: orgName,
+      date: declinedDate,
+      time: declinedTime,
+      service: declinedServiceName,
       reason: reasonText,
     });
     if (channel === 'whatsapp' && toPhone) {
