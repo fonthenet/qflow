@@ -1701,6 +1701,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
   // Main view: 'queue' shows active ticket/idle, 'calendar' shows embedded calendar, 'customers' shows embedded customer list
   const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers'>('calendar');
+  // Clear the "jump to appointment" target whenever we leave the calendar, so the
+  // next Details click from the queue always triggers a fresh scroll/highlight
+  // even when the same appointment is selected twice in a row.
+  useEffect(() => {
+    if (mainView !== 'calendar') setCalendarInitialApptId(null);
+  }, [mainView]);
   // Track which tabs have been visited — mount once, then keep alive (no flash on revisit)
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set(['queue']));
   // Refresh counters — increment on each tab switch to trigger silent data reload
@@ -1817,25 +1823,31 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Load names for departments, services, desks ─────────────────
 
   // Load names from SQLite (sync engine keeps them fresh)
-  useEffect(() => {
-    (async () => {
-      try {
-        const [depts, svcs, desks] = await Promise.all([
-          window.qf.db.query?.('departments', session.office_ids) ?? [],
-          window.qf.db.query?.('services', session.office_ids) ?? [],
-          window.qf.db.query?.('desks', session.office_ids) ?? [],
-        ]);
-        setNames({
-          departments: Object.fromEntries((depts ?? []).map((d: any) => [d.id, d.name])),
-          services: Object.fromEntries((svcs ?? []).map((s: any) => [s.id, s.name])),
-          desks: Object.fromEntries((desks ?? []).map((d: any) => [d.id, d.name])),
-        });
-        setAllServices((svcs ?? []).map((s: any) => ({ id: s.id, name: s.name, department_id: s.department_id, color: s.color ?? null, estimated_service_time: s.estimated_service_time ?? 30 })));
-      } catch {
-        // Names will be empty until sync pulls data
-      }
-    })();
+  const reloadConfig = useCallback(async () => {
+    try {
+      const [depts, svcs, desks] = await Promise.all([
+        window.qf.db.query?.('departments', session.office_ids) ?? [],
+        window.qf.db.query?.('services', session.office_ids) ?? [],
+        window.qf.db.query?.('desks', session.office_ids) ?? [],
+      ]);
+      setNames({
+        departments: Object.fromEntries((depts ?? []).map((d: any) => [d.id, d.name])),
+        services: Object.fromEntries((svcs ?? []).map((s: any) => [s.id, s.name])),
+        desks: Object.fromEntries((desks ?? []).map((d: any) => [d.id, d.name])),
+      });
+      setAllServices((svcs ?? []).map((s: any) => ({ id: s.id, name: s.name, department_id: s.department_id, color: s.color ?? null, estimated_service_time: s.estimated_service_time ?? 30 })));
+    } catch {
+      // Names will be empty until sync pulls data
+    }
   }, [session.office_ids]);
+
+  useEffect(() => { void reloadConfig(); }, [reloadConfig]);
+
+  // Re-load when sync pulls config changes from cloud
+  useEffect(() => {
+    const unsub = (window.qf as any).sync?.onConfigChanged?.(() => { void reloadConfig(); });
+    return () => unsub?.();
+  }, [reloadConfig]);
 
   // ── Event-driven refresh + fallback polling ─────────────────────
 
@@ -3628,7 +3640,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 departments={names.departments}
                 services={allServices}
                 officeTimezone={officeTimezone}
-                onClose={() => setMainView('queue')}
+                onClose={() => { setMainView('queue'); setCalendarInitialApptId(null); }}
                 onModerate={moderateAppointment}
                 onAppointmentChange={() => fetchTodayRef.current()}
                 onOpenCustomer={(phone) => {
