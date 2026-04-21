@@ -1598,11 +1598,41 @@ function setupIPC() {
     return { ok: true };
   });
 
-  // Chime is now bundled with the app (single source of truth), so no
-  // per-Station upload / clear / status / preview IPC is needed. Clean
-  // up any legacy files left in userData from earlier builds on every
+  // Chime is bundled with the app (single source of truth). Clean up
+  // any legacy files left in userData from earlier builds on every
   // startup — fire-and-forget, safe to fail.
   void cleanupLegacyChimeFiles();
+
+  // Chime-only playback path. Used when the admin has turned
+  // `voice_announcements` OFF but left `announcement_sound_enabled` ON
+  // — they want the chime as a pure audio cue with no TTS. Plays the
+  // silence warmup first (same cold-start-clip mitigation as
+  // voice:announce) then the bundled PA chime.
+  ipcMain.handle('chime:play', async () => {
+    try {
+      const soundPlay = await import('sound-play' as any);
+      const play = (soundPlay as any).play ?? (soundPlay as any).default?.play;
+      if (!play) return { ok: false, error: 'sound-play unavailable' };
+      (async () => {
+        try {
+          const silencePath = await getSilenceWarmupPath();
+          await Promise.race([
+            play(silencePath, 1),
+            new Promise<void>((resolve) => setTimeout(resolve, 900)),
+          ]);
+        } catch { /* warmup non-fatal */ }
+        try {
+          const chimePath = await getChimePath();
+          await play(chimePath, 1);
+        } catch (err: any) {
+          logger.warn('chime.play', 'playback failed', { error: err?.message });
+        }
+      })();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
+  });
 
   // Kick off a background warmup using whatever settings the renderer
   // last pushed. On first boot (no push yet) this no-ops quietly; the

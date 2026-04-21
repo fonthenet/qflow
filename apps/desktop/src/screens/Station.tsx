@@ -2834,34 +2834,50 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // Arabic/Roman strings. Non-fatal: voice is a nicety, not a blocker.
   const announceTicket = (ticketNumber: unknown) => {
     try {
-      if (!ticketNumber || orgSettings.voice_announcements === false) return;
-      const settings = parseVoiceSettings({
-        voice_announcements: true,
-        voice_gender: orgSettings.voice_gender,
-        voice_language: orgSettings.voice_language,
-        voice_rate: orgSettings.voice_rate,
-        voice_id: orgSettings.voice_id,
-      });
-      const fromVoiceId = settings.voiceId ? settings.voiceId.slice(0, 2).toLowerCase() : '';
-      const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
-      const lang = fromVoiceId === 'ar' ? 'ar-SA'
-        : fromVoiceId === 'fr' ? 'fr-FR'
-        : fromVoiceId === 'en' ? 'en-US'
-        : settings.language === 'auto' ? fallback
-        : settings.language === 'ar' ? 'ar-SA'
-        : settings.language === 'fr' ? 'fr-FR' : 'en-US';
-      const raw = String(ticketNumber);
-      const digits = raw.replace(/\D+/g, '').replace(/^0+/, '') || raw.replace(/\D+/g, '') || raw;
-      // For Arabic, write the number out in MSA words so dialectal
-      // voices (e.g. Algerian) don't pronounce digits with local
-      // vocabulary that non-Algerian customers mishear. French and
-      // English TTS pronounce digits naturally so we leave those alone.
-      const n = parseInt(digits, 10);
-      const arabicWords = Number.isFinite(n) ? arabicNumberToWords(n) : digits;
-      const text = lang.startsWith('ar') ? `التذكرة رقم ${arabicWords}`
-        : lang.startsWith('fr') ? `Ticket numéro ${digits}`
-        : `Ticket number ${digits}`;
-      void speakNatural(text, settings, fallback);
+      if (!ticketNumber) return;
+      const chimeEnabled = orgSettings.announcement_sound_enabled !== false;
+      const voiceEnabled = orgSettings.voice_announcements !== false;
+      if (!chimeEnabled && !voiceEnabled) return;
+
+      // Chime + voice are independent toggles. Four combinations:
+      //   • both on   → voice:announce with includeChime=true
+      //   • voice on  → voice:announce with includeChime=false
+      //   • chime on  → chime:play (no text generated, pure audio cue)
+      //   • both off  → early-return above
+      if (voiceEnabled) {
+        const settings = parseVoiceSettings({
+          voice_announcements: true,
+          announcement_sound_enabled: chimeEnabled,
+          voice_gender: orgSettings.voice_gender,
+          voice_language: orgSettings.voice_language,
+          voice_rate: orgSettings.voice_rate,
+          voice_id: orgSettings.voice_id,
+          voice_output_device_id: orgSettings.voice_output_device_id,
+        });
+        const fromVoiceId = settings.voiceId ? settings.voiceId.slice(0, 2).toLowerCase() : '';
+        const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
+        const lang = fromVoiceId === 'ar' ? 'ar-SA'
+          : fromVoiceId === 'fr' ? 'fr-FR'
+          : fromVoiceId === 'en' ? 'en-US'
+          : settings.language === 'auto' ? fallback
+          : settings.language === 'ar' ? 'ar-SA'
+          : settings.language === 'fr' ? 'fr-FR' : 'en-US';
+        const raw = String(ticketNumber);
+        const digits = raw.replace(/\D+/g, '').replace(/^0+/, '') || raw.replace(/\D+/g, '') || raw;
+        // For Arabic, write the number out in MSA words so dialectal
+        // voices (e.g. Algerian) don't pronounce digits with local
+        // vocabulary that non-Algerian customers mishear. French and
+        // English TTS pronounce digits naturally so we leave those alone.
+        const n = parseInt(digits, 10);
+        const arabicWords = Number.isFinite(n) ? arabicNumberToWords(n) : digits;
+        const text = lang.startsWith('ar') ? `التذكرة رقم ${arabicWords}`
+          : lang.startsWith('fr') ? `Ticket numéro ${digits}`
+          : `Ticket number ${digits}`;
+        void speakNatural(text, settings, fallback);
+      } else {
+        // Chime-only path: no TTS generation, just the bundled PA sound.
+        void (window as any).qf?.chime?.play?.();
+      }
     } catch { /* non-fatal */ }
   };
 

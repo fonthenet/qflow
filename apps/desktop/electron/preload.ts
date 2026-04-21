@@ -152,8 +152,14 @@ contextBridge.exposeInMainWorld('qf', {
     }) => ipcRenderer.invoke('voice:get-announcement-audio', args),
   },
 
-  // Chime is now bundled with the app as the single source of truth —
-  // no per-Station upload/preview/reset API surface.
+  // Chime is bundled with the app as the single source of truth. The
+  // only API surface is `play()`, used when the admin disables Voice
+  // announcements but leaves Announcement sound on — plays just the
+  // chime with no TTS attached.
+  chime: {
+    play: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('chime:play'),
+  },
 
   // Updater
   updater: {
