@@ -110,12 +110,49 @@ async function findCustomChime(): Promise<string | null> {
   }
 }
 
+/**
+ * Path to the platform default chime inside the packaged app. Shipped
+ * at `assets/default-chime.mp3` — the warm PA-style sound approved as
+ * the standard for all Qflo businesses. `app.getAppPath()` resolves to
+ * the asar root in packaged builds and the project root in dev, so the
+ * same code path works everywhere.
+ */
+function bundledDefaultChimePath(): string {
+  return join(app.getAppPath(), 'assets', 'default-chime.mp3');
+}
+
 async function ensureDefaultChime(): Promise<string> {
   await fs.mkdir(chimeDir(), { recursive: true });
-  const file = join(chimeDir(), DEFAULT_CHIME_BASENAME);
-  try { await fs.access(file); }
-  catch { await fs.writeFile(file, buildChime()); }
-  return file;
+
+  // Prefer the bundled MP3 when it ships with the app — this is the
+  // canonical default every new business should hear. Copying it into
+  // userData lets sound-play consume a real filesystem path even when
+  // the source lives inside app.asar (which isn't always readable by
+  // the PowerShell + MediaPlayer pipeline).
+  const bundled = bundledDefaultChimePath();
+  const bundledCopy = join(chimeDir(), 'chime-bundled-default.mp3');
+  try {
+    const [bundledStat, copyStat] = await Promise.all([
+      fs.stat(bundled),
+      fs.stat(bundledCopy).catch(() => null),
+    ]);
+    // Copy once, or re-copy if the bundled version was updated in a
+    // newer app release (compare size + mtime).
+    if (!copyStat || copyStat.size !== bundledStat.size
+        || copyStat.mtimeMs < bundledStat.mtimeMs) {
+      await fs.copyFile(bundled, bundledCopy);
+    }
+    return bundledCopy;
+  } catch {
+    // Bundled asset missing (shouldn't happen in a published build, but
+    // we don't want the app to go silent if someone ran a dev build
+    // without copying assets). Fall through to the generated WAV.
+  }
+
+  const wavFile = join(chimeDir(), DEFAULT_CHIME_BASENAME);
+  try { await fs.access(wavFile); }
+  catch { await fs.writeFile(wavFile, buildChime()); }
+  return wavFile;
 }
 
 /**

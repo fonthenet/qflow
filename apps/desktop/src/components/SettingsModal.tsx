@@ -512,14 +512,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           { value: '', label: t('sm.audio_output.default') },
         ], help: t('sm.help.audio_output') },
         { key: '__voice_test', tab: 'display', label: t('sm.field.voice_test'), type: 'button', default: null, help: t('sm.help.voice_test') },
-        // Three-tone chime played before every ticket announcement. Defaults
-        // to a built-in DMV-style ding-dong-dang; admins can upload their
-        // own audio file (MP3/WAV/OGG/M4A/AAC/WMA, up to 5 MB). Stored in
-        // userData so it survives app updates.
-        { key: '__hdr_chime', tab: 'display', label: t('sm.hdr.chime'), type: 'header', default: null, help: t('sm.hdr.chime_help') },
-        { key: '__chime_preview', tab: 'display', label: t('sm.field.chime_preview'), type: 'button', default: null, help: t('sm.help.chime_preview') },
-        { key: '__chime_upload', tab: 'display', label: t('sm.field.chime_upload'), type: 'button', default: null, help: t('sm.help.chime_upload') },
-        { key: '__chime_reset', tab: 'display', label: t('sm.field.chime_reset'), type: 'button', default: null, help: t('sm.help.chime_reset') },
+        // Announcement chime is now ship-with-the-app — every business
+        // hears the same approved PA sound out of the box, so there's no
+        // per-org upload/preview/reset UI. If we ever expose
+        // customisation again, the IPC (chime:pick-and-install etc.) and
+        // chime.ts multi-source resolution are still in place.
       ],
     },
     {
@@ -1154,7 +1151,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // Handlers receive the live form state so they can read the latest unsaved
   // values (e.g. test the voice with the currently-chosen gender/rate).
   const [voiceTestResult, setVoiceTestResult] = useState<{ ok: boolean; label: string } | null>(null);
-  const [chimeStatus, setChimeStatus] = useState<{ hasCustom: boolean; lastAction?: string } | null>(null);
   const [audioOutputs, setAudioOutputs] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [audioScanError, setAudioScanError] = useState<string | null>(null);
   const refreshAudioOutputs = useCallback(async () => {
@@ -1170,14 +1166,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     }
   }, [t]);
   useEffect(() => { void refreshAudioOutputs(); }, [refreshAudioOutputs]);
-  useEffect(() => {
-    (async () => {
-      try {
-        const s = await (window as any).qf?.chime?.status?.();
-        if (s) setChimeStatus({ hasCustom: !!s.hasCustom });
-      } catch { /* no chime API — older build */ }
-    })();
-  }, []);
   const buttonHandlers: Record<string, (state: Record<string, any>) => void> = {
     __voice_test: async (state) => {
       const settings = parseVoiceSettings({
@@ -1206,41 +1194,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         setVoiceTestResult({ ok: false, label: `⚠️ Fallback to OS voice (${result.voice}). Reason: ${result.reason ?? 'unknown'}` });
       } else {
         setVoiceTestResult({ ok: false, label: `❌ Voice playback failed: ${result.reason ?? 'unknown'}` });
-      }
-    },
-    __chime_preview: async () => {
-      try {
-        const res = await (window as any).qf?.chime?.preview?.();
-        setChimeStatus((prev) => ({
-          hasCustom: prev?.hasCustom ?? false,
-          lastAction: res?.ok ? t('Chime played') : `${t('Preview failed')}: ${res?.error ?? ''}`,
-        }));
-      } catch (err: any) {
-        setChimeStatus((prev) => ({ hasCustom: prev?.hasCustom ?? false, lastAction: err?.message }));
-      }
-    },
-    __chime_upload: async () => {
-      try {
-        const res = await (window as any).qf?.chime?.pickAndInstall?.();
-        if (res?.canceled) return;
-        if (res?.ok) {
-          setChimeStatus({ hasCustom: true, lastAction: t('Custom chime installed') });
-        } else {
-          setChimeStatus((prev) => ({
-            hasCustom: prev?.hasCustom ?? false,
-            lastAction: `${t('Upload failed')}: ${res?.error ?? t('unknown error')}`,
-          }));
-        }
-      } catch (err: any) {
-        setChimeStatus((prev) => ({ hasCustom: prev?.hasCustom ?? false, lastAction: err?.message }));
-      }
-    },
-    __chime_reset: async () => {
-      try {
-        await (window as any).qf?.chime?.clear?.();
-        setChimeStatus({ hasCustom: false, lastAction: t('Restored default chime') });
-      } catch (err: any) {
-        setChimeStatus((prev) => ({ hasCustom: prev?.hasCustom ?? false, lastAction: err?.message }));
       }
     },
   };
@@ -1549,14 +1502,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // Action button (no persisted value). Key -> handler table.
       const handler = buttonHandlers[f.key];
       const isVoiceTest = f.key === '__voice_test';
-      const isChime = f.key === '__chime_preview' || f.key === '__chime_upload' || f.key === '__chime_reset';
-      const icon = f.key === '__chime_upload' ? '📤'
-        : f.key === '__chime_reset' ? '↺'
-        : f.key === '__chime_preview' ? '🔔'
-        : '🔊';
-      const labelSuffix = f.key === '__chime_preview' && chimeStatus
-        ? ` (${chimeStatus.hasCustom ? t('Custom') : t('Default')})`
-        : '';
+      const icon = '🔊';
+      const labelSuffix = '';
       return (
         <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
           <button
@@ -1590,11 +1537,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               }}
             >
               {voiceTestResult.label}
-            </div>
-          )}
-          {isChime && chimeStatus?.lastAction && (
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text2, #94a3b8)' }}>
-              {chimeStatus.lastAction}
             </div>
           )}
         </div>
