@@ -208,11 +208,33 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState('');
-  const [activeSection, setActiveSection] = useState(initialSection ?? 'booking');
-  // Sub-tab state for sections that declare a `tabs` array. Keyed by section
-  // id so switching sections and coming back restores the last-used tab.
-  const [activeSectionTab, setActiveSectionTab] = useState<Record<string, string>>({});
-  const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments' | 'priorities'>('intake');
+  // Remember the last-used section + sub-tabs across opens so admins who
+  // iterate on one area (e.g. Display & kiosk → voice) don't have to
+  // re-navigate every time they reopen the modal. Caller-supplied
+  // `initialSection` still wins when explicitly passed.
+  const LS_SECTION = 'qf_settings_last_section';
+  const LS_BOOKING_TAB = 'qf_settings_last_booking_tab';
+  const LS_SECTION_TAB = 'qf_settings_last_section_tab';
+  const [activeSection, setActiveSection] = useState(() => {
+    if (initialSection) return initialSection;
+    try { return localStorage.getItem(LS_SECTION) ?? 'booking'; } catch { return 'booking'; }
+  });
+  const [activeSectionTab, setActiveSectionTab] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem(LS_SECTION_TAB);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments' | 'priorities'>(() => {
+    try {
+      const v = localStorage.getItem(LS_BOOKING_TAB);
+      if (v === 'intake' || v === 'queue' || v === 'appointments' || v === 'priorities') return v;
+    } catch { /* ignore */ }
+    return 'intake';
+  });
+  useEffect(() => { try { localStorage.setItem(LS_SECTION, activeSection); } catch { /* ignore */ } }, [activeSection]);
+  useEffect(() => { try { localStorage.setItem(LS_BOOKING_TAB, bookingSubTab); } catch { /* ignore */ } }, [bookingSubTab]);
+  useEffect(() => { try { localStorage.setItem(LS_SECTION_TAB, JSON.stringify(activeSectionTab)); } catch { /* ignore */ } }, [activeSectionTab]);
   const [expandedIntakeField, setExpandedIntakeField] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
   const originalRef = useRef<SettingsShape>({});
@@ -333,6 +355,22 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     return () => { if (arCheckTimerRef.current) clearTimeout(arCheckTimerRef.current); };
   }, [values.arabic_code, runCodeAvailability]);
 
+  // If the admin changes voice language or gender and the currently-picked
+  // voice_id no longer matches the new filter, reset it back to "Auto".
+  // Otherwise the dropdown would silently keep a stale id that overrides
+  // the visible selections at announcement time.
+  useEffect(() => {
+    const vid = values.voice_id;
+    if (!vid) return;
+    const match = VOICE_CATALOG.find((v) => v.id === vid);
+    if (!match) return;
+    const langMismatch = values.voice_language && values.voice_language !== 'auto' && match.language !== values.voice_language;
+    const genderMismatch = values.voice_gender && match.gender !== values.voice_gender;
+    if (langMismatch || genderMismatch) {
+      setValues((prev) => ({ ...prev, voice_id: '' }));
+    }
+  }, [values.voice_language, values.voice_gender]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Section & field definitions ─────────────────────────────────
   const sections: SectionDef[] = useMemo(() => [
     {
@@ -447,7 +485,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         // ── Display tab ───────────────────────────────────────────────
         { key: '__hdr_sound', tab: 'display', label: t('sm.hdr.sound'), type: 'header', default: null, help: t('sm.hdr.sound_help') },
         { key: 'announcement_sound_enabled', tab: 'display', label: t('sm.field.announcement_sound'), type: 'bool', default: true, help: t('sm.help.announcement_sound') },
-        { key: 'voice_announcements', tab: 'display', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
+        { key: 'voice_announcements', tab: 'display', label: t('sm.field.voice_announcements'), type: 'bool', default: true, help: t('sm.help.voice_announcements') },
         { key: 'voice_language', tab: 'display', label: t('sm.field.voice_language'), type: 'enum', default: 'fr', options: [
           { value: 'auto', label: t('sm.voice_language.auto') },
           { value: 'ar', label: t('sm.voice_language.ar') },
@@ -458,15 +496,30 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           { value: 'female', label: t('sm.voice_gender.female') },
           { value: 'male', label: t('sm.voice_gender.male') },
         ], help: t('sm.help.voice_gender') },
-        { key: 'voice_id', tab: 'display', label: t('sm.field.voice_name'), type: 'enum', default: '', options: [
+        { key: 'voice_id', tab: 'display', label: t('sm.field.voice_name'), type: 'enum', default: 'fr-FR-DeniseNeural', options: [
           { value: '', label: t('sm.voice_name.auto') },
           ...VOICE_CATALOG.map((v) => ({
             value: v.id,
-            label: `${v.displayName} — ${t('sm.voice_language.' + v.language)} (${t('sm.voice_gender.' + v.gender)}) · ${v.description}`,
+            label: `${v.displayName} — ${t('sm.voice_language.' + v.language)} (${t('sm.voice_gender.' + v.gender)}) · ${t('sm.voice_desc.' + v.descriptionKey)}`,
           })),
         ], help: t('sm.help.voice_name') },
         { key: 'voice_rate', tab: 'display', label: t('sm.field.voice_rate'), type: 'num', default: 90, min: 60, max: 130, help: t('sm.help.voice_rate') },
+        // Per-org audio output device. Empty string = Windows default
+        // (main-process sound-play). Non-empty = renderer HTMLAudioElement
+        // with setSinkId — routes to a specific speaker / PA amp.
+        // Options populated dynamically by the renderer at field-render time.
+        { key: 'voice_output_device_id', tab: 'display', label: t('sm.field.audio_output'), type: 'enum', default: '', options: [
+          { value: '', label: t('sm.audio_output.default') },
+        ], help: t('sm.help.audio_output') },
         { key: '__voice_test', tab: 'display', label: t('sm.field.voice_test'), type: 'button', default: null, help: t('sm.help.voice_test') },
+        // Three-tone chime played before every ticket announcement. Defaults
+        // to a built-in DMV-style ding-dong-dang; admins can upload their
+        // own audio file (MP3/WAV/OGG/M4A/AAC/WMA, up to 5 MB). Stored in
+        // userData so it survives app updates.
+        { key: '__hdr_chime', tab: 'display', label: t('sm.hdr.chime'), type: 'header', default: null, help: t('sm.hdr.chime_help') },
+        { key: '__chime_preview', tab: 'display', label: t('sm.field.chime_preview'), type: 'button', default: null, help: t('sm.help.chime_preview') },
+        { key: '__chime_upload', tab: 'display', label: t('sm.field.chime_upload'), type: 'button', default: null, help: t('sm.help.chime_upload') },
+        { key: '__chime_reset', tab: 'display', label: t('sm.field.chime_reset'), type: 'button', default: null, help: t('sm.help.chime_reset') },
       ],
     },
     {
@@ -1030,6 +1083,16 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       await load();
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2200);
+      // Warm the offline TTS cache for the newly-saved voice + rate so
+      // ticket calls keep working if the internet drops after this.
+      try {
+        (window as any).qf?.voice?.prewarm?.({
+          voiceId: merged.voice_id ?? null,
+          language: merged.voice_language ?? 'auto',
+          gender: merged.voice_gender ?? 'female',
+          rate: merged.voice_rate ?? 90,
+        });
+      } catch { /* non-fatal — background retry will cover it */ }
       onSaved?.();
     } catch (e: any) {
       setSaveError(e?.message ?? t('Failed to save settings'));
@@ -1104,6 +1167,30 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // Handlers receive the live form state so they can read the latest unsaved
   // values (e.g. test the voice with the currently-chosen gender/rate).
   const [voiceTestResult, setVoiceTestResult] = useState<{ ok: boolean; label: string } | null>(null);
+  const [chimeStatus, setChimeStatus] = useState<{ hasCustom: boolean; lastAction?: string } | null>(null);
+  const [audioOutputs, setAudioOutputs] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const [audioScanError, setAudioScanError] = useState<string | null>(null);
+  const refreshAudioOutputs = useCallback(async () => {
+    try {
+      const { listAudioOutputs } = await import('../lib/voice');
+      const list = await listAudioOutputs();
+      setAudioOutputs(list);
+      setAudioScanError(list.length === 0 ? t('No speakers detected — check Windows Sound settings') : null);
+      // eslint-disable-next-line no-console
+      console.info('[settings] audio outputs detected:', list);
+    } catch (err: any) {
+      setAudioScanError(err?.message ?? String(err));
+    }
+  }, [t]);
+  useEffect(() => { void refreshAudioOutputs(); }, [refreshAudioOutputs]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await (window as any).qf?.chime?.status?.();
+        if (s) setChimeStatus({ hasCustom: !!s.hasCustom });
+      } catch { /* no chime API — older build */ }
+    })();
+  }, []);
   const buttonHandlers: Record<string, (state: Record<string, any>) => void> = {
     __voice_test: async (state) => {
       const settings = parseVoiceSettings({
@@ -1113,7 +1200,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         voice_rate: state.voice_rate,
         voice_id: state.voice_id,
       });
-      const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
+      // Derive the sample language from the picked voice_id first, then
+      // voice_language, then fall back to the UI locale. Otherwise an
+      // Arabic voice would read the English/French sample sentence and
+      // sound like "English words with an Arabic accent" — not useful for
+      // auditioning the voice.
+      const voiceLang = state.voice_id ? String(state.voice_id).slice(0, 2).toLowerCase() : '';
+      const sampleLangShort = voiceLang === 'ar' || voiceLang === 'fr' || voiceLang === 'en'
+        ? voiceLang
+        : (state.voice_language && state.voice_language !== 'auto' ? state.voice_language : locale);
+      const fallback = sampleLangShort === 'ar' ? 'ar-SA'
+        : sampleLangShort === 'fr' ? 'fr-FR' : 'en-US';
       setVoiceTestResult(null);
       const result = await speak(buildSample(fallback), settings, fallback);
       if (result.path === 'kiosk-server') {
@@ -1122,6 +1219,41 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         setVoiceTestResult({ ok: false, label: `⚠️ Fallback to OS voice (${result.voice}). Reason: ${result.reason ?? 'unknown'}` });
       } else {
         setVoiceTestResult({ ok: false, label: `❌ Voice playback failed: ${result.reason ?? 'unknown'}` });
+      }
+    },
+    __chime_preview: async () => {
+      try {
+        const res = await (window as any).qf?.chime?.preview?.();
+        setChimeStatus((prev) => ({
+          hasCustom: prev?.hasCustom ?? false,
+          lastAction: res?.ok ? t('Chime played') : `${t('Preview failed')}: ${res?.error ?? ''}`,
+        }));
+      } catch (err: any) {
+        setChimeStatus((prev) => ({ hasCustom: prev?.hasCustom ?? false, lastAction: err?.message }));
+      }
+    },
+    __chime_upload: async () => {
+      try {
+        const res = await (window as any).qf?.chime?.pickAndInstall?.();
+        if (res?.canceled) return;
+        if (res?.ok) {
+          setChimeStatus({ hasCustom: true, lastAction: t('Custom chime installed') });
+        } else {
+          setChimeStatus((prev) => ({
+            hasCustom: prev?.hasCustom ?? false,
+            lastAction: `${t('Upload failed')}: ${res?.error ?? t('unknown error')}`,
+          }));
+        }
+      } catch (err: any) {
+        setChimeStatus((prev) => ({ hasCustom: prev?.hasCustom ?? false, lastAction: err?.message }));
+      }
+    },
+    __chime_reset: async () => {
+      try {
+        await (window as any).qf?.chime?.clear?.();
+        setChimeStatus({ hasCustom: false, lastAction: t('Restored default chime') });
+      } catch (err: any) {
+        setChimeStatus((prev) => ({ hasCustom: prev?.hasCustom ?? false, lastAction: err?.message }));
       }
     },
   };
@@ -1162,13 +1294,68 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       );
     }
     if (f.type === 'enum') {
+      // Voice picker is filtered by the sibling language + gender selects
+      // so admins only see voices that actually match — otherwise picking
+      // "French / Female" then an Arabic male voice would silently
+      // override the language/gender choice, which is how we ended up
+      // with English announcements earlier.
+      let options = f.options ?? [];
+      if (f.key === 'voice_output_device_id') {
+        options = [
+          { value: '', label: t('sm.audio_output.default') },
+          ...audioOutputs.map((d) => ({ value: d.deviceId, label: d.label })),
+        ];
+      }
+      if (f.key === 'voice_id') {
+        const langFilter = values.voice_language && values.voice_language !== 'auto'
+          ? String(values.voice_language)
+          : null;
+        const genderFilter = values.voice_gender ? String(values.voice_gender) : null;
+        options = [
+          { value: '', label: t('sm.voice_name.auto') },
+          ...VOICE_CATALOG
+            .filter((vc) => (!langFilter || vc.language === langFilter))
+            .filter((vc) => (!genderFilter || vc.gender === genderFilter))
+            .map((vc) => ({
+              value: vc.id,
+              label: `${vc.displayName} — ${t('sm.voice_language.' + vc.language)} (${t('sm.voice_gender.' + vc.gender)}) · ${t('sm.voice_desc.' + vc.descriptionKey)}`,
+            })),
+        ];
+      }
       return (
         <div key={f.key} style={{ padding: '5px 0' }}>
           <label style={labelStyle}>{f.label}</label>
-          <select value={v ?? f.default} onChange={(e) => setV(e.target.value)} style={inputStyle}>
-            {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          {f.key === 'voice_output_device_id' ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select value={v ?? f.default} onChange={(e) => setV(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => void refreshAudioOutputs()}
+                style={{
+                  padding: '8px 14px', borderRadius: 8,
+                  border: '1px solid var(--border, #475569)',
+                  background: 'var(--surface, #1e293b)', color: 'var(--text, #f1f5f9)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                {t('Refresh')}
+              </button>
+            </div>
+          ) : (
+            <select value={v ?? f.default} onChange={(e) => setV(e.target.value)} style={inputStyle}>
+              {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
           {f.help && <div style={helpStyle}>{f.help}</div>}
+          {f.key === 'voice_output_device_id' && (
+            <div style={{ ...helpStyle, color: audioScanError ? 'var(--danger, #ef4444)' : 'var(--text3, #64748b)' }}>
+              {audioScanError
+                ? `⚠️ ${audioScanError}`
+                : t('{n} speaker(s) detected', { n: audioOutputs.length })}
+            </div>
+          )}
         </div>
       );
     }
@@ -1375,6 +1562,14 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // Action button (no persisted value). Key -> handler table.
       const handler = buttonHandlers[f.key];
       const isVoiceTest = f.key === '__voice_test';
+      const isChime = f.key === '__chime_preview' || f.key === '__chime_upload' || f.key === '__chime_reset';
+      const icon = f.key === '__chime_upload' ? '📤'
+        : f.key === '__chime_reset' ? '↺'
+        : f.key === '__chime_preview' ? '🔔'
+        : '🔊';
+      const labelSuffix = f.key === '__chime_preview' && chimeStatus
+        ? ` (${chimeStatus.hasCustom ? t('Custom') : t('Default')})`
+        : '';
       return (
         <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
           <button
@@ -1391,7 +1586,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               cursor: 'pointer',
             }}
           >
-            🔊 {f.label}
+            {icon} {f.label}{labelSuffix}
           </button>
           {f.help && <div style={helpStyle}>{f.help}</div>}
           {isVoiceTest && voiceTestResult && (
@@ -1408,6 +1603,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               }}
             >
               {voiceTestResult.label}
+            </div>
+          )}
+          {isChime && chimeStatus?.lastAction && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text2, #94a3b8)' }}>
+              {chimeStatus.lastAction}
             </div>
           )}
         </div>

@@ -7,7 +7,7 @@ import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib
 import { useI18n } from '@/components/providers/locale-provider';
 import { createClient } from '@/lib/supabase/client';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
-import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey } from '@qflo/shared';
+import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey, VOICE_CATALOG } from '@qflo/shared';
 
 interface Organization {
   id: string;
@@ -193,6 +193,32 @@ export function SettingsClient({
   );
   const [refreshInterval, setRefreshInterval] = useState<number>(
     settings.display_refresh_interval ?? 5
+  );
+
+  // Voice announcement settings — same keys the Station writes + reads.
+  const [voiceAnnouncements, setVoiceAnnouncements] = useState<boolean>(
+    settings.voice_announcements ?? true
+  );
+  const [voiceLanguage, setVoiceLanguage] = useState<string>(
+    settings.voice_language ?? 'fr'
+  );
+  const [voiceGender, setVoiceGender] = useState<string>(
+    settings.voice_gender ?? 'female'
+  );
+  const [voiceId, setVoiceId] = useState<string>(
+    // Denise — French female, broadcast-quality — is the platform-wide
+    // default for every new org and any org whose voice_id is unset.
+    settings.voice_id ?? 'fr-FR-DeniseNeural'
+  );
+  const [voiceRate, setVoiceRate] = useState<number>(
+    typeof settings.voice_rate === 'number' ? settings.voice_rate : 90
+  );
+  // Audio output device id — set on the Station by picking a specific
+  // speaker. The portal can read/clear the value remotely but cannot
+  // enumerate another machine's devices, so this is a plain text field
+  // plus a "Clear" button that resets to Windows default.
+  const [voiceOutputDeviceId, setVoiceOutputDeviceId] = useState<string>(
+    typeof settings.voice_output_device_id === 'string' ? settings.voice_output_device_id : ''
   );
 
   // Language Settings
@@ -436,6 +462,12 @@ export function SettingsClient({
           default_display_layout: displayLayout,
           announcement_sound_enabled: announcementSound,
           display_refresh_interval: refreshInterval,
+          voice_announcements: voiceAnnouncements,
+          voice_language: voiceLanguage,
+          voice_gender: voiceGender,
+          voice_id: voiceId || null,
+          voice_rate: voiceRate,
+          voice_output_device_id: voiceOutputDeviceId || null,
           supported_languages: supportedLanguages,
           default_language: defaultLanguage,
           visit_intake_override_mode: visitIntakeOverrideMode,
@@ -1650,11 +1682,136 @@ export function SettingsClient({
                   {t('Announcement Sound')}
                 </span>
                 <p className="text-xs text-muted-foreground">
-                  {t('Play a sound when a ticket number is called on the display screen.')}
+                  {t('Play a chime on the display screen when a ticket is called.')}
                 </p>
               </div>
             </label>
           </div>
+
+          {/* ── Voice Announcements ─────────────────────────────────── */}
+          <div className="sm:col-span-2 pt-4 border-t border-border">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={voiceAnnouncements}
+                onChange={(e) => setVoiceAnnouncements(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+              />
+              <div>
+                <span className="text-sm font-medium text-foreground">
+                  {t('Voice announcements')}
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  {t('Read the ticket number aloud on the display when a ticket is called. Uses natural neural voices.')}
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {voiceAnnouncements && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Voice language')}
+                </label>
+                <select
+                  value={voiceLanguage}
+                  onChange={(e) => { setVoiceLanguage(e.target.value); setVoiceId(''); }}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="auto">{t('Automatic (follow display)')}</option>
+                  <option value="ar">{t('Arabic')}</option>
+                  <option value="fr">{t('French')}</option>
+                  <option value="en">{t('English')}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Voice')}
+                </label>
+                <select
+                  value={voiceGender}
+                  onChange={(e) => { setVoiceGender(e.target.value); setVoiceId(''); }}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="female">{t('Female')}</option>
+                  <option value="male">{t('Male')}</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Specific voice')}
+                </label>
+                <select
+                  value={voiceId}
+                  onChange={(e) => setVoiceId(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="">{t('Auto (by language + gender)')}</option>
+                  {VOICE_CATALOG
+                    .filter((v) => voiceLanguage === 'auto' || v.language === voiceLanguage)
+                    .map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.displayName} — {v.language.toUpperCase()} ({v.gender === 'female' ? t('Female') : t('Male')}) · {v.description}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('Pick a specific voice, or leave on Auto to use the catalog default for the chosen language + gender.')}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Speed (%)')}
+                </label>
+                <input
+                  type="number"
+                  min={60}
+                  max={130}
+                  value={voiceRate}
+                  onChange={(e) => setVoiceRate(Number(e.target.value))}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('100 = normal speed. 80–110 sounds the most natural.')}
+                </p>
+              </div>
+
+              {/* Audio output device id — opaque string set by the Station.
+                  The portal can clear it (fall back to Windows default) but
+                  can't enumerate another machine's devices. Admins pick
+                  the actual device from the Station's Settings dropdown. */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Audio output device')}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={voiceOutputDeviceId}
+                    onChange={(e) => setVoiceOutputDeviceId(e.target.value)}
+                    placeholder={t('System default')}
+                    className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+                  />
+                  {voiceOutputDeviceId && (
+                    <button
+                      type="button"
+                      onClick={() => setVoiceOutputDeviceId('')}
+                      className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-muted"
+                    >
+                      {t('Reset to default')}
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('Pick the target speaker from Station → Settings → Display. The chosen device id is saved here so it applies everywhere. Leave empty to use the Windows default output.')}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </section>
 

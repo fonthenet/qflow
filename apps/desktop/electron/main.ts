@@ -8,6 +8,8 @@ import { logger } from './logger';
 import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, enqueueSync, startAutoBackup, stopAutoBackup, backupDatabase, getLastRecovery, prepareFreshDatabase } from './db';
 import { SyncEngine } from './sync';
 import { getTtsAudio, pickVoice as pickTtsVoice } from './tts-cache';
+import { scheduleTtsPrewarm, triggerTtsPrewarmNow } from './tts-prewarmer';
+import { getChimePath, getChimeDurationMs, getSilenceWarmupPath, installCustomChime, clearCustomChime, hasCustomChime } from './chime';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 
@@ -269,6 +271,22 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#0f172a',
+  });
+
+  // Grant microphone access so the Audio output dropdown can enumerate
+  // real devices with labels. Chromium hides audiooutput labels unless
+  // the origin has active mic permission — we only ever use the mic as
+  // a permission token (the actual MediaStream is stopped immediately
+  // in listAudioOutputs()) so this is privacy-neutral for our app.
+  // Also auto-approve the matching check so `enumerateDevices()`
+  // returns the full device list without a prompt.
+  const stationSession = mainWindow.webContents.session;
+  stationSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media' || permission === 'mediaKeySystem') return callback(true);
+    callback(false);
+  });
+  stationSession.setPermissionCheckHandler((_webContents, permission) => {
+    return permission === 'media' || permission === 'mediaKeySystem';
   });
 
 
@@ -1426,9 +1444,61 @@ function setupIPC() {
   // every renderer pitfall at once: no CSP, no autoplay gesture, no tab
   // reload, no browser involvement. If generation fails the IPC returns
   // an error string so the caller can surface it.
+  // Device-routed playback path. Returns the raw chime + voice bytes so
+  // the renderer can play them through an HTMLAudioElement with
+  // `setSinkId(deviceId)` — the only reliable way to route audio to a
+  // specific Windows output (PA amplifier, USB speaker, headset, …) from
+  // a sandboxed Electron app. Used when the org has configured a
+  // non-default `voice_output_device_id`; otherwise the Station falls
+  // back to `voice:announce` which plays via main-process sound-play.
+  ipcMain.handle('voice:get-announcement-audio', async (
+    _e,
+    args: { text: string; language: string; gender: string; rate: number; voiceId?: string | null; includeChime?: boolean },
+  ): Promise<{ ok: boolean; error?: string; voice?: string; chime?: { buffer: ArrayBuffer; mime: string } | null; speech?: { buffer: ArrayBuffer; mime: string } | null }> => {
+    try {
+      const text = String(args?.text ?? '').trim();
+      if (!text) return { ok: false, error: 'empty text' };
+      const lang = String(args?.language ?? 'en').toLowerCase();
+      const gender = args?.gender === 'male' ? 'male' : 'female';
+      const rate = Math.max(60, Math.min(130, Number(args?.rate ?? 90)));
+      const voice = pickTtsVoice(lang, gender, args?.voiceId);
+      const speechBuf = await getTtsAudio(text, voice, rate);
+      if (!speechBuf) return { ok: false, error: 'tts generation failed', voice };
+
+      let chimeBytes: Buffer | null = null;
+      if (args?.includeChime !== false) {
+        try {
+          const chimePath = await getChimePath();
+          chimeBytes = await fs.promises.readFile(chimePath);
+        } catch (err: any) {
+          logger.debug('voice', 'chime unavailable for device-routed playback', { error: err?.message });
+        }
+      }
+
+      // Normalize to plain ArrayBuffer so the IPC serializer hands the
+      // renderer a Blob-friendly payload. Node Buffers also work but
+      // ArrayBuffer is unambiguous across contexts.
+      const speechMime = 'audio/mpeg';
+      const speechAb = speechBuf.buffer.slice(speechBuf.byteOffset, speechBuf.byteOffset + speechBuf.byteLength);
+      const chimeAb = chimeBytes
+        ? chimeBytes.buffer.slice(chimeBytes.byteOffset, chimeBytes.byteOffset + chimeBytes.byteLength)
+        : null;
+      const chimeMime = chimeBytes ? (chimeBytes.subarray(0, 4).toString('ascii') === 'RIFF' ? 'audio/wav' : 'audio/mpeg') : null;
+
+      return {
+        ok: true,
+        voice,
+        chime: chimeAb ? { buffer: chimeAb as ArrayBuffer, mime: chimeMime! } : null,
+        speech: { buffer: speechAb as ArrayBuffer, mime: speechMime },
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
+  });
+
   ipcMain.handle('voice:announce', async (
     _e,
-    args: { text: string; language: string; gender: string; rate: number; voiceId?: string },
+    args: { text: string; language: string; gender: string; rate: number; voiceId?: string; includeChime?: boolean },
   ): Promise<{ ok: boolean; error?: string; voice?: string }> => {
     try {
       const text = String(args?.text ?? '').trim();
@@ -1451,13 +1521,58 @@ function setupIPC() {
         const soundPlay = await import('sound-play' as any);
         const play = (soundPlay as any).play ?? (soundPlay as any).default?.play;
         if (!play) throw new Error('sound-play: play() not found');
-        // Don't await — let it play in the background. Failures surface via
-        // the promise rejection we ignore below; the IPC still returns ok
-        // because the generation + write succeeded.
-        void play(tmp, 1).finally(() => {
-          // Best-effort cleanup 30s after playback (file is ~15 KB).
-          setTimeout(() => { fs.promises.unlink(tmp).catch(() => {}); }, 30000);
-        });
+        // Chime before the voice. Built-in DMV-style three-tone by
+        // default, or the admin's uploaded audio file if present.
+        // `sound-play` resolves its play() promise when playback
+        // actually finishes (Windows Media Player reports completion),
+        // so we can chain the voice right after without timing guesses
+        // that get cut off on longer custom chimes.
+        //
+        // Runs asynchronously in the background — the IPC returns
+        // immediately so the Station UI stays responsive.
+        (async () => {
+          try {
+            // Pipeline warmup: each sound-play invocation spawns a cold
+            // PowerShell + MediaPlayer process whose first ~300 ms gets
+            // clipped while the audio sink opens. A 400 ms silent WAV
+            // played first absorbs that clip so the real chime comes out
+            // from its very first frame.
+            try {
+              const silencePath = await getSilenceWarmupPath();
+              await Promise.race([
+                play(silencePath, 1),
+                new Promise<void>((resolve) => setTimeout(resolve, 900)),
+              ]);
+            } catch (err: any) {
+              logger.debug('voice', 'silence warmup failed (non-fatal)', { error: err?.message });
+            }
+
+            if (args?.includeChime !== false) {
+              try {
+                const chimePath = await getChimePath();
+                // Estimated duration as a safety net: if sound-play's
+                // promise misbehaves on a particular Windows build and
+                // never resolves, this timeout unblocks the voice anyway.
+                const safetyMs = (await getChimeDurationMs()) + 500;
+                await Promise.race([
+                  play(chimePath, 1),
+                  new Promise<void>((resolve) => setTimeout(resolve, safetyMs)),
+                ]);
+              } catch (err: any) {
+                logger.debug('voice', 'chime play failed (non-fatal)', { error: err?.message });
+              }
+            }
+            try {
+              await play(tmp, 1);
+            } catch (err: any) {
+              logger.warn('voice', 'voice play failed', { error: err?.message });
+            } finally {
+              setTimeout(() => { fs.promises.unlink(tmp).catch(() => {}); }, 30000);
+            }
+          } catch (err: any) {
+            logger.warn('voice', 'chime+voice sequence failed', { error: err?.message });
+          }
+        })();
       } catch (err: any) {
         logger.warn('voice', 'sound-play failed', { error: err?.message });
         return { ok: false, error: `playback: ${err?.message ?? err}`, voice };
@@ -1468,10 +1583,100 @@ function setupIPC() {
     }
   });
 
+  // Offline-first TTS cache pre-warm. Renderer calls this once after
+  // org settings load and again after any voice change in Settings.
+  // The prewarmer itself is idempotent + throttled — this handler just
+  // forwards the current settings and returns immediately.
+  let lastKnownVoiceSettings: {
+    voiceId?: string | null; language?: string; gender?: string; rate?: number;
+  } | null = null;
+  ipcMain.handle('voice:prewarm', (_e, args: {
+    voiceId?: string | null; language?: string; gender?: string; rate?: number;
+  }) => {
+    lastKnownVoiceSettings = args || {};
+    triggerTtsPrewarmNow(args || {});
+    return { ok: true };
+  });
+
+  // ── Custom chime management ────────────────────────────────────
+  // Operators can upload their own announcement chime (MP3/WAV/etc).
+  // We open the native file picker here in the main process so the
+  // renderer only ever sees a clean status object, never a raw path.
+  ipcMain.handle('chime:pick-and-install', async () => {
+    const result = await dialog.showOpenDialog(mainWindow ?? undefined as any, {
+      title: 'Choose a chime audio file',
+      properties: ['openFile'],
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'wma'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+    return installCustomChime(result.filePaths[0]);
+  });
+  ipcMain.handle('chime:clear', async () => {
+    await clearCustomChime();
+    return { ok: true };
+  });
+  ipcMain.handle('chime:status', async () => {
+    return { hasCustom: await hasCustomChime() };
+  });
+  // Preview — play the currently-active chime (custom or default) so
+  // admins can audition before accepting the upload.
+  ipcMain.handle('chime:preview', async () => {
+    try {
+      const chimePath = await getChimePath();
+      const soundPlay = await import('sound-play' as any);
+      const play = (soundPlay as any).play ?? (soundPlay as any).default?.play;
+      if (!play) return { ok: false, error: 'sound-play unavailable' };
+      play(chimePath, 1).catch(() => {});
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
+  });
+  // Kick off a background warmup using whatever settings the renderer
+  // last pushed. On first boot (no push yet) this no-ops quietly; the
+  // renderer's subsequent prewarm call covers it. The 30-min retry tick
+  // inside scheduleTtsPrewarm keeps resuming after network drops.
+  scheduleTtsPrewarm(() => lastKnownVoiceSettings);
+
+  // Windows audio pipeline warmup. `sound-play` shells out to PowerShell +
+  // Windows Media Player, and the first play of the session takes
+  // ~300-500ms to open the audio sink — long enough to clip the start of
+  // the first ticket call's chime. Pre-generate the chime WAV and play
+  // it at volume 0 a few seconds after startup so the sink is already
+  // open by the time an operator calls the first ticket. Subsequent
+  // plays are instant because WMP stays loaded.
+  setTimeout(() => {
+    (async () => {
+      try {
+        const chimePath = await getChimePath();
+        const soundPlay = await import('sound-play' as any);
+        const play = (soundPlay as any).play ?? (soundPlay as any).default?.play;
+        if (play) play(chimePath, 0).catch(() => {});
+        logger.debug('voice', 'audio pipeline warmup dispatched');
+      } catch (err: any) {
+        logger.debug('voice', 'audio pipeline warmup skipped', { error: err?.message });
+      }
+    })();
+  }, 4000);
+
   ipcMain.handle('sync:pending-details', () => {
     return db.prepare(
-      "SELECT id, operation, table_name, record_id, attempts, last_error, created_at FROM sync_queue WHERE synced_at IS NULL ORDER BY created_at ASC"
+      `SELECT id, operation, table_name, record_id, attempts, last_error, created_at, organization_id
+       FROM sync_queue WHERE synced_at IS NULL ORDER BY created_at ASC`
     ).all();
+  });
+
+  // Organization-scoped view of the queue. Diagnostics uses it to show
+  // "X items from another business (paused)" separately from the
+  // live pending count so admins can see what's blocked and why.
+  ipcMain.handle('sync:pending-breakdown', () => {
+    try { return syncEngine?.getPendingBreakdown?.() ?? null; }
+    catch { return null; }
+  });
+  ipcMain.handle('sync:discard-foreign', () => {
+    const discarded = syncEngine?.discardForeignItems?.() ?? 0;
+    syncEngine?.updatePendingCount?.();
+    return { discarded };
   });
 
   ipcMain.handle('sync:discard-item', (_e, id: string) => {
@@ -1486,6 +1691,14 @@ function setupIPC() {
 
   ipcMain.handle('sync:retry-item', async (_e, id: string) => {
     db.prepare("UPDATE sync_queue SET attempts = 0, last_error = NULL, next_retry_at = NULL WHERE id = ?").run(id);
+    // Use pushImmediate so the retry bypasses the organization-scope
+    // filter in syncNow() — operators clicking Retry on a specific row
+    // want that row to fire now and see the real result, not have it
+    // silently deferred because its stamped organization_id disagrees
+    // with the current session (which can happen after business
+    // switches or backfill edge cases).
+    try { await syncEngine?.pushImmediate?.(id); }
+    catch (err: any) { logger.warn('sync', 'pushImmediate failed from retry', { id, error: err?.message }); }
     await syncEngine?.syncNow();
   });
 
@@ -1504,6 +1717,15 @@ function setupIPC() {
 
     // Clean up any legacy stored credentials from pre-v1.8.0
     try { db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run(); } catch {}
+
+    // Restart the sync engine's intervals on every sign-in. session:clear
+    // (sign-out) calls syncEngine.stop() which clears the setInterval;
+    // without an explicit restart here, the 10-second syncNow loop stays
+    // dead and any pending sync_queue items (ticket_events, etc.) sit at
+    // attempts=0 forever until the app is restarted. syncEngine.start()
+    // is idempotent — it clears any existing intervals before re-arming.
+    try { syncEngine?.start(); }
+    catch (err: any) { logger.warn('sync', 'restart on sign-in failed', { error: err?.message }); }
 
     // Register Station's local IP in office settings so web kiosk can discover it
     registerStationIP(session);

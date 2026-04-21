@@ -28,18 +28,62 @@ export interface VoiceSettings {
   /** Explicit Edge voice id (e.g. 'fr-FR-VivienneMultilingualNeural').
    *  When set, overrides gender+language. */
   voiceId?: string | null;
+  /** Target audio output device id (from navigator.mediaDevices). Empty
+   *  string or null means "use Windows default device" — which routes
+   *  through the main-process sound-play path. */
+  outputDeviceId?: string | null;
+  /** Whether to play the chime before the voice. */
+  chimeEnabled?: boolean;
 }
 
 /** Read settings from an office_settings-like object with sensible defaults. */
 export function parseVoiceSettings(source: Record<string, unknown> | null | undefined): VoiceSettings {
   const s = source ?? {};
   return {
-    enabled: Boolean(s.voice_announcements),
+    // Voice announcements default ON — every new org should hear the
+    // ticket call without needing to opt in. Admins can still disable
+    // explicitly in Settings (stored as `voice_announcements: false`).
+    enabled: s.voice_announcements !== false,
     gender: (s.voice_gender === 'male' ? 'male' : 'female'),
     language: (['auto', 'ar', 'fr', 'en'].includes(String(s.voice_language ?? 'auto')) ? s.voice_language : 'auto') as VoiceLang,
     rate: typeof s.voice_rate === 'number' ? Math.max(60, Math.min(130, s.voice_rate)) : 90,
-    voiceId: typeof s.voice_id === 'string' && s.voice_id ? s.voice_id : null,
+    // Denise — French female, broadcast-quality — is the platform-wide
+    // default. Applies when org settings don't carry an explicit voice_id.
+    voiceId: typeof s.voice_id === 'string' && s.voice_id ? s.voice_id : 'fr-FR-DeniseNeural',
+    outputDeviceId: typeof s.voice_output_device_id === 'string' && s.voice_output_device_id
+      ? s.voice_output_device_id
+      : null,
+    // Default true — existing businesses have always heard the chime.
+    chimeEnabled: s.announcement_sound_enabled !== false,
   };
+}
+
+/**
+ * List the OS audio output devices visible to the Station renderer.
+ * Used by the Settings UI to populate the "Audio output" dropdown.
+ *
+ * Requires microphone permission to retrieve device *labels* (Chrome
+ * privacy policy). The Station's preload grants this permission
+ * automatically via a one-time silent `getUserMedia({ audio: true })`.
+ * Falls back to label-less device ids if permission hasn't been
+ * granted yet — the user can still pick by index, just without names.
+ */
+export async function listAudioOutputs(): Promise<Array<{ deviceId: string; label: string }>> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return [];
+  try {
+    // Trigger a silent mic request so `label` is populated. Immediately
+    // stop the stream — we don't need the input, just the device labels.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch { /* permission denied — continue with unlabeled devices */ }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((d) => d.kind === 'audiooutput')
+      .map((d) => ({ deviceId: d.deviceId, label: d.label || `Audio output ${d.deviceId.slice(0, 6)}` }));
+  } catch {
+    return [];
+  }
 }
 
 // Heuristics used to guess whether an installed voice is male or female
@@ -112,6 +156,14 @@ export async function getVoicesAsync(): Promise<SpeechSynthesisVoice[]> {
 }
 
 function resolveLocale(settings: VoiceSettings, fallback: string): string {
+  // Explicit voice_id wins: picking 'ar-DZ-AminaNeural' implies Arabic
+  // text, otherwise the Arabic voice would read English words.
+  if (settings.voiceId) {
+    const p = settings.voiceId.slice(0, 2).toLowerCase();
+    if (p === 'ar') return 'ar-SA';
+    if (p === 'fr') return 'fr-FR';
+    if (p === 'en') return 'en-US';
+  }
   if (settings.language === 'auto') {
     const twoLetter = fallback.slice(0, 2).toLowerCase();
     if (twoLetter === 'ar') return 'ar-SA';
@@ -179,6 +231,84 @@ async function speakViaKioskServer(text: string, lang: string, settings: VoiceSe
   }
 }
 
+/**
+ * Route audio to a specific OS output device. The main process supplies
+ * the chime + voice bytes via IPC; we wrap them in Blobs and play
+ * through HTMLAudioElements whose `sinkId` is pinned to the selected
+ * device. This is the only way to hit a non-default Windows sink from
+ * inside the Electron sandbox.
+ *
+ * Why chained audio elements instead of one-shot MediaStream: we want
+ * the chime to finish before the voice starts (same UX as the main
+ * process path). `audio.onended` gives us that without any timing
+ * estimates getting cut off on long custom chimes.
+ */
+async function speakViaDevice(
+  text: string,
+  lang: string,
+  settings: VoiceSettings,
+): Promise<SpeakResult> {
+  const api = (window as any).qf?.voice?.getAnnouncementAudio;
+  if (!api) return { path: 'failed', voice: '', reason: 'preload missing voice.getAnnouncementAudio' };
+  const deviceId = settings.outputDeviceId ?? '';
+  if (!deviceId) return { path: 'failed', voice: '', reason: 'no device id' };
+
+  let chimeUrl: string | null = null;
+  let speechUrl: string | null = null;
+  try {
+    const res = await api({
+      text,
+      language: lang.slice(0, 2).toLowerCase(),
+      gender: settings.gender,
+      rate: settings.rate,
+      voiceId: settings.voiceId ?? null,
+      includeChime: settings.chimeEnabled !== false,
+    });
+    if (!res?.ok) return { path: 'failed', voice: res?.voice ?? '', reason: res?.error ?? 'no audio bytes' };
+
+    if (res.chime?.buffer) {
+      chimeUrl = URL.createObjectURL(new Blob([res.chime.buffer], { type: res.chime.mime }));
+    }
+    if (res.speech?.buffer) {
+      speechUrl = URL.createObjectURL(new Blob([res.speech.buffer], { type: res.speech.mime }));
+    } else {
+      return { path: 'failed', voice: res.voice ?? '', reason: 'missing speech audio' };
+    }
+
+    const playWithSink = async (url: string) => {
+      const audio = new Audio(url);
+      // `setSinkId` isn't in every TS lib version — use a cast.
+      const setSink = (audio as any).setSinkId;
+      if (typeof setSink === 'function') {
+        try { await (audio as any).setSinkId(deviceId); }
+        catch (err: any) { throw new Error(`setSinkId failed: ${err?.message ?? err}`); }
+      } else {
+        throw new Error('setSinkId unavailable in this Chromium build');
+      }
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => resolve();
+        audio.onerror = () => reject(new Error(`audio error: ${audio.error?.message ?? 'unknown'}`));
+        audio.play().catch(reject);
+      });
+    };
+
+    if (chimeUrl) {
+      try { await playWithSink(chimeUrl); }
+      catch (err: any) { /* chime failure is non-fatal; continue to voice */
+        console.warn('[voice] chime via device failed', err?.message);
+      }
+    }
+    await playWithSink(speechUrl);
+
+    return { path: 'kiosk-server', voice: res.voice ?? settings.voiceId ?? '' };
+  } catch (err: any) {
+    return { path: 'failed', voice: '', reason: `device-routed: ${err?.message ?? err}` };
+  } finally {
+    if (chimeUrl) URL.revokeObjectURL(chimeUrl);
+    if (speechUrl) URL.revokeObjectURL(speechUrl);
+  }
+}
+
 async function speakViaMainProcess(text: string, lang: string, settings: VoiceSettings): Promise<SpeakResult> {
   // Main-process playback: Electron main spawns Python edge-tts, caches
   // the MP3, and plays it through the OS audio stack (sound-play ->
@@ -193,6 +323,7 @@ async function speakViaMainProcess(text: string, lang: string, settings: VoiceSe
       gender: settings.gender,
       rate: settings.rate,
       voiceId: settings.voiceId ?? null,
+      includeChime: settings.chimeEnabled !== false,
     });
     if (res?.ok) {
       // Prefer showing the actual voice short-name the main process
@@ -216,6 +347,17 @@ async function speakViaMainProcess(text: string, lang: string, settings: VoiceSe
 export async function speak(text: string, settings: VoiceSettings, fallbackLocale = 'en-US'): Promise<SpeakResult> {
   if (!settings.enabled) return { path: 'failed', voice: '', reason: 'disabled' };
   const lang = resolveLocale(settings, fallbackLocale);
+
+  // Device-routed playback first when the admin has picked a specific
+  // output — this is the ONLY way to reach a non-default sink (PA
+  // amp, USB speaker, …). If setSinkId fails for any reason we fall
+  // through to the main-process path so the operator still hears the
+  // announcement on the system default.
+  if (settings.outputDeviceId) {
+    const routed = await speakViaDevice(text, lang, settings);
+    if (routed.path === 'kiosk-server') return routed;
+    console.warn('[voice] device-routed playback failed, falling back to default sink:', routed.reason);
+  }
 
   const mainResult = await speakViaMainProcess(text, lang, settings);
   if (mainResult.path === 'kiosk-server') return mainResult;

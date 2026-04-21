@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld('qf', {
     discardItem: (id: string) => ipcRenderer.invoke('sync:discard-item', id),
     discardAll: () => ipcRenderer.invoke('sync:discard-all'),
     retryItem: (id: string) => ipcRenderer.invoke('sync:retry-item', id),
+    // Org-scoped breakdown: how many pending items belong to the
+    // active business vs. others. Lets diagnostics show orphaned
+    // items from a previous sign-in separately.
+    getPendingBreakdown: () => ipcRenderer.invoke('sync:pending-breakdown'),
+    discardForeign: () => ipcRenderer.invoke('sync:discard-foreign'),
     onStatusChange: (callback: (status: string) => void) => {
       const handler = (_: any, status: string) => callback(status);
       ipcRenderer.on('sync:status-change', handler);
@@ -133,6 +138,29 @@ contextBridge.exposeInMainWorld('qf', {
   voice: {
     announce: (args: { text: string; language: string; gender: string; rate: number }) =>
       ipcRenderer.invoke('voice:announce', args),
+    // Ask the main process to pre-warm the offline MP3 cache for a given
+    // voice + rate. Idempotent — safe to call after every settings load
+    // or save; the prewarmer short-circuits when already done.
+    prewarm: (args: { voiceId?: string | null; language?: string; gender?: string; rate?: number }) =>
+      ipcRenderer.invoke('voice:prewarm', args),
+    // Pulls the chime + voice audio bytes without playing them. Used by
+    // the renderer when routing to a specific audio output device via
+    // HTMLAudioElement.setSinkId — the only way to hit a non-default
+    // Windows sink from inside the sandbox.
+    getAnnouncementAudio: (args: {
+      text: string; language: string; gender: string; rate: number; voiceId?: string | null; includeChime?: boolean;
+    }) => ipcRenderer.invoke('voice:get-announcement-audio', args),
+  },
+
+  // Custom chime played before each ticket announcement. Admins upload
+  // their own MP3/WAV through the native file picker; the main process
+  // validates + copies into userData so the file survives app updates.
+  chime: {
+    pickAndInstall: (): Promise<{ ok: boolean; error?: string; canceled?: boolean; path?: string }> =>
+      ipcRenderer.invoke('chime:pick-and-install'),
+    clear: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('chime:clear'),
+    status: (): Promise<{ hasCustom: boolean }> => ipcRenderer.invoke('chime:status'),
+    preview: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('chime:preview'),
   },
 
   // Updater

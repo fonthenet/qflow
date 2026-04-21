@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { getSupabase, ensureAuth, verifyAuthWorks } from '../lib/supabase';
-import { speak as speakNatural, parseVoiceSettings } from '../lib/voice';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
@@ -10,6 +9,8 @@ import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
+import { speak as speakNatural, parseVoiceSettings } from '../lib/voice';
+import { arabicNumberToWords } from '@qflo/shared';
 import { dateKeyInTz, getDayNameFromKey, getDayHours, CALENDAR_DAYS, migrateToIntakeFields, getFieldLabel, INTAKE_PRESETS, type IntakeField, type PresetKey } from '@qflo/shared';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
@@ -1671,6 +1672,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           // Read auto_no_show_timeout (stored in minutes)
           const fetchedOrgSettings = (orgData?.settings ?? {}) as Record<string, any>;
           if (!cancelled) setOrgSettings(fetchedOrgSettings);
+          // Kick off the offline TTS pre-warmer so ticket announcements
+          // survive a network drop. Main process throttles + dedupes.
+          try {
+            (window as any).qf?.voice?.prewarm?.({
+              voiceId: fetchedOrgSettings.voice_id ?? null,
+              language: fetchedOrgSettings.voice_language ?? 'auto',
+              gender: fetchedOrgSettings.voice_gender ?? 'female',
+              rate: fetchedOrgSettings.voice_rate ?? 90,
+            });
+          } catch { /* non-fatal — warming resumes on next launch */ }
           const timeoutMinutes = Number(fetchedOrgSettings.auto_no_show_timeout);
           if (!cancelled && timeoutMinutes > 0) setCallTimeoutSeconds(timeoutMinutes * 60);
         } catch {}
@@ -2816,6 +2827,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // ── Actions ─────────────────────────────────────────────────────
 
+  // Single source of truth for ticket voice announcements. Called from
+  // callNext and recall — anywhere a ticket moves into the "called"
+  // state the operator and customer should hear the number again.
+  // Digit-only text avoids TTS falling back to English on mixed
+  // Arabic/Roman strings. Non-fatal: voice is a nicety, not a blocker.
+  const announceTicket = (ticketNumber: unknown) => {
+    try {
+      if (!ticketNumber || orgSettings.voice_announcements === false) return;
+      const settings = parseVoiceSettings({
+        voice_announcements: true,
+        voice_gender: orgSettings.voice_gender,
+        voice_language: orgSettings.voice_language,
+        voice_rate: orgSettings.voice_rate,
+        voice_id: orgSettings.voice_id,
+      });
+      const fromVoiceId = settings.voiceId ? settings.voiceId.slice(0, 2).toLowerCase() : '';
+      const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
+      const lang = fromVoiceId === 'ar' ? 'ar-SA'
+        : fromVoiceId === 'fr' ? 'fr-FR'
+        : fromVoiceId === 'en' ? 'en-US'
+        : settings.language === 'auto' ? fallback
+        : settings.language === 'ar' ? 'ar-SA'
+        : settings.language === 'fr' ? 'fr-FR' : 'en-US';
+      const raw = String(ticketNumber);
+      const digits = raw.replace(/\D+/g, '').replace(/^0+/, '') || raw.replace(/\D+/g, '') || raw;
+      // For Arabic, write the number out in MSA words so dialectal
+      // voices (e.g. Algerian) don't pronounce digits with local
+      // vocabulary that non-Algerian customers mishear. French and
+      // English TTS pronounce digits naturally so we leave those alone.
+      const n = parseInt(digits, 10);
+      const arabicWords = Number.isFinite(n) ? arabicNumberToWords(n) : digits;
+      const text = lang.startsWith('ar') ? `التذكرة رقم ${arabicWords}`
+        : lang.startsWith('fr') ? `Ticket numéro ${digits}`
+        : `Ticket number ${digits}`;
+      void speakNatural(text, settings, fallback);
+    } catch { /* non-fatal */ }
+  };
+
   // ALWAYS write to SQLite first — sync engine pushes to cloud
   const callingNextRef = useRef(false);
   const callNext = async () => {
@@ -2830,29 +2879,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       }
       fetchTickets();
       if (isSmallScreen) setSidebarVisible(false);
-      // Speak the ticket number aloud on the Station's own speakers using
-      // the same neural-voice pipeline the customer display uses. Operator
-      // hears confirmation without needing the separate display tab open.
-      try {
-        const ticketNumber = (result as any)?.ticket_number;
-        if (ticketNumber && orgSettings.voice_announcements !== false) {
-          const settings = parseVoiceSettings({
-            voice_announcements: true,
-            voice_gender: orgSettings.voice_gender,
-            voice_language: orgSettings.voice_language,
-            voice_rate: orgSettings.voice_rate,
-            voice_id: orgSettings.voice_id,
-          });
-          const fallback = locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US';
-          const lang = settings.language === 'auto' ? fallback
-            : settings.language === 'ar' ? 'ar-SA'
-            : settings.language === 'fr' ? 'fr-FR' : 'en-US';
-          const text = lang.startsWith('ar') ? `التذكرة رقم ${ticketNumber}`
-            : lang.startsWith('fr') ? `Ticket numéro ${ticketNumber}`
-            : `Ticket number ${ticketNumber}`;
-          void speakNatural(text, settings, fallback);
-        }
-      } catch { /* non-fatal — voice is a nicety, not a blocker */ }
+      announceTicket((result as any)?.ticket_number);
     } catch (err: any) {
       showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
@@ -2908,7 +2935,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       called_at: new Date().toISOString(),
       recall_count: (t?.recall_count ?? 0) + 1,
     });
-    if (t) addActivity(t.ticket_number, translate(locale, 'Recalled'), t.id);
+    if (t) {
+      addActivity(t.ticket_number, translate(locale, 'Recalled'), t.id);
+      announceTicket(t.ticket_number);
+    }
   };
 
   const requeue = (id: string) => {

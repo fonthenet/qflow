@@ -13,6 +13,109 @@ import {
 
 let db: Database.Database;
 
+// ── Sync notifier hook ────────────────────────────────────────────
+// Allows db.ts (which is low-level) to poke the sync engine when a
+// row is enqueued, without taking a hard dependency on the engine.
+// The sync engine registers a callback on startup via setSyncNotifier.
+// When logTicketEvent (or future writers) enqueues a sync_queue row,
+// it calls syncNotifier(syncId) to trigger an immediate push attempt
+// instead of waiting up to 10s for the batch interval.
+let syncNotifier: ((syncId: string) => void) | null = null;
+export function setSyncNotifier(fn: ((syncId: string) => void) | null) {
+  syncNotifier = fn;
+}
+
+/**
+ * Single entry point for enqueueing rows into sync_queue. Every write MUST
+ * go through here so the sync notifier fires consistently — no row can be
+ * added without the sync engine knowing about it. Direct
+ * `INSERT INTO sync_queue` statements are forbidden outside this file.
+ *
+ * Returns the syncId (opts.id) for convenience.
+ */
+/**
+ * Derive the organization that owns a sync item so rows can be scoped
+ * to the current session at replay time. Every table in the sync set
+ * ultimately chains back to an organization — either directly (offices,
+ * organizations) or through office_id / ticket_id. Returns null only if
+ * the chain can't be resolved (e.g. a ticket_event whose parent ticket
+ * isn't in local state yet).
+ *
+ * Exported so sync.ts can re-derive on legacy rows that pre-date the
+ * organization_id column, and so tests can pin the behavior.
+ */
+export function deriveOrgIdForSyncItem(
+  dbHandle: Database.Database,
+  table: string,
+  recordId: string,
+  payload: Record<string, unknown>,
+): string | null {
+  try {
+    // Direct hits first — the payload already carries the answer.
+    if (table === 'organizations') {
+      return (payload.id as string) ?? recordId ?? null;
+    }
+    if (table === 'offices') {
+      return (payload.organization_id as string) ?? null;
+    }
+    const directOrg = payload.organization_id;
+    if (typeof directOrg === 'string' && directOrg) return directOrg;
+
+    // Anything keyed by office_id — tickets, departments, desks,
+    // office_holidays, etc. — resolves via a single JOIN to offices.
+    const officeId = payload.office_id;
+    if (typeof officeId === 'string' && officeId) {
+      const row = dbHandle.prepare(`SELECT organization_id FROM offices WHERE id = ? LIMIT 1`).get(officeId) as any;
+      if (row?.organization_id) return row.organization_id;
+    }
+
+    // ticket_events and anything else referencing a ticket_id hop
+    // through tickets → offices → organization_id.
+    const ticketId = payload.ticket_id ?? (table === 'tickets' ? recordId : null);
+    if (typeof ticketId === 'string' && ticketId) {
+      const row = dbHandle.prepare(`
+        SELECT o.organization_id
+        FROM tickets t LEFT JOIN offices o ON o.id = t.office_id
+        WHERE t.id = ? LIMIT 1
+      `).get(ticketId) as any;
+      if (row?.organization_id) return row.organization_id;
+    }
+
+    // Services hang off departments → offices.
+    const departmentId = payload.department_id;
+    if (typeof departmentId === 'string' && departmentId) {
+      const row = dbHandle.prepare(`
+        SELECT o.organization_id
+        FROM departments d LEFT JOIN offices o ON o.id = d.office_id
+        WHERE d.id = ? LIMIT 1
+      `).get(departmentId) as any;
+      if (row?.organization_id) return row.organization_id;
+    }
+  } catch { /* fall through to null */ }
+  return null;
+}
+
+export function enqueueSync(opts: {
+  id: string;
+  operation: 'INSERT' | 'UPDATE' | 'DELETE' | 'CALL';
+  table: string;
+  recordId: string;
+  payload: Record<string, unknown>;
+  createdAt?: string;
+  /** Optional explicit override — callers who already know the org can
+   *  skip the derivation lookup. Otherwise we derive from the payload. */
+  organizationId?: string | null;
+}): string {
+  const createdAt = opts.createdAt ?? new Date().toISOString();
+  const orgId = opts.organizationId ?? deriveOrgIdForSyncItem(db, opts.table, opts.recordId, opts.payload);
+  db.prepare(`
+    INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at, organization_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(opts.id, opts.operation, opts.table, opts.recordId, JSON.stringify(opts.payload), createdAt, orgId);
+  try { syncNotifier?.(opts.id); } catch { /* non-fatal */ }
+  return opts.id;
+}
+
 // The outcome of the last startup recovery pass. Consumed by main.ts
 // to surface a banner in the renderer ("Local database was repaired...")
 // or to trigger a forced re-login + full resync when we started fresh.
@@ -208,6 +311,16 @@ export function initDB() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Local draft cache for customer notes + rich-text customer_file.
+    -- Safety net so offline edits aren't lost when Supabase auto-save fails.
+    -- Drafts are cleared once the cloud write succeeds, so this should stay tiny.
+    CREATE TABLE IF NOT EXISTS customer_drafts (
+      customer_id TEXT PRIMARY KEY,
+      notes TEXT,
+      customer_file TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
     -- Indexes (only on columns guaranteed to exist in CREATE TABLE above)
     CREATE INDEX IF NOT EXISTS idx_broadcast_templates_org ON broadcast_templates(organization_id);
     CREATE INDEX IF NOT EXISTS idx_office_holidays_lookup ON office_holidays(office_id, holiday_date);
@@ -224,6 +337,11 @@ export function initDB() {
   try { db.exec(`ALTER TABLE offices ADD COLUMN operating_hours TEXT DEFAULT '{}'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE sync_queue ADD COLUMN already_notified INTEGER DEFAULT 0`); } catch { /* already exists */ }
+  // organization_id stamped at enqueue so the sync engine can scope
+  // replay by business. Without it, rows queued under one business
+  // silently try to replay under another (different RLS, different
+  // auth), either failing forever or — worse — leaking data.
+  try { db.exec(`ALTER TABLE sync_queue ADD COLUMN organization_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN is_offline INTEGER DEFAULT 0`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN parked_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN recall_count INTEGER DEFAULT 0`); } catch { /* already exists */ }
@@ -390,11 +508,50 @@ export function initDB() {
   )`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_broadcast_templates_org ON broadcast_templates(organization_id)`);
 
+  // Local customer draft cache (migration for existing installs — must match initial schema above).
+  db.exec(`CREATE TABLE IF NOT EXISTS customer_drafts (
+    customer_id TEXT PRIMARY KEY,
+    notes TEXT,
+    customer_file TEXT,
+    updated_at INTEGER NOT NULL
+  )`);
+
   // One-time cleanup: remove demo/sample customers with @example.com emails
   try { db.exec(`DELETE FROM customers WHERE email LIKE '%@example.com'`); } catch { /* table may not exist yet */ }
 
   // Indexes that depend on migrated columns (must come after ALTER TABLEs)
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL`); } catch { /* */ }
+  // Scoped-replay index: lets syncNow pull pending items for the active
+  // organization in O(log n) instead of scanning the whole queue.
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_org_pending ON sync_queue(organization_id, synced_at) WHERE synced_at IS NULL`); } catch { /* */ }
+
+  // One-shot backfill: older queued rows pre-date the organization_id
+  // column. Try to derive it from the payload / referenced records so
+  // existing offline state survives the migration. Rows we can't
+  // resolve stay NULL — the scoped syncNow treats NULL as "attempt
+  // under whatever session is active", preserving legacy behavior.
+  try {
+    const missing = db.prepare(
+      `SELECT id, table_name, record_id, payload
+       FROM sync_queue
+       WHERE synced_at IS NULL AND organization_id IS NULL
+       LIMIT 5000`,
+    ).all() as Array<{ id: string; table_name: string; record_id: string; payload: string }>;
+    if (missing.length > 0) {
+      const update = db.prepare(`UPDATE sync_queue SET organization_id = ? WHERE id = ?`);
+      let filled = 0;
+      for (const row of missing) {
+        try {
+          const parsed = row.payload ? JSON.parse(row.payload) : {};
+          const orgId = deriveOrgIdForSyncItem(db, row.table_name, row.record_id, parsed);
+          if (orgId) { update.run(orgId, row.id); filled++; }
+        } catch { /* skip malformed */ }
+      }
+      if (filled > 0) logger.info('db.migrate', 'Backfilled organization_id on sync_queue', { filled, scanned: missing.length });
+    }
+  } catch (err: any) {
+    logger.warn('db.migrate', 'Backfill failed (non-fatal)', { error: err?.message });
+  }
 
   // ── Post-open integrity check ─────────────────────────────────────
   // recoverDatabaseIfNeeded already ran a read-only integrity check
@@ -585,10 +742,16 @@ export function logTicketEvent(
         if (Object.keys(rest).length > 0) cloudPayload.metadata = rest;
       }
 
-      db.prepare(`
-        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-        VALUES (?, 'INSERT', 'ticket_events', ?, ?, ?)
-      `).run(syncId, syncId, JSON.stringify(cloudPayload), now);
+      // Route through enqueueSync so the notifier fires consistently
+      // (keeps ticket_events moving instead of sitting at attempts=0).
+      enqueueSync({
+        id: syncId,
+        operation: 'INSERT',
+        table: 'ticket_events',
+        recordId: syncId,
+        payload: cloudPayload,
+        createdAt: now,
+      });
     } catch (err) {
       logger.error('audit', 'Failed to enqueue ticket_event cloud sync', { err });
     }

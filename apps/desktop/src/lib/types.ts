@@ -28,6 +28,9 @@ export interface SyncStatus {
   lastSyncAt: string | null;
   connectionQuality?: 'good' | 'slow' | 'flaky' | 'offline';
   lastError?: { message: string; ticketNumber?: string; type: string; at: number } | null;
+  circuitOpen?: boolean;
+  authExpired?: boolean;
+  oldestPendingAgeMs?: number | null;
 }
 
 export interface UpdateStatus {

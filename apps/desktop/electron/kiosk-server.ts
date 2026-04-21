@@ -12,6 +12,11 @@ import { getTtsAudio, pickVoice as pickTtsVoice } from './tts-cache';
 import { isValidTransition, resolveDialCode } from '@qflo/shared';
 import { logger } from './logger';
 
+// Random per-process id — sent to every connected display so they can
+// detect when the Station has restarted and reload themselves. Without
+// this, the display holds onto stale HTML/JS across rebuilds.
+const SERVER_BOOT_ID = randomUUID();
+
 // ── Static kiosk assets (loaded once at startup, served from memory) ──
 const KIOSK_DIR = join(__dirname, 'kiosk');
 const MIME_TYPES: Record<string, string> = {
@@ -876,6 +881,27 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
       }
     } catch (e: any) { logger.warn('kiosk', 'Failed to fetch org branding info', { error: e?.message }); }
   }
+  // Cloud unreachable (or fetch failed) — fall back to the locally-synced
+  // organizations row so the display still respects voice language, voice
+  // id, and other org-level settings when the internet is down. Without
+  // this, the display config degrades to defaults ('auto' language, no
+  // voice id) and ticket calls come out in English.
+  if (!organizationSettings || Object.keys(organizationSettings).length === 0) {
+    try {
+      const d = getDB();
+      const localOrg = d.prepare(`
+        SELECT name, name_ar, logo_url, settings, timezone
+        FROM organizations WHERE id = ? LIMIT 1
+      `).get(office.organization_id) as any;
+      if (localOrg) {
+        orgName = orgName ?? localOrg.name ?? null;
+        orgNameAr = orgNameAr ?? localOrg.name_ar ?? null;
+        logoUrl = logoUrl ?? localOrg.logo_url ?? null;
+        organizationSettings = parseSettings(localOrg.settings);
+        if (localOrg.timezone) organizationSettings._orgTimezone = localOrg.timezone;
+      }
+    } catch (e: any) { logger.warn('kiosk', 'Failed to read local org settings', { error: e?.message }); }
+  }
 
   // ── Kiosk enabled check ────────────────────────────────────────
   if (organizationSettings.kiosk_enabled === false) {
@@ -947,6 +973,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     business_hours: businessStatus,
     visit_intake_override_mode: visitIntakeOverrideMode,
     kiosk_config: kioskConfig,
+    server_boot_id: SERVER_BOOT_ID,
     display_config: {
       announcement_sound_enabled: organizationSettings.announcement_sound_enabled ?? true,
       // Default voice announcements ON — customers expect a human voice to
@@ -2248,23 +2275,11 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
   </style>
 </head>
 <body>
-  <!-- Audio unlock overlay — browsers block speechSynthesis + AudioContext
-       until a user gesture has happened on the page. On an unattended
-       display that never gets clicked, voice announcements would queue up
-       silently. Shown once per session; one tap primes both APIs for the
-       rest of the session. -->
-  <div id="audio-unlock" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:rgba(15,23,42,0.92);color:#f1f5f9;cursor:pointer;backdrop-filter:blur(8px)">
-    <div style="width:96px;height:96px;border-radius:50%;background:rgba(56,189,248,0.15);display:flex;align-items:center;justify-content:center;animation:audio-pulse 2s ease-in-out infinite">
-      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
-        <path d="M15.54 8.46a5 5 0 010 7.07"/>
-        <path d="M19.07 4.93a10 10 0 010 14.14"/>
-      </svg>
-    </div>
-    <div style="font-size:28px;font-weight:700;text-align:center">Tap to enable announcements</div>
-    <div style="font-size:16px;color:#94a3b8;max-width:440px;text-align:center">One tap unlocks the chime and voice announcements for this session.</div>
-    <style>@keyframes audio-pulse { 0%,100% { transform: scale(1); opacity: 1 } 50% { transform: scale(1.08); opacity: 0.8 } }</style>
-  </div>
+  <!-- The old browser autoplay-unlock overlay was removed — the display
+       no longer plays audio directly. Chime + voice come from the Station
+       main process via sound-play / Windows Media Player, which doesn't
+       need a user gesture to start. Customers see the display content
+       immediately on load. -->
 
   <div class="call-overlay" id="call-overlay">
     <div class="call-label" id="call-overlay-label">NOW CALLING</div>
@@ -2387,61 +2402,10 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     };
     var displayLocale = 'en';
 
-    // ── Audio unlock — required by Chrome autoplay policy ──
-    // speechSynthesis + AudioContext don't play on kiosk displays until a
-    // user gesture happens. Hide the overlay on first tap, prime both APIs,
-    // and play an audible confirmation so the operator immediately knows
-    // audio is working (before any ticket has been called).
-    var audioUnlocked = false;
-    function unlockAudio() {
-      if (audioUnlocked) return;
-      audioUnlocked = true;
-      try {
-        var ctx = getAudioContext();
-        if (ctx && ctx.state === 'suspended') ctx.resume();
-      } catch (e) {}
-      try {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-          // Prime silently, THEN play the audible confirmation. Two-step
-          // avoids some browsers swallowing the first real utterance.
-          var warm = new SpeechSynthesisUtterance(' ');
-          warm.volume = 0;
-          warm.rate = 1;
-          window.speechSynthesis.speak(warm);
-        }
-      } catch (e) {}
-      var overlay = document.getElementById('audio-unlock');
-      if (overlay) overlay.style.display = 'none';
-      // Audible confirmation — the operator hears exactly what a ticket
-      // call will sound like, so any subsequent silence is a real bug and
-      // not just the unlock being forgotten.
-      setTimeout(function() { playChime(); }, 100);
-      setTimeout(function() {
-        try {
-          var requestedLang = resolveLang(announcementConfig.language, displayLocale);
-          var l2 = requestedLang.slice(0, 2).toLowerCase();
-          var hello = l2 === 'ar' ? 'تم تفعيل الإعلانات'
-            : l2 === 'fr' ? 'Annonces activées'
-            : 'Announcements ready';
-          var url = '/api/tts?text=' + encodeURIComponent(hello)
-            + '&language=' + encodeURIComponent(l2)
-            + '&gender=' + encodeURIComponent(announcementConfig.gender || 'female')
-            + '&rate=' + encodeURIComponent(announcementConfig.rate || 90)
-            + (announcementConfig.voiceId ? '&voice=' + encodeURIComponent(announcementConfig.voiceId) : '');
-          var audio = getTtsAudioEl();
-          audio.src = url;
-          audio.play().catch(function(err) {
-            console.warn('[display] unlock audio play failed — no fallback', err && err.message);
-          });
-        } catch (e) {}
-      }, 900);
-    }
-    var unlockEl = document.getElementById('audio-unlock');
-    if (unlockEl) unlockEl.addEventListener('click', unlockAudio);
-    document.addEventListener('click', unlockAudio, { once: true });
-    document.addEventListener('keydown', unlockAudio, { once: true });
-    document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+    // Audio-unlock gesture handling removed: the display no longer plays
+    // audio itself, so there's no browser autoplay policy to work around.
+    // All chime + voice output runs in the Station main process via
+    // sound-play / Windows Media Player — no user gesture required.
 
     // Two-tone chime — warmer than a single 800Hz beep. Plays briefly before
     // the voice announcement so deaf / hard-of-hearing customers also notice.
@@ -2516,7 +2480,20 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       for (var i = 0; i < candidates.length; i++) if (isHQ(candidates[i])) return candidates[i];
       return candidates[0] || null;
     }
+    function langFromVoiceId(voiceId) {
+      if (!voiceId) return null;
+      var p = String(voiceId).slice(0, 2).toLowerCase();
+      if (p === 'ar' || p === 'fr' || p === 'en') return p;
+      return null;
+    }
     function resolveLang(setting, fallback) {
+      // An explicit voice_id (e.g. 'ar-DZ-AminaNeural') wins over the
+      // language dropdown — picking an Arabic voice implies Arabic text,
+      // otherwise the voice reads English words in an Arabic accent.
+      var fromVoice = langFromVoiceId(announcementConfig.voiceId);
+      if (fromVoice === 'ar') return 'ar-SA';
+      if (fromVoice === 'fr') return 'fr-FR';
+      if (fromVoice === 'en') return 'en-US';
       if (setting === 'ar') return 'ar-SA';
       if (setting === 'fr') return 'fr-FR';
       if (setting === 'en') return 'en-US';
@@ -2528,12 +2505,19 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     // Keep the announcement short — just the ticket number. Extra words
     // ("please proceed to desk 1") add latency and noise on a busy display;
     // the on-screen call overlay already shows where to go.
+    //
+    // Strip the letter prefix and leading zeros so we send pure digits to
+    // the TTS. Ticket "R-0081" would otherwise produce "R zero zero eight
+    // one" — Arabic/French voices can't pronounce Roman letters and fall
+    // back to English for the whole phrase. Announcing "81" lets each
+    // language voice read the number naturally.
     function buildAnnouncement(ticketNumber, _deskName, lang) {
       var l = lang.slice(0, 2).toLowerCase();
-      var tn = String(ticketNumber || '').trim();
-      if (l === 'ar') return 'التذكرة رقم ' + tn;
-      if (l === 'fr') return 'Ticket numéro ' + tn;
-      return 'Ticket number ' + tn;
+      var raw = String(ticketNumber || '').trim();
+      var digits = raw.replace(/\D+/g, '').replace(/^0+/, '') || raw.replace(/\D+/g, '') || raw;
+      if (l === 'ar') return 'التذكرة رقم ' + digits;
+      if (l === 'fr') return 'Ticket numéro ' + digits;
+      return 'Ticket number ' + digits;
     }
     // Plays an MP3 through a fresh <audio> element per call. Reusing a
     // single Audio object and setting .pause() + .src + .currentTime in
@@ -2851,6 +2835,20 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         var d = await res.json();
         if (d.error) throw new Error(d.error);
 
+        // Station restarted (new boot id) — reload so the display picks up
+        // the freshly-generated HTML/JS instead of keeping the old template
+        // in memory. Without this, server-side template fixes (e.g. voice
+        // language resolution) require a manual F5 on the display window.
+        if (d.server_boot_id) {
+          if (!window.__serverBootId) {
+            window.__serverBootId = d.server_boot_id;
+          } else if (window.__serverBootId !== d.server_boot_id) {
+            console.info('[display] Station restarted — reloading to pick up new template');
+            window.location.reload();
+            return;
+          }
+        }
+
         setConnStatus(d.cloud_connected);
         updateText('s-waiting', d.waiting_count);
         updateText('s-called', d.called_count);
@@ -2964,9 +2962,10 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         try {
           var evt = JSON.parse(e.data);
           if (evt.type === 'ticket_called' && evt.ticket_number) {
-            playChime();
-            // Speak a moment after the chime so they don't stomp on each other.
-            setTimeout(function() { speakTicket(evt.ticket_number, evt.desk_name); }, 900);
+            // Chime + voice are both handled by the Station's callNext
+            // handler (see Station.tsx) via the main-process TTS IPC.
+            // Playing the chime here would double up on single-PC
+            // setups and fight the voice pipeline's timing.
             pendingCallFlash = evt.ticket_number;
             // Fetch immediately for ticket_called (user expects instant feedback)
             if (debounceTimer) clearTimeout(debounceTimer);

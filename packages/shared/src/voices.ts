@@ -6,8 +6,8 @@
  * Station generates MP3s from these via Python `edge-tts`; the portal
  * displays the same catalog so admins see the same options everywhere.
  *
- * Focus is Arabic (Algerian accent first, Saudi + Egyptian alternatives)
- * and French (Vivienne / Rémy multilingual as default, Denise / Henri as
+ * Focus is Arabic (Algerian accent first, Saudi MSA as alternative) and
+ * French (Vivienne / Rémy multilingual as default, Denise / Henri as
  * classics). English is included as a third option.
  */
 
@@ -23,7 +23,12 @@ export interface VoiceOption {
   /** BCP-47 locale, e.g. 'fr-FR', 'ar-DZ'. */
   locale: string;
   gender: VoiceGender;
-  /** One-line description for the UI. */
+  /** i18n key suffix for the description (e.g. 'algerian_warm' →
+   * 'sm.voice_desc.algerian_warm'). Consumers translate via their own
+   * i18n dict so the label reads in the operator's UI language. */
+  descriptionKey: string;
+  /** English fallback for the description, used as the default and when
+   * an i18n lookup misses. */
   description: string;
   /** Recommended default for its (language, gender) pair. */
   isDefault?: boolean;
@@ -37,6 +42,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'ar',
     locale: 'ar-DZ',
     gender: 'female',
+    descriptionKey: 'algerian_warm',
     description: 'Algerian accent — warm',
     isDefault: true,
   },
@@ -46,6 +52,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'ar',
     locale: 'ar-DZ',
     gender: 'male',
+    descriptionKey: 'algerian_calm',
     description: 'Algerian accent — calm',
     isDefault: true,
   },
@@ -55,6 +62,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'ar',
     locale: 'ar-SA',
     gender: 'female',
+    descriptionKey: 'msa',
     description: 'Modern Standard Arabic',
   },
   {
@@ -63,25 +71,9 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'ar',
     locale: 'ar-SA',
     gender: 'male',
+    descriptionKey: 'msa',
     description: 'Modern Standard Arabic',
   },
-  {
-    id: 'ar-EG-SalmaNeural',
-    displayName: 'Salma',
-    language: 'ar',
-    locale: 'ar-EG',
-    gender: 'female',
-    description: 'Egyptian accent',
-  },
-  {
-    id: 'ar-EG-ShakirNeural',
-    displayName: 'Shakir',
-    language: 'ar',
-    locale: 'ar-EG',
-    gender: 'male',
-    description: 'Egyptian accent',
-  },
-
   // ── French ──────────────────────────────────────────────────────
   {
     id: 'fr-FR-VivienneMultilingualNeural',
@@ -89,6 +81,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'fr',
     locale: 'fr-FR',
     gender: 'female',
+    descriptionKey: 'fr_multilingual',
     description: 'Warm, multilingual — most natural',
     isDefault: true,
   },
@@ -98,6 +91,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'fr',
     locale: 'fr-FR',
     gender: 'male',
+    descriptionKey: 'fr_multilingual',
     description: 'Warm, multilingual — most natural',
     isDefault: true,
   },
@@ -107,6 +101,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'fr',
     locale: 'fr-FR',
     gender: 'female',
+    descriptionKey: 'fr_classic',
     description: 'Classic broadcast-quality',
   },
   {
@@ -115,7 +110,44 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'fr',
     locale: 'fr-FR',
     gender: 'male',
+    descriptionKey: 'fr_classic',
     description: 'Classic broadcast-quality',
+  },
+  {
+    id: 'fr-FR-EloiseNeural',
+    displayName: 'Éloïse',
+    language: 'fr',
+    locale: 'fr-FR',
+    gender: 'female',
+    descriptionKey: 'fr_young',
+    description: 'Youthful, bright',
+  },
+  {
+    id: 'fr-FR-YvetteNeural',
+    displayName: 'Yvette',
+    language: 'fr',
+    locale: 'fr-FR',
+    gender: 'female',
+    descriptionKey: 'fr_mature',
+    description: 'Mature, professional',
+  },
+  {
+    id: 'fr-FR-JeromeNeural',
+    displayName: 'Jérôme',
+    language: 'fr',
+    locale: 'fr-FR',
+    gender: 'male',
+    descriptionKey: 'fr_professional',
+    description: 'Professional, clear',
+  },
+  {
+    id: 'fr-FR-AlainNeural',
+    displayName: 'Alain',
+    language: 'fr',
+    locale: 'fr-FR',
+    gender: 'male',
+    descriptionKey: 'fr_warm',
+    description: 'Warm, mature',
   },
 
   // ── English ─────────────────────────────────────────────────────
@@ -125,6 +157,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'en',
     locale: 'en-US',
     gender: 'female',
+    descriptionKey: 'en_us',
     description: 'American English',
     isDefault: true,
   },
@@ -134,6 +167,7 @@ export const VOICE_CATALOG: VoiceOption[] = [
     language: 'en',
     locale: 'en-US',
     gender: 'male',
+    descriptionKey: 'en_us',
     description: 'American English',
     isDefault: true,
   },

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { CONFIG } from './config';
-import { logTicketEvent } from './db';
+import { logTicketEvent, setSyncNotifier, enqueueSync, deriveOrgIdForSyncItem } from './db';
 import { logger } from './logger';
 import { createQfError } from './error-codes';
 import { normalizePhone } from '@qflo/shared';
@@ -9,6 +9,7 @@ type StatusCallback = (status: 'online' | 'offline' | 'syncing' | 'connecting') 
 type ProgressCallback = (pendingCount: number) => void;
 type AuthErrorCallback = () => void;
 type DataPulledCallback = () => void;
+type ConfigChangedCallback = () => void;
 type TicketErrorCallback = (error: { message: string; ticketNumber?: string; type: string }) => void;
 type TokenRefreshedCallback = (token: string, refreshToken: string) => void;
 /** Returns { email, password } or null if no stored credentials */
@@ -22,7 +23,9 @@ export class SyncEngine {
   private onProgress: ProgressCallback;
   private onAuthError: AuthErrorCallback;
   private onDataPulled: DataPulledCallback;
+  private onConfigChanged: ConfigChangedCallback = () => {};
   private onTicketError: TicketErrorCallback;
+  private lastConfigHash = '';
   private onTokenRefreshed: TokenRefreshedCallback;
   private getStoredCreds: GetStoredCredsCallback;
   private authErrorSuppressedUntil = 0;
@@ -78,6 +81,16 @@ export class SyncEngine {
     this.onTicketError = onTicketError;
     this.onTokenRefreshed = onTokenRefreshed;
     this.getStoredCreds = getStoredCreds;
+  }
+
+  public setConfigChangedCallback(cb: ConfigChangedCallback) {
+    this.onConfigChanged = cb;
+  }
+
+  /** Force a fresh config pull — used after local admin edits to propagate immediately */
+  public async refreshConfig() {
+    this.lastConfigHash = ''; // force onConfigChanged to fire even if data matches
+    await this.pullLatest();
   }
 
   private realtimeWs: WebSocket | null = null;
@@ -140,6 +153,25 @@ export class SyncEngine {
   }
 
   start() {
+    // Idempotent: clear any pre-existing intervals before arming new
+    // ones. start() is called both at app boot AND on every sign-in
+    // (after session:clear stops the engine on sign-out). Without this
+    // guard a stop→start cycle would leak a timer and double-tick.
+    if (this.interval) clearInterval(this.interval);
+    if (this.healthInterval) clearInterval(this.healthInterval);
+    if (this.pullInterval) clearInterval(this.pullInterval);
+    if (this.autoResolveInterval) clearInterval(this.autoResolveInterval);
+
+    // ── Register sync notifier so db.ts writers (logTicketEvent, etc.)
+    // can trigger an immediate push on every enqueue instead of waiting
+    // up to 10s for the batch interval. Prevents ticket_events and other
+    // background mutations from sitting at "Attempts: 0" when the parent
+    // operation already succeeded over pushImmediate.
+    setSyncNotifier((syncId: string) => {
+      try { void this.pushImmediate(syncId); }
+      catch (err: any) { logger.warn('sync.notifier', 'pushImmediate threw', { syncId, error: err?.message }); }
+    });
+
     // ── STARTUP RECOVERY: Reset sync items that were mid-flight when app crashed/restarted ──
     // Items with attempts > 0 but no synced_at may have been interrupted mid-push.
     // Reset their next_retry_at so they're immediately eligible for the next sync cycle.
@@ -255,6 +287,8 @@ export class SyncEngine {
     if (this.pullInterval) clearInterval(this.pullInterval);
     if (this.autoResolveInterval) clearInterval(this.autoResolveInterval);
     this.disconnectRealtime();
+    // Unregister the notifier so stale engine references can't fire.
+    setSyncNotifier(null);
   }
 
   // ── Supabase Realtime: instant cloud→station push ──────────────
@@ -301,6 +335,23 @@ export class SyncEngine {
           ref: '1',
         });
         ws.send(joinMsg);
+
+        // Join the config channel: departments/services/desks/offices/office_holidays.
+        // Any change → immediate pullLatest (debounced below). No office filter on
+        // services (no office_id column); RLS scopes the event stream to the user's org.
+        const configJoin = JSON.stringify({
+          topic: `realtime:public:config`,
+          event: 'phx_join',
+          payload: { config: { broadcast: { self: false }, postgres_changes: [
+            { event: '*', schema: 'public', table: 'departments', filter: `office_id=in.(${session.office_ids.join(',')})` },
+            { event: '*', schema: 'public', table: 'services' },
+            { event: '*', schema: 'public', table: 'desks', filter: `office_id=in.(${session.office_ids.join(',')})` },
+            { event: '*', schema: 'public', table: 'offices', filter: `id=in.(${session.office_ids.join(',')})` },
+            { event: '*', schema: 'public', table: 'office_holidays', filter: `office_id=in.(${session.office_ids.join(',')})` },
+          ] } },
+          ref: '2',
+        });
+        ws.send(configJoin);
 
         // Heartbeat every 30s to keep connection alive
         heartbeatTimer = setInterval(() => {
@@ -490,6 +541,126 @@ export class SyncEngine {
   private getSessionFromDB(): any {
     const row = this.db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
     return row ? JSON.parse(row.value) : null;
+  }
+
+  /**
+   * Fill in organization_id on sync_queue rows that were enqueued
+   * before the column existed, or where the derivation lookup missed
+   * (parent row not yet in local DB at enqueue time). Runs each sync
+   * cycle — cheap because rows settle to a non-NULL value quickly.
+   */
+  private backfillNullOrgIds(): void {
+    try {
+      const rows = this.db.prepare(
+        `SELECT id, table_name, record_id, payload
+         FROM sync_queue
+         WHERE synced_at IS NULL AND organization_id IS NULL
+         LIMIT 200`
+      ).all() as Array<{ id: string; table_name: string; record_id: string; payload: string }>;
+      if (!rows.length) return;
+      const upd = this.db.prepare(`UPDATE sync_queue SET organization_id = ? WHERE id = ?`);
+      let filled = 0;
+      for (const r of rows) {
+        try {
+          const parsed = r.payload ? JSON.parse(r.payload) : {};
+          const orgId = deriveOrgIdForSyncItem(this.db, r.table_name, r.record_id, parsed);
+          if (orgId) { upd.run(orgId, r.id); filled++; }
+        } catch { /* skip bad row */ }
+      }
+      if (filled > 0) logger.debug('sync.backfill', 'Resolved organization_id on pending rows', { filled, scanned: rows.length });
+    } catch (err: any) {
+      logger.debug('sync.backfill', 'Backfill pass failed', { error: err?.message });
+    }
+  }
+
+  /**
+   * Split the pending queue into the active business + others. Used by
+   * the diagnostics panel so admins can see "5 items from another
+   * business" at a glance and choose to discard or ignore them.
+   */
+  getPendingBreakdown(): {
+    activeOrgId: string | null;
+    active: number;
+    foreign: number;
+    unresolved: number;
+    foreignByOrg: Array<{ organization_id: string; count: number }>;
+  } {
+    const session = this.getSessionFromDB();
+    const activeOrgId: string | null = session?.organization_id ?? null;
+    const active = (this.db.prepare(
+      `SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND organization_id = ?`
+    ).get(activeOrgId ?? '') as any)?.c ?? 0;
+    const foreign = (this.db.prepare(
+      `SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND organization_id IS NOT NULL AND organization_id != ?`
+    ).get(activeOrgId ?? '') as any)?.c ?? 0;
+    const unresolved = (this.db.prepare(
+      `SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND organization_id IS NULL`
+    ).get() as any)?.c ?? 0;
+    const foreignByOrg = this.db.prepare(
+      `SELECT organization_id, COUNT(*) as count
+       FROM sync_queue
+       WHERE synced_at IS NULL AND organization_id IS NOT NULL AND organization_id != ?
+       GROUP BY organization_id ORDER BY count DESC`
+    ).all(activeOrgId ?? '') as Array<{ organization_id: string; count: number }>;
+    return { activeOrgId, active, foreign, unresolved, foreignByOrg };
+  }
+
+  /**
+   * Silent background cleanup: retire pending items from other
+   * businesses that have been sitting longer than the grace window.
+   *
+   * Scope is deliberately narrow — ONLY append-only event logs:
+   *   • ticket_events (audit trail)
+   *   • ticket_audit_log
+   *
+   * These can be lost without affecting any ticket, customer, or
+   * operational record. Anything else (tickets, desks, departments,
+   * offices, services, organizations, notifications) stays pending
+   * forever and requires an explicit "Discard items from other
+   * businesses" click so no real business data is ever silently
+   * dropped. The yellow banner still surfaces those so the operator
+   * knows they're there.
+   */
+  private autoDiscardForeignOrphans(): void {
+    const GRACE_MS = 5 * 60 * 1000; // 5 minutes
+    const AUTO_DISCARDABLE_TABLES = ['ticket_events', 'ticket_audit_log'];
+    try {
+      const session = this.getSessionFromDB();
+      const activeOrgId: string | null = session?.organization_id ?? null;
+      if (!activeOrgId) return; // no session yet — don't touch anything
+      const cutoff = new Date(Date.now() - GRACE_MS).toISOString();
+      const placeholders = AUTO_DISCARDABLE_TABLES.map(() => '?').join(',');
+      const res = this.db.prepare(
+        `UPDATE sync_queue
+            SET synced_at = ?, last_error = 'discarded:foreign-org-auto'
+          WHERE synced_at IS NULL
+            AND organization_id IS NOT NULL
+            AND organization_id != ?
+            AND created_at < ?
+            AND table_name IN (${placeholders})`
+      ).run(new Date().toISOString(), activeOrgId, cutoff, ...AUTO_DISCARDABLE_TABLES);
+      if (res.changes > 0) {
+        logger.info('sync.autoDiscard', 'Retired orphaned foreign-org event-log rows', { count: res.changes, activeOrgId });
+        this.updatePendingCount();
+      }
+    } catch (err: any) {
+      logger.debug('sync.autoDiscard', 'Cleanup pass failed', { error: err?.message });
+    }
+  }
+
+  /**
+   * Discard all pending items that belong to organizations other than
+   * the active one. Irreversible — used when the admin confirms the
+   * orphaned items are from a previous business they no longer manage.
+   */
+  discardForeignItems(): number {
+    const session = this.getSessionFromDB();
+    const activeOrgId: string | null = session?.organization_id ?? null;
+    const res = this.db.prepare(
+      `UPDATE sync_queue SET synced_at = ?, last_error = 'discarded:foreign-org'
+       WHERE synced_at IS NULL AND organization_id IS NOT NULL AND organization_id != ?`
+    ).run(new Date().toISOString(), activeOrgId ?? '');
+    return res.changes ?? 0;
   }
 
   // Core refresh — calls Supabase auth endpoint with refresh_token
@@ -877,10 +1048,25 @@ export class SyncEngine {
       }
 
       // Non-auth failure — schedule rapid retry
+      // Record the error on the row itself so operators see WHY it's
+      // stuck instead of a blank "attempts: 0" entry sitting forever.
+      try {
+        this.db.prepare(
+          "UPDATE sync_queue SET last_error = ? WHERE id = ? AND synced_at IS NULL"
+        ).run(`push#${_retryAttempt + 1}: status ${result.status}`, syncQueueId);
+      } catch { /* best-effort */ }
       this.scheduleRapidRetry(syncQueueId, _retryAttempt);
     } catch (err: any) {
       const errMsg = err?.message ?? String(err);
       logger.info('sync.pushImmediate', 'Attempt failed', { attempt: _retryAttempt + 1, error: errMsg });
+      // Same rationale — push the raw error to last_error so the
+      // diagnostics panel can show the underlying reason rather than an
+      // empty row that looks like it's never been tried.
+      try {
+        this.db.prepare(
+          "UPDATE sync_queue SET last_error = ? WHERE id = ? AND synced_at IS NULL"
+        ).run(`push#${_retryAttempt + 1}: ${errMsg.slice(0, 180)}`, syncQueueId);
+      } catch { /* best-effort */ }
 
       // PATCH 0 rows on critical status = likely RLS/auth issue.
       // Try anon key before giving up (RLS has a public update policy for tickets).
@@ -1126,13 +1312,103 @@ export class SyncEngine {
   }
 
   async syncNow() {
+    logger.info('sync.syncNow', 'entry', { online: this.isOnline, circuitOpen: this.circuitOpen });
     if (!this.isOnline) return;
     if (!this.checkCircuitBreaker()) return; // circuit breaker open — skip
 
+    // Watchdog: promote any row stuck at attempts=0 for >30s BEFORE
+    // selecting. Guarantees no item can silently sit unprocessed.
+    const thirtySecAgo = new Date(Date.now() - 30 * 1000).toISOString();
+    const watchdog = this.db.prepare(
+      `UPDATE sync_queue
+          SET next_retry_at = NULL,
+              last_error = COALESCE(last_error, 'watchdog:promoted')
+        WHERE synced_at IS NULL
+          AND attempts = 0
+          AND (next_retry_at IS NULL OR next_retry_at > ?)
+          AND created_at < ?`
+    ).run(new Date().toISOString(), thirtySecAgo);
+    if (watchdog.changes > 0) {
+      logger.warn('sync.watchdog', 'Promoted rows stuck at attempts=0', { count: watchdog.changes });
+    }
+
+    // Late-derive organization_id on legacy/NULL rows so the scoped
+    // SELECT below can route them. A row only stays NULL when we
+    // genuinely can't resolve it (e.g. parent ticket purged locally);
+    // those are left alone and surface separately in diagnostics.
+    this.backfillNullOrgIds();
+
+    // Auto-discard orphans from previous businesses. Items belonging
+    // to an organization other than the current session's are never
+    // retried under the wrong auth — they'd just sit forever. If they
+    // haven't been cleared manually within the grace window, retire
+    // them silently so the queue drains to a clean state. The grace
+    // window protects the legitimate case of the operator briefly
+    // switching businesses and then coming back; pending work for
+    // their original business survives for 5 minutes.
+    this.autoDiscardForeignOrphans();
+
+    // Scope to the current session's organization. Items belonging to
+    // other businesses are left pending (attempts untouched) so they
+    // sync correctly when the user signs back into that business —
+    // they're never retried under the wrong auth.
+    const session = this.getSessionFromDB();
+    const currentOrgId: string | null = session?.organization_id ?? null;
     const now = new Date().toISOString();
-    // Critical items (called/serving/cancelled/served/no_show) and INSERTs are IMMORTAL —
-    // they must retry forever regardless of attempt count. Only non-critical UPDATEs
-    // respect the attempts < 10 cap.
+
+    // Diagnostic dump at info level so we can see exactly why a row is
+    // being excluded. Logs the first three pending items with their
+    // organization_id vs. the current session's org — comparing those
+    // two values is usually enough to explain any "stuck forever" case.
+    try {
+      const breakdown = this.db.prepare(
+        `SELECT
+           SUM(CASE WHEN organization_id IS NULL THEN 1 ELSE 0 END) as unresolved,
+           SUM(CASE WHEN organization_id = ? THEN 1 ELSE 0 END) as active,
+           SUM(CASE WHEN organization_id IS NOT NULL AND organization_id != ? THEN 1 ELSE 0 END) as foreign_count
+         FROM sync_queue WHERE synced_at IS NULL`
+      ).get(currentOrgId ?? '', currentOrgId ?? '') as any;
+      const totalPending = (breakdown?.active ?? 0) + (breakdown?.unresolved ?? 0) + (breakdown?.foreign_count ?? 0);
+      if (totalPending > 0) {
+        const sample = this.db.prepare(
+          `SELECT id, table_name, operation, organization_id, attempts, last_error, next_retry_at,
+                  CAST((strftime('%s','now') - strftime('%s', created_at)) AS INTEGER) as age_sec
+             FROM sync_queue
+            WHERE synced_at IS NULL
+            ORDER BY created_at ASC LIMIT 3`
+        ).all() as any[];
+        logger.info('sync.syncNow', 'queue state', {
+          currentOrgId,
+          now,
+          unresolved: breakdown.unresolved,
+          active: breakdown.active,
+          foreign: breakdown.foreign_count,
+          sample: sample.map((s) => ({
+            id: s.id.slice(0, 28),
+            table: s.table_name,
+            operation: s.operation,
+            orgMatch: s.organization_id == null ? 'null'
+              : s.organization_id === currentOrgId ? 'match' : 'foreign',
+            attempts: s.attempts,
+            lastError: s.last_error,
+            nextRetryAt: s.next_retry_at,
+            ageSec: s.age_sec,
+          })),
+        });
+      }
+    } catch { /* ignore logging failures */ }
+
+    // Commercial-grade replay: no scope filter on the SELECT. Every
+    // unsynced, off-cooldown row gets a real push attempt. If a row
+    // belongs to another business, the POST fails cleanly with 401/403
+    // and `autoDiscardForeignOrphans` retires event-log rows after the
+    // 5-min grace; real-data rows stay visible in the foreign banner
+    // for manual review. Previous "scope filter" attempts kept rows
+    // sitting at attempts=0 forever when organization_id was stamped
+    // correctly but SQLite string comparison flaked.
+    //
+    // attempts < 10 cap still applies to non-critical UPDATEs.
+    // Critical mutations (CALL transitions, INSERTs) remain immortal.
     const pending = this.db.prepare(
       `SELECT * FROM sync_queue
        WHERE synced_at IS NULL
@@ -1144,6 +1420,7 @@ export class SyncEngine {
          )
        ORDER BY created_at ASC LIMIT 50`
     ).all(now) as any[];
+    logger.info('sync.syncNow', 'selected pending', { count: pending.length });
 
     if (pending.length === 0) return;
 
@@ -1158,6 +1435,9 @@ export class SyncEngine {
     }
 
     let had401 = false;
+    let authRefreshAttempted = false;
+    let authRecovered = false;
+    let authExpiredCount = 0;
     let successCount = 0;
 
     for (const item of pending) {
@@ -1172,78 +1452,70 @@ export class SyncEngine {
         }
 
         if (result.status === 401) {
-          // ── 401: Token died mid-sync — refresh once and retry this item ──
-          if (!had401) {
-            had401 = true;
-            logger.info('sync.syncNow', 'Got 401 — forcing token refresh and retrying...');
-            // Force refresh (bypass cache)
+          had401 = true;
+          // ── 401: try to refresh the token ONCE per cycle, then keep
+          // processing the rest of the batch with whatever we end up
+          // with. Do NOT `break` — one bad token must never stall items
+          // queued behind it. Each item that still 401s gets individually
+          // flagged AUTH_EXPIRED so the operator sees exactly what failed.
+          if (!authRefreshAttempted) {
+            authRefreshAttempted = true;
+            logger.info('sync.syncNow', 'Got 401 — forcing token refresh and retrying this item...');
             this.cachedAccessToken = null;
             const newToken = await this.refreshAccessToken();
             if (newToken) {
               authToken = newToken;
-              // Retry this item with fresh token
               const retry = await this.replayMutation(item, authToken);
               if (retry.status === 0) {
                 this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
                   .run(new Date().toISOString(), item.id);
                 successCount++;
+                authRecovered = true;
                 if (item.operation === 'INSERT' && item.table_name === 'tickets') {
                   this.rewriteOfflineTicket(item.record_id, item.payload);
                   this.createWhatsAppSessionForTicket(item.record_id, item.payload);
                 }
                 continue;
               }
-            }
-            // Auth refresh failed — try anon key for ticket items (RLS allows public updates)
-            let anonSaved = false;
-            for (const pendingItem of pending) {
-              if (pendingItem.table_name !== 'tickets') continue;
-              if ((this.db.prepare("SELECT synced_at FROM sync_queue WHERE id = ?").get(pendingItem.id) as any)?.synced_at) continue;
-              try {
-                const anonResult = await this.replayMutation(pendingItem, this.supabaseKey);
-                if (anonResult.status === 0) {
-                  this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
-                    .run(new Date().toISOString(), pendingItem.id);
-                  successCount++;
-                  anonSaved = true;
-                  if (pendingItem.operation === 'INSERT' && pendingItem.table_name === 'tickets') {
-                    this.rewriteOfflineTicket(pendingItem.record_id, pendingItem.payload);
-                    this.createWhatsAppSessionForTicket(pendingItem.record_id, pendingItem.payload);
+              // Retry with fresh token still failed — try anon key for tickets
+              if (item.table_name === 'tickets') {
+                try {
+                  const anonRetry = await this.replayMutation(item, this.supabaseKey);
+                  if (anonRetry.status === 0) {
+                    this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+                      .run(new Date().toISOString(), item.id);
+                    successCount++;
+                    if (item.operation === 'INSERT') {
+                      this.rewriteOfflineTicket(item.record_id, item.payload);
+                      this.createWhatsAppSessionForTicket(item.record_id, item.payload);
+                    }
+                    continue;
                   }
+                } catch { /* fall through to AUTH_EXPIRED flag */ }
+              }
+            } else {
+              // Silent re-auth attempt as a fallback — but don't block processing
+              void this.attemptSilentReAuth().then((tok) => {
+                if (tok) {
+                  logger.info('sync', 'Silent re-auth succeeded in background — next cycle will use fresh token');
+                  this.db.prepare(
+                    "UPDATE sync_queue SET last_error = NULL WHERE synced_at IS NULL AND last_error = 'AUTH_EXPIRED: re-login required'"
+                  ).run();
+                  this.updatePendingCount();
                 }
-              } catch { /* anon key also failed — will be flagged AUTH_EXPIRED below */ }
+              }).catch(() => {});
             }
-            if (anonSaved) {
-              logger.info('sync', 'Pushed tickets with anon key despite auth failure', { count: successCount });
-            }
-
-            // Flag remaining unsynced items with AUTH_EXPIRED
-            this.db.prepare(
-              "UPDATE sync_queue SET last_error = ? WHERE synced_at IS NULL"
-            ).run('AUTH_EXPIRED: re-login required');
-            logger.warn('sync', 'Auth expired — remaining pending items kept for retry after re-login');
-            this.updatePendingCount();
-
-            // Try silent re-auth before showing the modal
-            const reAuthToken = await this.attemptSilentReAuth();
-            if (reAuthToken) {
-              logger.info('sync', 'Silent re-auth succeeded — retrying sync');
-              // Clear AUTH_EXPIRED errors so items get retried
-              this.db.prepare(
-                "UPDATE sync_queue SET last_error = NULL WHERE synced_at IS NULL AND last_error = 'AUTH_EXPIRED: re-login required'"
-              ).run();
-              this.updatePendingCount();
-              break; // Will retry on next cycle with fresh token
-            }
-            // Re-auth failed — fire auth error so UI can prompt re-login
-            if (Date.now() > this.authErrorSuppressedUntil) {
-              this.onAuthError();
-            }
-            break;
-          } else {
-            // Already tried refresh once this cycle — skip remaining
-            break;
           }
+
+          // Token refresh failed (or this is the Nth 401 this cycle):
+          // flag THIS item only and move on. Other items in the batch
+          // (e.g. ticket_events that use anon-key inserts, or items that
+          // happen to hit a server that revalidated) may still succeed.
+          this.db.prepare(
+            "UPDATE sync_queue SET last_error = ? WHERE id = ? AND synced_at IS NULL"
+          ).run('AUTH_EXPIRED: re-login required', item.id);
+          authExpiredCount++;
+          continue;
         }
 
         if (result.status !== 0) {
@@ -1289,6 +1561,17 @@ export class SyncEngine {
 
     if (successCount > 0) {
       logger.info('sync.syncNow', 'Successfully synced items', { successCount, totalCount: pending.length });
+    }
+
+    // If any items hit AUTH_EXPIRED and we could not recover in-flight,
+    // fire the auth-error callback once so the UI can prompt re-login.
+    // We fire it exactly once per cycle (via authErrorSuppressedUntil) to
+    // avoid modal-spam when many items are flagged.
+    if (had401 && !authRecovered && authExpiredCount > 0) {
+      logger.warn('sync', 'Auth expired — items flagged, processing continued', { authExpiredCount, pending: pending.length });
+      if (Date.now() > this.authErrorSuppressedUntil) {
+        this.onAuthError();
+      }
     }
 
     this.lastSyncAt = new Date().toISOString();
@@ -1569,19 +1852,43 @@ export class SyncEngine {
         }
       }
 
+      let remoteDeptIds: string[] = [];
       if (deptsRes.ok) {
         const depts = await deptsRes.json();
         const stmt = this.db.prepare(`INSERT OR REPLACE INTO departments (id, name, code, office_id, updated_at) VALUES (?, ?, ?, ?, ?)`);
         for (const d of depts) {
           stmt.run(d.id, d.name, d.code, d.office_id, now);
+          remoteDeptIds.push(d.id);
+        }
+        // Cascade-delete: remove local departments in our offices that no longer exist remotely
+        const keep = new Set(remoteDeptIds);
+        const localDepts = this.db.prepare(
+          `SELECT id FROM departments WHERE office_id IN (${officeIds.map(() => '?').join(',')})`
+        ).all(...officeIds) as Array<{ id: string }>;
+        const delDept = this.db.prepare(`DELETE FROM departments WHERE id = ?`);
+        for (const row of localDepts) {
+          if (!keep.has(row.id)) delDept.run(row.id);
         }
       }
 
       if (svcsRes.ok) {
         const svcs = await svcsRes.json();
         const stmt = this.db.prepare(`INSERT OR REPLACE INTO services (id, name, department_id, estimated_service_time, updated_at) VALUES (?, ?, ?, ?, ?)`);
+        const remoteSvcIds = new Set<string>();
         for (const s of svcs) {
           stmt.run(s.id, s.name, s.department_id, s.estimated_service_time ?? 10, now);
+          remoteSvcIds.add(s.id);
+        }
+        // Cascade-delete: remove local services whose department belongs to our offices
+        // but which no longer exist remotely (scope the delete to avoid touching other orgs).
+        if (remoteDeptIds.length > 0) {
+          const localSvcs = this.db.prepare(
+            `SELECT id FROM services WHERE department_id IN (${remoteDeptIds.map(() => '?').join(',')})`
+          ).all(...remoteDeptIds) as Array<{ id: string }>;
+          const delSvc = this.db.prepare(`DELETE FROM services WHERE id = ?`);
+          for (const row of localSvcs) {
+            if (!remoteSvcIds.has(row.id)) delSvc.run(row.id);
+          }
         }
       }
 
@@ -1599,14 +1906,37 @@ export class SyncEngine {
         const fullStmt = this.db.prepare(`INSERT OR REPLACE INTO desks (id, name, display_name, department_id, office_id, is_active, current_staff_id, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         // For locally-modified desks: refresh only static metadata, keep local status/current_staff_id
         const metaStmt = this.db.prepare(`UPDATE desks SET name = ?, display_name = ?, department_id = ?, office_id = ?, is_active = ?, updated_at = ? WHERE id = ?`);
+        const remoteDeskIds = new Set<string>();
         for (const d of desks) {
+          remoteDeskIds.add(d.id);
           if (pendingDeskIds.has(d.id)) {
             metaStmt.run(d.name, d.display_name ?? null, d.department_id, d.office_id, d.is_active ? 1 : 0, now, d.id);
           } else {
             fullStmt.run(d.id, d.name, d.display_name ?? null, d.department_id, d.office_id, d.is_active ? 1 : 0, d.current_staff_id, d.status ?? 'open', now);
           }
         }
+        // Cascade-delete: remove local desks in our offices that no longer exist remotely.
+        // Skip desks with pending local changes — those must finish syncing first.
+        const localDesks = this.db.prepare(
+          `SELECT id FROM desks WHERE office_id IN (${officeIds.map(() => '?').join(',')})`
+        ).all(...officeIds) as Array<{ id: string }>;
+        const delDesk = this.db.prepare(`DELETE FROM desks WHERE id = ?`);
+        for (const row of localDesks) {
+          if (!remoteDeskIds.has(row.id) && !pendingDeskIds.has(row.id)) delDesk.run(row.id);
+        }
       }
+
+      // Fire config-changed callback if any reference table changed
+      try {
+        const depRows = this.db.prepare(`SELECT id, name, code, office_id FROM departments ORDER BY id`).all() as any[];
+        const svcRows = this.db.prepare(`SELECT id, name, department_id, estimated_service_time FROM services ORDER BY id`).all() as any[];
+        const deskRows = this.db.prepare(`SELECT id, name, display_name, department_id, office_id, is_active FROM desks ORDER BY id`).all() as any[];
+        const configHash = JSON.stringify({ d: depRows, s: svcRows, k: deskRows });
+        if (configHash !== this.lastConfigHash) {
+          this.lastConfigHash = configHash;
+          this.onConfigChanged();
+        }
+      } catch { /* ignore */ }
 
       // Sync holidays
       if (holidaysRes && holidaysRes.ok) {
@@ -1939,7 +2269,59 @@ export class SyncEngine {
    * Recover stuck sync items: reset items that have been stuck for > 30 min
    * with retriable errors (network timeouts, 5xx). Caps at 10 total attempts.
    */
+  /**
+   * Snapshot of sync health for the UI.
+   * - circuitOpen: push pipeline is paused due to consecutive failures
+   * - authExpired: at least one pending item is flagged AUTH_EXPIRED
+   * - oldestPendingAgeMs: age of the oldest un-synced row, in ms (null if none)
+   *
+   * The UI uses these to show a red banner with a clear CTA when sync is
+   * compromised, rather than silently piling up rows in the Pending panel.
+   */
+  public getHealth(): { circuitOpen: boolean; authExpired: boolean; oldestPendingAgeMs: number | null } {
+    let authExpired = false;
+    let oldestPendingAgeMs: number | null = null;
+    try {
+      const authRow = this.db.prepare(
+        "SELECT 1 FROM sync_queue WHERE synced_at IS NULL AND last_error LIKE 'AUTH_EXPIRED%' LIMIT 1"
+      ).get() as any;
+      authExpired = !!authRow;
+      const oldest = this.db.prepare(
+        "SELECT MIN(created_at) as oldest FROM sync_queue WHERE synced_at IS NULL"
+      ).get() as any;
+      if (oldest?.oldest) {
+        oldestPendingAgeMs = Date.now() - new Date(oldest.oldest).getTime();
+      }
+    } catch {
+      /* SQLite failure — return defaults */
+    }
+    return { circuitOpen: this.circuitOpen, authExpired, oldestPendingAgeMs };
+  }
+
   private recoverStuckItems() {
+    // ── WATCHDOG: force-promote attempts=0 rows older than 30s ──────
+    // Structural guarantee: no sync_queue row can ever sit at attempts=0
+    // for longer than 30 seconds. If an item is still at 0 attempts after
+    // 30s, it means nothing ever tried to push it (pushImmediate didn't
+    // fire, loop was interrupted, notifier wasn't registered, etc.).
+    // Clear next_retry_at so it's picked up by the next syncNow() cycle,
+    // and kick one off right away.
+    const thirtySecAgo = new Date(Date.now() - 30 * 1000).toISOString();
+    const watchdogCount = this.db.prepare(
+      `SELECT COUNT(*) as c FROM sync_queue
+        WHERE synced_at IS NULL AND attempts = 0 AND created_at < ?`
+    ).get(thirtySecAgo) as any;
+    if (watchdogCount?.c > 0) {
+      this.db.prepare(
+        `UPDATE sync_queue SET next_retry_at = NULL, last_error = 'watchdog:promoted'
+         WHERE synced_at IS NULL AND attempts = 0 AND created_at < ?`
+      ).run(thirtySecAgo);
+      logger.warn('sync.watchdog', 'Force-promoted rows stuck at attempts=0 for >30s', { count: watchdogCount.c });
+      this.updatePendingCount();
+      // Kick a sync immediately — don't wait for the next batch tick.
+      if (this.isOnline) void this.syncNow();
+    }
+
     const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const recovered = this.db.prepare(`
       UPDATE sync_queue
@@ -2014,11 +2396,14 @@ export class SyncEngine {
       });
 
       // Queue sync so cloud also gets the revert
-      const syncId = `${t.id}-stale-revert-${Date.now()}`;
-      this.db.prepare(`
-        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-        VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
-      `).run(syncId, t.id, JSON.stringify({ status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null }), now);
+      enqueueSync({
+        id: `${t.id}-stale-revert-${Date.now()}`,
+        operation: 'UPDATE',
+        table: 'tickets',
+        recordId: t.id,
+        payload: { status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null },
+        createdAt: now,
+      });
     }
 
     logger.warn('sync.staleCalled', 'Reverted tickets called 30+ min ago back to waiting', { count: stale.length });
