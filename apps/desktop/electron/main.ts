@@ -9,7 +9,7 @@ import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumbe
 import { SyncEngine } from './sync';
 import { getTtsAudio, pickVoice as pickTtsVoice } from './tts-cache';
 import { scheduleTtsPrewarm, triggerTtsPrewarmNow } from './tts-prewarmer';
-import { getChimePath, getChimeDurationMs, getSilenceWarmupPath, installCustomChime, clearCustomChime, hasCustomChime } from './chime';
+import { getChimePath, getChimeDurationMs, getSilenceWarmupPath, cleanupLegacyChimeFiles } from './chime';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 
@@ -1598,40 +1598,12 @@ function setupIPC() {
     return { ok: true };
   });
 
-  // ── Custom chime management ────────────────────────────────────
-  // Operators can upload their own announcement chime (MP3/WAV/etc).
-  // We open the native file picker here in the main process so the
-  // renderer only ever sees a clean status object, never a raw path.
-  ipcMain.handle('chime:pick-and-install', async () => {
-    const result = await dialog.showOpenDialog(mainWindow ?? undefined as any, {
-      title: 'Choose a chime audio file',
-      properties: ['openFile'],
-      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'wma'] }],
-    });
-    if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
-    return installCustomChime(result.filePaths[0]);
-  });
-  ipcMain.handle('chime:clear', async () => {
-    await clearCustomChime();
-    return { ok: true };
-  });
-  ipcMain.handle('chime:status', async () => {
-    return { hasCustom: await hasCustomChime() };
-  });
-  // Preview — play the currently-active chime (custom or default) so
-  // admins can audition before accepting the upload.
-  ipcMain.handle('chime:preview', async () => {
-    try {
-      const chimePath = await getChimePath();
-      const soundPlay = await import('sound-play' as any);
-      const play = (soundPlay as any).play ?? (soundPlay as any).default?.play;
-      if (!play) return { ok: false, error: 'sound-play unavailable' };
-      play(chimePath, 1).catch(() => {});
-      return { ok: true };
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? String(err) };
-    }
-  });
+  // Chime is now bundled with the app (single source of truth), so no
+  // per-Station upload / clear / status / preview IPC is needed. Clean
+  // up any legacy files left in userData from earlier builds on every
+  // startup — fire-and-forget, safe to fail.
+  void cleanupLegacyChimeFiles();
+
   // Kick off a background warmup using whatever settings the renderer
   // last pushed. On first boot (no push yet) this no-ops quietly; the
   // renderer's subsequent prewarm call covers it. The 30-min retry tick

@@ -152,16 +152,8 @@ contextBridge.exposeInMainWorld('qf', {
     }) => ipcRenderer.invoke('voice:get-announcement-audio', args),
   },
 
-  // Custom chime played before each ticket announcement. Admins upload
-  // their own MP3/WAV through the native file picker; the main process
-  // validates + copies into userData so the file survives app updates.
-  chime: {
-    pickAndInstall: (): Promise<{ ok: boolean; error?: string; canceled?: boolean; path?: string }> =>
-      ipcRenderer.invoke('chime:pick-and-install'),
-    clear: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('chime:clear'),
-    status: (): Promise<{ hasCustom: boolean }> => ipcRenderer.invoke('chime:status'),
-    preview: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('chime:preview'),
-  },
+  // Chime is now bundled with the app as the single source of truth —
+  // no per-Station upload/preview/reset API surface.
 
   // Updater
   updater: {
