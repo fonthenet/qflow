@@ -221,59 +221,59 @@ const CLINIC_PROFILES: TemplateProfile[] = [
           welcomeMessage: 'Welcome — choose your service',
           headerText: 'Registration',
           themeColor: '#1d4ed8',
-          buttonLabel: 'S\'enregistrer',
+          buttonLabel: 'Check in',
           showPriorities: true,
         },
         publicJoin: {
-          headline: 'Votre visite',
-          subheadline: 'Suivez votre position dans la file depuis votre téléphone.',
+          headline: 'Your visit',
+          subheadline: 'Track your place in line from your phone.',
         },
         branding: { recommendedPrimaryColor: '#1d4ed8' },
       },
       starterDepartments: [
         {
-          name: 'Accueil', code: 'A', sortOrder: 1,
+          name: 'Reception', code: 'A', sortOrder: 1,
           services: [
-            { name: 'Enregistrement', code: 'REGISTER', estimatedServiceTime: 5, sortOrder: 1 },
-            { name: 'Vérification Dossier', code: 'VERIFY', estimatedServiceTime: 8, sortOrder: 2 },
+            { name: 'Check in', code: 'REGISTER', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Record verification', code: 'VERIFY', estimatedServiceTime: 8, sortOrder: 2 },
           ],
         },
         {
-          name: 'Médecine Générale', code: 'MG', sortOrder: 2,
+          name: 'General Medicine', code: 'MG', sortOrder: 2,
           services: [
-            { name: 'Consultation Générale', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
-            { name: 'Contrôle', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'General consultation', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
+            { name: 'Follow-up', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
           ],
         },
         {
-          name: 'Spécialités', code: 'SP', sortOrder: 3,
+          name: 'Specialties', code: 'SP', sortOrder: 3,
           services: [
-            { name: 'Consultation Spécialiste', code: 'SPECIALIST', estimatedServiceTime: 25, sortOrder: 1 },
-            { name: 'Avis Spécialisé', code: 'OPINION', estimatedServiceTime: 20, sortOrder: 2 },
+            { name: 'Specialist consultation', code: 'SPECIALIST', estimatedServiceTime: 25, sortOrder: 1 },
+            { name: 'Specialist opinion', code: 'OPINION', estimatedServiceTime: 20, sortOrder: 2 },
           ],
         },
         {
-          name: 'Laboratoire', code: 'LAB', sortOrder: 4,
+          name: 'Laboratory', code: 'LAB', sortOrder: 4,
           services: [
-            { name: 'Prise de Sang', code: 'BLOOD', estimatedServiceTime: 10, sortOrder: 1 },
-            { name: 'Résultats', code: 'RESULTS', estimatedServiceTime: 5, sortOrder: 2 },
+            { name: 'Blood draw', code: 'BLOOD', estimatedServiceTime: 10, sortOrder: 1 },
+            { name: 'Results', code: 'RESULTS', estimatedServiceTime: 5, sortOrder: 2 },
           ],
         },
         {
-          name: 'Imagerie', code: 'IMG', sortOrder: 5,
+          name: 'Imaging', code: 'IMG', sortOrder: 5,
           services: [
-            { name: 'Radio', code: 'XRAY', estimatedServiceTime: 15, sortOrder: 1 },
-            { name: 'Échographie', code: 'ECHO', estimatedServiceTime: 20, sortOrder: 2 },
+            { name: 'X-ray', code: 'XRAY', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Ultrasound', code: 'ECHO', estimatedServiceTime: 20, sortOrder: 2 },
           ],
         },
       ],
       defaultSlas: [
-        { metric: 'check_in', label: 'Enregistrement en moins de', targetMinutes: 5 },
-        { metric: 'patient_wait', label: 'Attente patient sous', targetMinutes: 25 },
+        { metric: 'check_in', label: 'Check in under', targetMinutes: 5 },
+        { metric: 'patient_wait', label: 'Patient wait under', targetMinutes: 25 },
       ],
       onboardingCopy: {
-        headline: 'Configurez votre clinique',
-        description: 'Polyclinique multi-services — accueil, médecine générale, spécialités, laboratoire et imagerie.',
+        headline: 'Set up your clinic',
+        description: 'Multi-department polyclinic — reception, general medicine, specialties, laboratory, and imaging.',
       },
     },
   },
@@ -287,20 +287,20 @@ const CLINIC_PROFILES: TemplateProfile[] = [
       experienceProfile: {
         vocabulary: {
           serviceLabel: 'Consultation',
-          deskLabel: 'Cabinet',
+          deskLabel: 'Office',
         },
         publicJoin: {
-          headline: 'Votre consultation spécialisée',
-          subheadline: 'Le spécialiste vous recevra dès que possible.',
+          headline: 'Your specialist appointment',
+          subheadline: 'The specialist will see you as soon as possible.',
         },
       },
       starterDepartments: [
         {
           name: 'Consultations', code: 'C', sortOrder: 1,
           services: [
-            { name: 'Première Consultation', code: 'FIRST', estimatedServiceTime: 30, sortOrder: 1 },
-            { name: 'Suivi', code: 'FOLLOWUP', estimatedServiceTime: 20, sortOrder: 2 },
-            { name: 'Acte Médical', code: 'PROCEDURE', estimatedServiceTime: 40, sortOrder: 3 },
+            { name: 'First consultation', code: 'FIRST', estimatedServiceTime: 30, sortOrder: 1 },
+            { name: 'Follow-up', code: 'FOLLOWUP', estimatedServiceTime: 20, sortOrder: 2 },
+            { name: 'Medical procedure', code: 'PROCEDURE', estimatedServiceTime: 40, sortOrder: 3 },
           ],
         },
       ],
@@ -315,88 +315,88 @@ const RESTAURANT_PROFILES: TemplateProfile[] = [
   {
     id: 'restaurant-simple',
     parentVertical: 'restaurant',
-    title: 'Restaurant Simple',
-    description: 'Sur place, à emporter et livraison — le setup le plus courant.',
+    title: 'Simple Restaurant',
+    description: 'Dine-in, takeout, and delivery — the most common setup.',
     icon: '🍽️',
     overrides: {},  // Uses the restaurant defaults
   },
   {
     id: 'fast-food',
     parentVertical: 'restaurant',
-    title: 'Fast Food / Tacos',
-    description: 'Service rapide au comptoir — commande, préparation, retrait.',
+    title: 'Fast Food',
+    description: 'Quick counter service — order, prep, pickup.',
     icon: '🌮',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          serviceLabel: 'Commande',
-          deskLabel: 'Comptoir',
-          queueLabel: 'File de commande',
+          serviceLabel: 'Order',
+          deskLabel: 'Counter',
+          queueLabel: 'Order queue',
         },
         kiosk: {
-          welcomeMessage: 'Passez votre commande',
-          headerText: 'Commandez ici',
+          welcomeMessage: 'Place your order',
+          headerText: 'Order here',
           themeColor: '#ea580c',
-          buttonLabel: 'Commander',
+          buttonLabel: 'Order',
         },
         publicJoin: {
-          headline: 'Votre commande est en préparation',
-          subheadline: 'On vous appelle quand c\'est prêt.',
+          headline: 'Your order is being prepared',
+          subheadline: 'We\'ll call you when it\'s ready.',
         },
         branding: { recommendedPrimaryColor: '#ea580c' },
       },
       starterDepartments: [
         {
-          name: 'Comptoir', code: 'C', sortOrder: 1,
+          name: 'Counter', code: 'C', sortOrder: 1,
           services: [
-            { name: 'Commande', code: 'ORDER', estimatedServiceTime: 5, sortOrder: 1 },
-            { name: 'Retrait', code: 'PICKUP', estimatedServiceTime: 3, sortOrder: 2 },
-            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 8, sortOrder: 3 },
+            { name: 'Order', code: 'ORDER', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Pickup', code: 'PICKUP', estimatedServiceTime: 3, sortOrder: 2 },
+            { name: 'Takeout', code: 'TAKEOUT', estimatedServiceTime: 8, sortOrder: 3 },
           ],
         },
       ],
       defaultSlas: [
-        { metric: 'order_wait', label: 'Attente commande sous', targetMinutes: 8 },
+        { metric: 'order_wait', label: 'Order wait under', targetMinutes: 8 },
       ],
       onboardingCopy: {
-        headline: 'Configurez votre fast food',
-        description: 'File rapide au comptoir — commande, préparation et retrait.',
+        headline: 'Set up your fast food',
+        description: 'Quick counter flow — order, prep, and pickup.',
       },
     },
   },
   {
     id: 'grillades',
     parentVertical: 'restaurant',
-    title: 'Grillades / Traditionnel',
-    description: 'Restaurant traditionnel avec salle, terrasse et salle familiale. Réservations supportées.',
+    title: 'Grill / Traditional',
+    description: 'Traditional sit-down restaurant with dining room, terrace, and family room. Reservations supported.',
     icon: '🥩',
     overrides: {
       experienceProfile: {
         vocabulary: {
           serviceLabel: 'Service',
-          bookingLabel: 'Réservation',
+          bookingLabel: 'Reservation',
         },
         publicJoin: {
-          headline: 'Votre table est bientôt prête',
-          subheadline: 'On vous prévient dès qu\'une table se libère.',
+          headline: 'Your table is almost ready',
+          subheadline: 'We\'ll let you know as soon as a table opens up.',
         },
       },
       starterDepartments: [
         {
           name: 'Service', code: 'S', sortOrder: 1,
           services: [
-            { name: 'Sur Place', code: 'DINE', estimatedServiceTime: 40, sortOrder: 1 },
-            { name: 'Réservation', code: 'RSVP', estimatedServiceTime: 5, sortOrder: 2 },
-            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 15, sortOrder: 3 },
+            { name: 'Dine in', code: 'DINE', estimatedServiceTime: 40, sortOrder: 1 },
+            { name: 'Reservation', code: 'RSVP', estimatedServiceTime: 5, sortOrder: 2 },
+            { name: 'Takeout', code: 'TAKEOUT', estimatedServiceTime: 15, sortOrder: 3 },
           ],
         },
       ],
       defaultSlas: [
-        { metric: 'seat_wait', label: 'Attente table sous', targetMinutes: 20 },
+        { metric: 'seat_wait', label: 'Table wait under', targetMinutes: 20 },
       ],
       onboardingCopy: {
-        headline: 'Configurez votre restaurant traditionnel',
-        description: 'Grillades, couscous, tajine — salle, terrasse et salle familiale.',
+        headline: 'Set up your traditional restaurant',
+        description: 'Grilled dishes, couscous, tajine — dining room, terrace, and family room.',
       },
     },
   },
@@ -404,12 +404,12 @@ const RESTAURANT_PROFILES: TemplateProfile[] = [
     id: 'pizzeria',
     parentVertical: 'restaurant',
     title: 'Pizzeria',
-    description: 'Sur place, à emporter et livraison — optimisé pour la pizza.',
+    description: 'Dine-in, takeout, and delivery — optimized for pizza.',
     icon: '🍕',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          serviceLabel: 'Commande',
+          serviceLabel: 'Order',
         },
         kiosk: {
           themeColor: '#b91c1c',
@@ -420,9 +420,9 @@ const RESTAURANT_PROFILES: TemplateProfile[] = [
         {
           name: 'Service', code: 'S', sortOrder: 1,
           services: [
-            { name: 'Sur Place', code: 'DINE', estimatedServiceTime: 25, sortOrder: 1 },
-            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 15, sortOrder: 2 },
-            { name: 'Livraison', code: 'DELIVERY', estimatedServiceTime: 5, sortOrder: 3 },
+            { name: 'Dine in', code: 'DINE', estimatedServiceTime: 25, sortOrder: 1 },
+            { name: 'Takeout', code: 'TAKEOUT', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Delivery', code: 'DELIVERY', estimatedServiceTime: 5, sortOrder: 3 },
           ],
         },
       ],
@@ -432,25 +432,25 @@ const RESTAURANT_PROFILES: TemplateProfile[] = [
     id: 'cafe',
     parentVertical: 'restaurant',
     title: 'Café',
-    description: 'Café avec salle et terrasse — ambiance et service simple.',
+    description: 'Café with indoor seating and terrace — casual atmosphere, simple service.',
     icon: '☕',
     overrides: {
       experienceProfile: {
         vocabulary: {
           officeLabel: 'Café',
-          serviceLabel: 'Consommation',
-          deskLabel: 'Comptoir',
-          queueLabel: 'File d\'attente',
+          serviceLabel: 'Order',
+          deskLabel: 'Counter',
+          queueLabel: 'Waitlist',
         },
         kiosk: {
-          welcomeMessage: 'Bienvenue au café',
-          headerText: 'Commandez',
+          welcomeMessage: 'Welcome to the café',
+          headerText: 'Order here',
           themeColor: '#78350f',
-          buttonLabel: 'Commander',
+          buttonLabel: 'Order',
         },
         publicJoin: {
-          headline: 'Votre commande arrive',
-          subheadline: 'On vous appelle quand c\'est prêt.',
+          headline: 'Your order is on the way',
+          subheadline: 'We\'ll call you when it\'s ready.',
         },
         branding: { recommendedPrimaryColor: '#78350f' },
       },
@@ -458,13 +458,13 @@ const RESTAURANT_PROFILES: TemplateProfile[] = [
         {
           name: 'Service', code: 'S', sortOrder: 1,
           services: [
-            { name: 'Consommation sur place', code: 'DINE', estimatedServiceTime: 5, sortOrder: 1 },
-            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 3, sortOrder: 2 },
+            { name: 'Dine in', code: 'DINE', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Takeout', code: 'TAKEOUT', estimatedServiceTime: 3, sortOrder: 2 },
           ],
         },
       ],
       defaultSlas: [
-        { metric: 'order_wait', label: 'Attente sous', targetMinutes: 5 },
+        { metric: 'order_wait', label: 'Order wait under', targetMinutes: 5 },
       ],
     },
   },

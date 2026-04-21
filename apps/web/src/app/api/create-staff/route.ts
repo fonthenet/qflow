@@ -49,6 +49,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized: only admins can create staff' }, { status: 403 });
   }
 
+  // Validate office_id, if provided: must belong to the same org AND be active.
+  // Protects against stale/malicious clients that send a closed office id.
+  if (office_id) {
+    const { data: office } = await supabase
+      .from('offices')
+      .select('id, is_active, organization_id')
+      .eq('id', office_id)
+      .maybeSingle();
+    if (!office || office.organization_id !== organization_id) {
+      return NextResponse.json({ error: 'Invalid office: not found in this organization' }, { status: 400 });
+    }
+    if (office.is_active === false) {
+      return NextResponse.json({ error: 'Cannot assign staff to a closed office. Reopen it or pick another location.' }, { status: 400 });
+    }
+  }
+
+  // Validate department_id, if provided: its office must belong to this org,
+  // and (if a specific office is also being assigned) they must match.
+  if (department_id) {
+    const { data: dept } = await supabase
+      .from('departments')
+      .select('id, office_id, office:offices(organization_id, is_active)')
+      .eq('id', department_id)
+      .maybeSingle();
+    const deptOffice = (dept as any)?.office as { organization_id?: string; is_active?: boolean } | null;
+    if (!dept || !deptOffice || deptOffice.organization_id !== organization_id) {
+      return NextResponse.json({ error: 'Invalid department: not found in this organization' }, { status: 400 });
+    }
+    if (office_id && dept.office_id && dept.office_id !== office_id) {
+      return NextResponse.json({ error: 'Department does not belong to the selected office' }, { status: 400 });
+    }
+  }
+
   // Create auth user with service role
   const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
     email,

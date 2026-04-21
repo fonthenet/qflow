@@ -1172,6 +1172,15 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                               background: 'rgba(59,130,246,0.15)', color: '#3b82f6', textTransform: 'uppercase',
                             }}>{t('Repeat')}</span>
                           )}
+                          {c.auto_approve_reservations && (
+                            <span
+                              title={t('Auto-approve this customer\'s reservations')}
+                              style={{
+                                fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10,
+                                background: 'rgba(34,197,94,0.15)', color: '#22c55e', textTransform: 'uppercase',
+                              }}
+                            >✓ {t('Auto-approve')}</span>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: 12, marginTop: 2, fontSize: 12, color: 'var(--text3, #64748b)' }}>
                           {c.phone && <span style={{ direction: 'ltr' }}>📱 {formatPhoneDisplay(c.phone)}</span>}

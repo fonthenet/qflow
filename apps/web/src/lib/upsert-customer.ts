@@ -53,7 +53,7 @@ function toLocalPhone(e164: string, timezone?: string | null): string {
  * Build all phone variants to search for when looking up a customer.
  * Handles records stored in any format (local, E.164, subscriber-only).
  */
-function phoneVariants(rawPhone: string, e164: string, localPhone: string): string[] {
+export function phoneVariants(rawPhone: string, e164: string, localPhone: string): string[] {
   const variants = new Set<string>();
   variants.add(e164);
   variants.add(localPhone);

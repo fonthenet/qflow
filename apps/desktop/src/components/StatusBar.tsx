@@ -3,6 +3,32 @@ import type { StaffSession, SyncStatus, UpdateStatus } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { useConfirmDialog } from './ConfirmDialog';
 
+/**
+ * Humanize a raw role slug (e.g. "desk_operator" → "Desk Operator").
+ * Keeps legacy/unknown roles readable instead of shouting "DESK_OPERATOR".
+ */
+function formatRoleLabel(role: string | null | undefined, t: (key: string) => string): string {
+  if (!role) return '';
+  // Translate well-known roles, fall back to Title Case for anything else.
+  const known: Record<string, string> = {
+    admin: t('Admin'),
+    manager: t('Manager'),
+    branch_admin: t('Branch Admin'),
+    floor_manager: t('Floor Manager'),
+    receptionist: t('Receptionist'),
+    desk_operator: t('Desk Operator'),
+    analyst: t('Analyst'),
+    agent: t('Agent'),
+  };
+  const key = role.toLowerCase();
+  if (known[key]) return known[key];
+  return key
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 /** Digital clock component with green LED style */
 function DigitalClock({ locale }: { locale: DesktopLocale }) {
   const [now, setNow] = useState(new Date());
@@ -352,6 +378,45 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
               {t('Slow connection')}
             </span>
           )}
+          {syncStatus.circuitOpen && (
+            <span
+              style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: 'rgba(239,68,68,0.2)', color: 'var(--danger)',
+                animation: 'pulse 2s infinite', cursor: 'pointer',
+              }}
+              onClick={openPanel}
+              title={t('Sync paused after repeated failures. Click to inspect.')}
+            >
+              ⚠ {t('Sync paused')}
+            </span>
+          )}
+          {syncStatus.authExpired && (
+            <span
+              style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: 'rgba(239,68,68,0.2)', color: 'var(--danger)',
+                cursor: 'pointer', animation: 'pulse 2s infinite',
+              }}
+              onClick={openPanel}
+              title={t('Session expired — sign in again to resume sync')}
+            >
+              🔒 {t('Sign in to resume sync')}
+            </span>
+          )}
+          {syncStatus.oldestPendingAgeMs != null && syncStatus.oldestPendingAgeMs > 5 * 60 * 1000 && !syncStatus.circuitOpen && !syncStatus.authExpired && (
+            <span
+              style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: 'rgba(245,158,11,0.2)', color: 'var(--warning)',
+                cursor: 'pointer',
+              }}
+              onClick={openPanel}
+              title={t('An item has been waiting longer than 5 minutes. Click to inspect.')}
+            >
+              ⏱ {t('Sync lagging')}
+            </span>
+          )}
           {stationVersion && (
             <span className="update-badge neutral" title={t('Station version')}>
               {t('Version')} {stationVersion}
@@ -405,7 +470,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
                 </span>
               )}
               <span className="operator-name">{session.full_name}</span>
-              <span className="operator-role">{session.role}</span>
+              <span className="operator-role">{formatRoleLabel(session.role, t)}</span>
               {(liveDeskName ?? session.desk_name) && (
                 <span className="desk-badge">{liveDeskName ?? session.desk_name}</span>
               )}

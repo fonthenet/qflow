@@ -1,0 +1,21 @@
+# Exclude Claude tooling (was creating Windows junction loops that broke
+# the tar step on non-dev-mode Windows).
+.agents/
+.claude/
+.continue/
+skills/
+
+# Heavy artifacts that blow past EAS's 2 GB archive limit. None of these
+# are needed to build the Expo app.
+apps/desktop/release/
+apps/desktop/dist/
+apps/desktop/dist-electron/
+apps/desktop/node_modules/
+apps/web/.next/
+apps/web/public/station/
+apps/web/node_modules/
+**/node_modules/
+**/.expo/web/cache/
+**/.turbo/
+**/dist/
+**/build/

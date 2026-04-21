@@ -14,6 +14,7 @@ import { revalidatePath } from 'next/cache';
 import { getOfficeDayStartIso, getOfficeDayEndIso, getDateStartIso, getDateEndIso } from '@/lib/office-day';
 import { transitionAppointment, notifyAppointmentRescheduled } from '@/lib/lifecycle';
 import { trackUrl } from '@/lib/config';
+import { isCustomerAutoApprove } from '@/lib/customer-auto-approve';
 
 interface CreateAppointmentData {
   officeId: string;
@@ -49,7 +50,7 @@ export async function createAppointment(data: CreateAppointmentData) {
 
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('id, organization:organizations(settings)')
+    .select('id, organization_id, organization:organizations(id, settings)')
     .eq('id', data.officeId)
     .single();
 
@@ -86,9 +87,26 @@ export async function createAppointment(data: CreateAppointmentData) {
   const calendarToken = nanoid(16);
 
   // Approval gate. Default ON: bookings stay pending until provider approves.
-  const requireApproval = Boolean(
+  let requireApproval = Boolean(
     (organizationSettings as any).require_appointment_approval ?? true,
   );
+  // Per-customer override: customers flagged `auto_approve_reservations` skip
+  // the approval gate. Matching on (organization_id, phone). Best-effort.
+  if (requireApproval && data.customerPhone) {
+    const orgIdForLookup: string | null =
+      ((office as any)?.organization_id as string) ||
+      ((office as any)?.organization?.id as string) ||
+      null;
+    if (orgIdForLookup) {
+      const trusted = await isCustomerAutoApprove(
+        supabase,
+        orgIdForLookup,
+        data.customerPhone,
+        null,
+      );
+      if (trusted) requireApproval = false;
+    }
+  }
   const initialStatus = requireApproval ? 'pending' : 'confirmed';
 
   // Normalize scheduledAt: if naive (no offset/Z), interpret in the org timezone

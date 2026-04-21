@@ -121,6 +121,16 @@ export default function MoreScreen() {
             <Ionicons name="qr-code-outline" size={22} color={colors.success} />
             <Text style={styles.quickActionCardLabel}>{t('adminMore.qrCodes')}</Text>
           </TouchableOpacity>
+
+          {staffRole && ['admin', 'manager', 'branch_admin'].includes(staffRole) && (
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={() => router.push('/(admin)/team')}
+            >
+              <Ionicons name="people-circle-outline" size={22} color={colors.primary} />
+              <Text style={styles.quickActionCardLabel}>{t('team.title')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 

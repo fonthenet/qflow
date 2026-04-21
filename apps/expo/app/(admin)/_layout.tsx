@@ -77,6 +77,14 @@ export default function AdminLayout() {
           ),
         }}
       />
+      {/* Team is hidden from tab bar, navigable from More */}
+      <Tabs.Screen
+        name="team"
+        options={{
+          title: t('team.title'),
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="more"
         options={{

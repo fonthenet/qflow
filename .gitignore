@@ -27,3 +27,7 @@ playwright-report
 test-results
 apps/web/.playwright
 apps/web/.e2e-state.json
+
+# stray chime files at repo root (use Settings → Upload chime instead)
+/PA Chime.mp3
+/Announcement sound effects*.mp3

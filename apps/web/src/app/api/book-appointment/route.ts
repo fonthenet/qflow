@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { nanoid } from 'nanoid';
 import { checkBookingAllowed } from '@/lib/booking-guard';
 import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
+import { isCustomerAutoApprove } from '@/lib/customer-auto-approve';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
   // Fetch org timezone + org settings in one query
   const { data: _bookOrg } = await supabase
     .from('offices')
-    .select('timezone, organization:organizations(settings, timezone)')
+    .select('timezone, organization_id, organization:organizations(id, settings, timezone)')
     .eq('id', officeId)
     .single();
   // Use org-level timezone as single source of truth, fallback to office timezone
@@ -69,6 +70,10 @@ export async function POST(request: NextRequest) {
   const officeTzRaw: string = (_bookOrg as any)?.timezone;
   const officeTz: string = orgTz || officeTzRaw || 'Africa/Algiers';
   const _bookOrgSettings = ((_bookOrg as any)?.organization?.settings ?? {}) as Record<string, any>;
+  const _bookOrgId: string | null =
+    ((_bookOrg as any)?.organization_id as string) ||
+    ((_bookOrg as any)?.organization?.id as string) ||
+    null;
 
   // Normalize scheduledAt to office timezone (converts naive datetime to timezone-aware)
   const resolvedScheduledAt = toTimezoneAware(scheduledAt, officeTz);
@@ -105,11 +110,19 @@ export async function POST(request: NextRequest) {
     .eq('id', officeId)
     .single();
   // In-house bookings are always auto-confirmed — the staff is booking on behalf of the customer
-  const requireApproval = isInHouse ? false : Boolean(
+  let requireApproval = isInHouse ? false : Boolean(
     (officeForApproval?.settings as any)?.require_appointment_approval ??
       ((officeForApproval as any)?.organization?.settings?.require_appointment_approval) ??
       true,
   );
+  // Per-customer override: a customer row flagged `auto_approve_reservations`
+  // bypasses the approval gate even when the org requires approval. Matching
+  // is on (organization_id, phone). Best-effort: lookup failures leave the
+  // org-level setting in charge.
+  if (requireApproval && cleanCustomerPhone && _bookOrgId) {
+    const trusted = await isCustomerAutoApprove(supabase, _bookOrgId, cleanCustomerPhone, officeTz);
+    if (trusted) requireApproval = false;
+  }
   const initialStatus = requireApproval ? 'pending' : 'confirmed';
 
   const { data: appointment, error } = await supabase

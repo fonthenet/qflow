@@ -217,7 +217,7 @@ select option {
 
 .pending-badge { font-size: 11px; color: var(--warning); font-weight: 600; }
 .operator-name { font-weight: 600; font-size: 13px; }
-.operator-role { font-size: 11px; color: var(--text3); text-transform: uppercase; }
+.operator-role { font-size: 11px; color: var(--text3); letter-spacing: 0.2px; }
 .desk-badge { padding: 2px 10px; background: var(--primary); color: white; border-radius: 12px; font-size: 11px; font-weight: 700; }
 .btn-logout { background: transparent; color: var(--text3); font-size: 12px; padding: 4px 12px; border-radius: 6px; transition: all 0.15s; }
 .btn-logout:hover { background: rgba(239,68,68,0.15); color: var(--danger); }

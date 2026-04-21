@@ -1,0 +1,5 @@
+# Inherit all of .gitignore (we intentionally let .expo types ship),
+# plus explicitly exclude monorepo-level Claude tooling that contains
+# symlinks EAS can't tar on Windows without admin/dev-mode.
+.agents/
+.claude/

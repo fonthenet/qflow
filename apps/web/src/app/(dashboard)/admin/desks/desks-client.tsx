@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createDesk, updateDesk, deleteDesk } from '@/lib/actions/admin-actions';
+import { STAFF_ROLES } from '@qflo/shared';
+import { assignStaffToDesk, createDesk, updateDesk, deleteDesk } from '@/lib/actions/admin-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
@@ -28,7 +29,13 @@ type Department = {
   office_id: string;
   office: any;
 };
-type Staff = { id: string; full_name: string; office_id: string | null };
+type Staff = {
+  id: string;
+  full_name: string;
+  office_id: string | null;
+  is_active?: boolean | null;
+  office?: { id: string; name: string; is_active: boolean | null } | null;
+};
 
 export function DesksClient({
   desks,
@@ -37,6 +44,7 @@ export function DesksClient({
   staffList,
   currentOfficeFilter,
   currentDepartmentFilter,
+  currentUserRole,
 }: {
   desks: Desk[];
   offices: Office[];
@@ -44,6 +52,7 @@ export function DesksClient({
   staffList: Staff[];
   currentOfficeFilter: string;
   currentDepartmentFilter: string;
+  currentUserRole: string;
 }) {
   const { t } = useI18n();
   const router = useRouter();
@@ -51,7 +60,64 @@ export function DesksClient({
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Desk | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isAssignPending, startAssignTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'table' | 'roster'>('table');
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+
+  const canCrossOffice =
+    currentUserRole === STAFF_ROLES.ADMIN || currentUserRole === STAFF_ROLES.MANAGER;
+
+  // staff → assigned desk lookup
+  const deskByStaffId = useMemo(() => {
+    const map = new Map<string, Desk>();
+    for (const desk of desks) {
+      if (desk.current_staff_id) map.set(desk.current_staff_id, desk);
+    }
+    return map;
+  }, [desks]);
+
+  // For the per-desk dropdown: staff scoped to the desk's office unless admin
+  // (in which case all org staff can be picked). Staff already on another desk
+  // are still eligible — picking them "takes over" the desk.
+  function staffPickerFor(desk: Desk | null): Staff[] {
+    if (!desk) return staffList;
+    if (canCrossOffice) return staffList;
+    return staffList.filter((s) => !s.office_id || s.office_id === desk.office_id);
+  }
+
+  async function runAssign(staffId: string, deskId: string | null) {
+    const staff = staffList.find((s) => s.id === staffId);
+    const desk = deskId ? desks.find((d) => d.id === deskId) : null;
+
+    startAssignTransition(async () => {
+      const result = await assignStaffToDesk({ staffId, deskId });
+
+      if (result?.error === 'CROSS_OFFICE') {
+        const ok = await styledConfirm(
+          t('Move {name} to {office}? Their location will be updated to match the new desk.', {
+            name: staff?.full_name ?? '',
+            office: desk?.office?.name ?? '',
+          }),
+          { variant: 'info', confirmLabel: t('Move') }
+        );
+        if (!ok) return;
+        const retry = await assignStaffToDesk({ staffId, deskId, allowOfficeChange: true });
+        if (retry?.error) {
+          setError(retry.error);
+          return;
+        }
+        router.refresh();
+        return;
+      }
+
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   function openCreate() {
     setEditing(null);
@@ -123,8 +189,8 @@ export function DesksClient({
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="mb-4 flex gap-3">
+      {/* Filters + view toggle */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <select
           value={currentOfficeFilter}
           onChange={(e) => handleFilterChange('office', e.target.value)}
@@ -149,6 +215,27 @@ export function DesksClient({
             </option>
           ))}
         </select>
+
+        <div className="ml-auto inline-flex rounded-lg border border-border bg-background p-0.5">
+          <button
+            type="button"
+            onClick={() => setView('table')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              view === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            {t('Table')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('roster')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              view === 'roster' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            {t('Roster')}
+          </button>
+        </div>
       </div>
 
       {error && !showModal && (
@@ -157,6 +244,19 @@ export function DesksClient({
         </div>
       )}
 
+      {view === 'roster' ? (
+        <RosterView
+          desks={desks}
+          staffList={staffList}
+          deskByStaffId={deskByStaffId}
+          selectedStaffId={selectedStaffId}
+          onSelectStaff={setSelectedStaffId}
+          onAssign={runAssign}
+          isPending={isAssignPending}
+          canCrossOffice={canCrossOffice}
+          t={t}
+        />
+      ) : (
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -200,8 +300,32 @@ export function DesksClient({
                     {(desk.status ?? 'closed').replace(/_/g, ' ')}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {desk.current_staff?.full_name ?? '---'}
+                <td className="px-4 py-3">
+                  <select
+                    value={desk.current_staff_id ?? ''}
+                    disabled={isAssignPending}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value) runAssign(value, desk.id);
+                      else if (desk.current_staff_id) runAssign(desk.current_staff_id, null);
+                    }}
+                    className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  >
+                    <option value="">{t('Unassigned')}</option>
+                    {staffPickerFor(desk).map((s) => {
+                      const onDesk = deskByStaffId.get(s.id);
+                      const onOther = onDesk && onDesk.id !== desk.id;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name}
+                          {onOther ? ` · ${t('on')} ${onDesk?.name}` : ''}
+                          {s.office_id !== desk.office_id && s.office?.name
+                            ? ` (${s.office.name})`
+                            : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
@@ -225,6 +349,7 @@ export function DesksClient({
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Modal */}
       {showModal && (
@@ -326,12 +451,30 @@ export function DesksClient({
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">{t('None')}</option>
-                  {staffList.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name}
-                    </option>
-                  ))}
+                  {staffList
+                    .filter((s) => {
+                      // In the edit modal, scope to staff in the desk's own office.
+                      // Cross-office moves must use the inline assign (which also
+                      // updates staff.office_id). This keeps createDesk/updateDesk
+                      // consistent with assertStaffAssignment's same-office rule.
+                      const officeId = editing?.office_id ?? currentOfficeFilter;
+                      if (!officeId) return true;
+                      return !s.office_id || s.office_id === officeId;
+                    })
+                    .map((s) => {
+                      const onDesk = deskByStaffId.get(s.id);
+                      const onOther = onDesk && onDesk.id !== editing?.id;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name}
+                          {onOther ? ` · ${t('on')} ${onDesk?.name}` : ''}
+                        </option>
+                      );
+                    })}
                 </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('To move someone across locations, close this and use the Assigned Staff dropdown in the row.')}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -365,5 +508,237 @@ export function DesksClient({
         </div>
       )}
     </div>
+  );
+}
+
+function RosterView({
+  desks,
+  staffList,
+  deskByStaffId,
+  selectedStaffId,
+  onSelectStaff,
+  onAssign,
+  isPending,
+  canCrossOffice,
+  t,
+}: {
+  desks: Desk[];
+  staffList: Staff[];
+  deskByStaffId: Map<string, Desk>;
+  selectedStaffId: string | null;
+  onSelectStaff: (id: string | null) => void;
+  onAssign: (staffId: string, deskId: string | null) => void;
+  isPending: boolean;
+  canCrossOffice: boolean;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  const selectedStaff = selectedStaffId ? staffList.find((s) => s.id === selectedStaffId) ?? null : null;
+
+  // Split staff into on-desk vs. unassigned
+  const unassignedStaff = staffList.filter((s) => !deskByStaffId.has(s.id));
+  const assignedStaff = staffList.filter((s) => deskByStaffId.has(s.id));
+
+  // Order desks: in the same office as selected first, then the rest
+  const orderedDesks = useMemo(() => {
+    if (!selectedStaff?.office_id) return desks;
+    return [...desks].sort((a, b) => {
+      const aSame = a.office_id === selectedStaff.office_id ? 0 : 1;
+      const bSame = b.office_id === selectedStaff.office_id ? 0 : 1;
+      return aSame - bSame;
+    });
+  }, [desks, selectedStaff?.office_id]);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {/* STAFF COLUMN */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">{t('Team members')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {selectedStaff
+              ? t('Pick a desk on the right to assign {name}.', { name: selectedStaff.full_name })
+              : t('Click someone to assign them to a desk.')}
+          </p>
+        </div>
+
+        {unassignedStaff.length > 0 ? (
+          <div>
+            <div className="flex items-center justify-between bg-warning/5 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-warning">
+              <span>{t('Unassigned')}</span>
+              <span>{unassignedStaff.length}</span>
+            </div>
+            <ul className="divide-y divide-border">
+              {unassignedStaff.map((s) => (
+                <RosterStaffRow
+                  key={s.id}
+                  staff={s}
+                  desk={null}
+                  selected={selectedStaffId === s.id}
+                  onSelect={() => onSelectStaff(selectedStaffId === s.id ? null : s.id)}
+                  t={t}
+                />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-between bg-muted/30 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <span>{t('On duty')}</span>
+          <span>{assignedStaff.length}</span>
+        </div>
+        {assignedStaff.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t('No one is on a desk yet.')}</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {assignedStaff.map((s) => (
+              <RosterStaffRow
+                key={s.id}
+                staff={s}
+                desk={deskByStaffId.get(s.id) ?? null}
+                selected={selectedStaffId === s.id}
+                onSelect={() => onSelectStaff(selectedStaffId === s.id ? null : s.id)}
+                onUnassign={() => onAssign(s.id, null)}
+                isPending={isPending}
+                t={t}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* DESKS COLUMN */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">{t('Desks')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {selectedStaff ? t('Click a desk to assign.') : t('Who is on each desk right now.')}
+          </p>
+        </div>
+        {orderedDesks.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t('No desks yet.')}</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {orderedDesks.map((desk) => {
+              const occupantId = desk.current_staff_id;
+              const occupant = occupantId ? staffList.find((s) => s.id === occupantId) ?? null : null;
+              const isDeskAvailable = desk.is_active !== false;
+              const crossOffice =
+                selectedStaff && selectedStaff.office_id && selectedStaff.office_id !== desk.office_id;
+              const disabled =
+                !selectedStaff || !isDeskAvailable || (crossOffice && !canCrossOffice) || isPending;
+              const isSelfOnDesk = selectedStaff && occupantId === selectedStaff.id;
+              return (
+                <li
+                  key={desk.id}
+                  className={`flex items-center justify-between gap-3 px-4 py-3 transition-colors ${
+                    selectedStaff && !disabled ? 'cursor-pointer hover:bg-muted/40' : ''
+                  } ${isSelfOnDesk ? 'bg-emerald-50/50' : ''}`}
+                  onClick={() => {
+                    if (!selectedStaff || disabled || isSelfOnDesk) return;
+                    onAssign(selectedStaff.id, desk.id);
+                    onSelectStaff(null);
+                  }}
+                >
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {desk.name}
+                      {desk.office?.name ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          · {desk.office.name}
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {occupant ? (
+                        <>👤 {occupant.full_name}</>
+                      ) : (
+                        <span className="text-emerald-600">{t('Free')}</span>
+                      )}
+                      {crossOffice && !canCrossOffice ? (
+                        <span className="ml-2 text-warning">· {t('Different location')}</span>
+                      ) : null}
+                    </p>
+                  </div>
+                  {selectedStaff && !isSelfOnDesk ? (
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
+                    >
+                      {occupant ? t('Take over') : t('Assign')}
+                    </button>
+                  ) : isSelfOnDesk ? (
+                    <span className="text-xs font-medium text-emerald-700">✓ {t('Assigned')}</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RosterStaffRow({
+  staff,
+  desk,
+  selected,
+  onSelect,
+  onUnassign,
+  isPending,
+  t,
+}: {
+  staff: Staff;
+  desk: Desk | null;
+  selected: boolean;
+  onSelect: () => void;
+  onUnassign?: () => void;
+  isPending?: boolean;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  return (
+    <li
+      className={`flex items-center justify-between gap-3 px-4 py-3 transition-colors ${
+        selected ? 'bg-primary/5' : 'hover:bg-muted/30'
+      } cursor-pointer`}
+      onClick={onSelect}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{staff.full_name}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {desk ? (
+            <>
+              → {desk.name}
+              {desk.office?.name ? ` · ${desk.office.name}` : ''}
+            </>
+          ) : staff.office?.name ? (
+            staff.office.name + (staff.office.is_active === false ? ` ⚠ ${t('closed')}` : '')
+          ) : (
+            t('All locations')
+          )}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {selected ? (
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            {t('Selected')}
+          </span>
+        ) : null}
+        {desk && onUnassign ? (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={(event) => {
+              event.stopPropagation();
+              onUnassign();
+            }}
+            className="rounded-md px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          >
+            {t('Unassign')}
+          </button>
+        ) : null}
+      </div>
+    </li>
   );
 }

@@ -809,6 +809,98 @@ describe('SyncEngine', () => {
     });
   });
 
+  // ── Reliability regression tests ─────────────────────────────────
+  // These cover the specific failure modes that caused "Attempts: 0"
+  // stuck items in production.
+
+  describe('Reliability: 401 mid-batch must not stall the batch', () => {
+    it('one 401 does not prevent following items from being processed', async () => {
+      seedSession(db);
+      // Three items in order. The first returns 401 on both tries.
+      insertSyncItem(db, { id: 'sq-401', created_at: '2026-01-01T00:00:00Z', record_id: 'ticket-A', payload: JSON.stringify({ status: 'called' }) });
+      insertSyncItem(db, { id: 'sq-ok-1', created_at: '2026-01-01T00:01:00Z', table_name: 'ticket_events', operation: 'INSERT', record_id: 'evt-1', payload: JSON.stringify({ event_type: 'called' }) });
+      insertSyncItem(db, { id: 'sq-ok-2', created_at: '2026-01-01T00:02:00Z', table_name: 'ticket_events', operation: 'INSERT', record_id: 'evt-2', payload: JSON.stringify({ event_type: 'created' }) });
+
+      const { engine } = createEngine(db);
+      engine.isOnline = true;
+
+      fetchMock.mockImplementation(async (url: string, opts: any) => {
+        if (url.includes('/auth/v1/token')) {
+          // token refresh fails — still return 401 on the ticket
+          return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) };
+        }
+        if (url.includes('/rest/v1/tickets')) {
+          return { ok: false, status: 401, json: async () => ({}) };
+        }
+        if (url.includes('/rest/v1/ticket_events')) {
+          return { ok: true, status: 201, json: async () => ({}) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      await engine.syncNow();
+
+      // The 401 item is flagged but NOT synced
+      const t = db.prepare("SELECT * FROM sync_queue WHERE id = 'sq-401'").get() as any;
+      expect(t.synced_at).toBeNull();
+      expect(t.last_error).toMatch(/AUTH_EXPIRED/);
+
+      // The two ticket_events AFTER the 401 must have been processed
+      const e1 = db.prepare("SELECT * FROM sync_queue WHERE id = 'sq-ok-1'").get() as any;
+      const e2 = db.prepare("SELECT * FROM sync_queue WHERE id = 'sq-ok-2'").get() as any;
+      expect(e1.synced_at).not.toBeNull();
+      expect(e2.synced_at).not.toBeNull();
+    });
+  });
+
+  describe('Reliability: watchdog promotes attempts=0 items', () => {
+    it('row older than 30s at attempts=0 gets processed on the next syncNow', async () => {
+      seedSession(db);
+      // Insert an item that was enqueued 60 seconds ago but never tried
+      const oldTs = new Date(Date.now() - 60_000).toISOString();
+      insertSyncItem(db, {
+        id: 'sq-stuck',
+        operation: 'INSERT',
+        table_name: 'ticket_events',
+        record_id: 'evt-stuck',
+        payload: JSON.stringify({ event_type: 'called' }),
+        created_at: oldTs,
+        attempts: 0,
+        // Simulate: some code path somehow set next_retry_at in the future
+        next_retry_at: new Date(Date.now() + 300_000).toISOString(),
+      });
+
+      const { engine } = createEngine(db);
+      engine.isOnline = true;
+
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.includes('/auth/v1/token')) return { ok: true, json: async () => ({ access_token: VALID_TOKEN, refresh_token: 'rt' }) };
+        if (url.includes('/rest/v1/ticket_events')) return { ok: true, status: 201, json: async () => ({}) };
+        return { ok: true, json: async () => ({}) };
+      });
+
+      await engine.syncNow();
+
+      const row = db.prepare("SELECT * FROM sync_queue WHERE id = 'sq-stuck'").get() as any;
+      // Watchdog must have cleared next_retry_at AND the item must have synced
+      expect(row.synced_at).not.toBeNull();
+    });
+  });
+
+  describe('Reliability: getHealth snapshot', () => {
+    it('reports circuit state, auth-expired presence, and oldest pending age', () => {
+      insertSyncItem(db, { id: 'sq-old', created_at: new Date(Date.now() - 120_000).toISOString() });
+      insertSyncItem(db, { id: 'sq-auth', last_error: 'AUTH_EXPIRED: re-login required' });
+
+      const { engine } = createEngine(db);
+      const h = engine.getHealth();
+      expect(h.authExpired).toBe(true);
+      expect(h.oldestPendingAgeMs).not.toBeNull();
+      expect(h.oldestPendingAgeMs!).toBeGreaterThan(100_000);
+      expect(h.circuitOpen).toBe(false);
+    });
+  });
+
   // ── Pending count tracking ───────────────────────────────────────
 
   describe('Pending count tracking', () => {

@@ -54,13 +54,29 @@ interface Props {
   callerRole: string;
   locale: DesktopLocale;
   onClose: () => void;
+  /** When true, render inline (no overlay/panel/header) — for embedding inside Settings. */
+  embedded?: boolean;
 }
 
 function canManage(role: string): boolean {
   return ['admin', 'manager', 'branch_admin'].includes(role);
 }
 
-export function BusinessAdminModal({ organizationId, callerUserId, callerRole, locale, onClose }: Props) {
+function roleLabel(role: string, t: (k: string) => string): string {
+  const map: Record<string, string> = {
+    admin: t('Admin'),
+    manager: t('Manager'),
+    branch_admin: t('Branch Admin'),
+    floor_manager: t('Floor Manager'),
+    receptionist: t('Receptionist'),
+    desk_operator: t('Desk Operator'),
+    analyst: t('Analyst'),
+    agent: t('Agent'),
+  };
+  return map[role] ?? role;
+}
+
+export function BusinessAdminModal({ organizationId, callerUserId, callerRole, locale, onClose, embedded = false }: Props) {
   const t = useCallback((k: string, vars?: Record<string, any>) => translate(locale, k, vars), [locale]);
   const isAllowed = canManage(callerRole);
 
@@ -83,6 +99,9 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // Ask the Electron sync engine to pull the freshest config from Supabase
+    // so Station UI (and kiosk/display clients) reflect admin edits immediately.
+    try { await (window as any).qf?.sync?.refreshConfig?.(); } catch { /* non-fatal */ }
     try {
       await ensureAuth();
       const sb = await getSupabase();
@@ -193,13 +212,14 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
     padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
   };
   const btnDanger: React.CSSProperties = {
-    background: 'rgba(239,68,68,0.12)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.35)',
-    padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+    background: 'rgba(239,68,68,0.15)', color: '#b91c1c', border: '1px solid rgba(239,68,68,0.35)',
+    padding: '6px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer',
   };
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '8px 10px', borderRadius: 8,
-    border: '1px solid var(--border, #475569)', background: 'var(--surface-2, #0f172a)',
-    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none',
+    border: '1px solid var(--border)', background: 'var(--bg)',
+    color: 'var(--text)', fontSize: 14, outline: 'none',
+    colorScheme: 'light dark' as any,
   };
   const labelStyle: React.CSSProperties = {
     display: 'block', marginBottom: 4, fontSize: 13, color: 'var(--text2, #94a3b8)', fontWeight: 500,
@@ -212,9 +232,11 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
     padding: '10px 14px', color: 'var(--text, #f1f5f9)', verticalAlign: 'top', fontSize: 13,
   };
   const pill = (ok: boolean): React.CSSProperties => ({
-    padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-    background: ok ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.18)',
-    color: ok ? '#86efac' : '#94a3b8',
+    display: 'inline-block',
+    padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+    background: ok ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
+    color: ok ? '#047857' : '#475569',
+    border: ok ? '1px solid rgba(16,185,129,0.35)' : '1px solid rgba(100,116,139,0.35)',
   });
 
   async function flash(msg: string) {
@@ -453,29 +475,29 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
   const staffInOffice = (officeId: string | null | undefined) =>
     officeId ? staff.filter(s => s.is_active !== false && (!s.office_id || s.office_id === officeId)) : staff.filter(s => s.is_active !== false);
 
-  return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={panelStyle} onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div style={{
-          padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
-          display: 'flex', alignItems: 'center', gap: 12,
-          background: 'linear-gradient(180deg, rgba(100,116,139,0.10), transparent)',
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontSize: 18, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>
-              🏢 {t('Business administration')}
-            </h2>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
-              {t('Manage departments, services, desks, and the team for this business.')}
-            </p>
+  const inner = (
+    <>
+        {!embedded && (
+          <div style={{
+            padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: 'linear-gradient(180deg, rgba(100,116,139,0.10), transparent)',
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 18, color: 'var(--text)', fontWeight: 700 }}>
+                🏢 {t('Business administration')}
+              </h2>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+                {t('Manage departments, services, desks, and the team for this business.')}
+              </p>
+            </div>
+            <button onClick={onClose} style={{
+              background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+              width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>×</button>
           </div>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-            width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>×</button>
-        </div>
+        )}
 
         {!isAllowed ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2, #94a3b8)' }}>
@@ -699,7 +721,7 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
                                   <div style={{ fontWeight: 600 }}>{m.full_name}</div>
                                   <div style={{ color: 'var(--text3, #64748b)', fontSize: 12 }}>{m.email}</div>
                                 </td>
-                                <td style={tdStyle}>{m.role}</td>
+                                <td style={tdStyle}>{roleLabel(m.role, t)}</td>
                                 <td style={tdStyle}>{m.office_id ? officeName(m.office_id) : t('All locations')}</td>
                                 <td style={tdStyle}>{m.department_id ? deptName(m.department_id) : '—'}</td>
                                 <td style={tdStyle}><span style={pill(m.is_active !== false)}>{m.is_active !== false ? t('Active') : t('Inactive')}</span></td>
@@ -725,7 +747,6 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
             </div>
           </>
         )}
-      </div>
 
       {/* Department form modal */}
       {deptForm && (
@@ -959,7 +980,7 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
                 <label style={labelStyle}>{t('Role')}</label>
                 <select value={staffForm.role ?? ''} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })} style={inputStyle as any}>
                   {['admin', 'manager', 'branch_admin', 'receptionist', 'desk_operator', 'floor_manager', 'analyst', 'agent'].map(r => (
-                    <option key={r} value={r}>{r}</option>
+                    <option key={r} value={r}>{roleLabel(r, t)}</option>
                   ))}
                 </select>
               </div>
@@ -993,6 +1014,21 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
           </form>
         </div>
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={panelStyle} onClick={e => e.stopPropagation()}>
+        {inner}
+      </div>
     </div>
   );
 }

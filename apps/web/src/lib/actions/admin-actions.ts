@@ -702,7 +702,171 @@ export async function deleteDesk(id: string) {
   return { success: true };
 }
 
+/**
+ * Assign a staff member to a desk, or unassign (pass deskId = null).
+ * - Frees any desk the staff currently occupies (one-staff-per-desk invariant).
+ * - Rejects inactive staff, inactive desks, or desks in closed offices.
+ * - If the desk is in a different office than the staff, returns
+ *   { error: 'CROSS_OFFICE', crossOffice: true, targetOfficeId } unless
+ *   allowOfficeChange is true — in which case it also updates staff.office_id.
+ */
+export async function assignStaffToDesk(input: {
+  staffId: string;
+  deskId: string | null;
+  allowOfficeChange?: boolean;
+}): Promise<{ success?: true; error?: string; crossOffice?: boolean; targetOfficeId?: string }> {
+  const context = await getAdminContext();
+
+  // Load staff and validate org membership
+  const { data: staff } = await context.supabase
+    .from('staff')
+    .select('id, full_name, organization_id, office_id, is_active, role')
+    .eq('id', input.staffId)
+    .maybeSingle();
+
+  if (!staff || staff.organization_id !== context.staff.organization_id) {
+    return { error: 'Team member not found in your organization.' };
+  }
+
+  if (!staff.is_active) {
+    return { error: 'This team member is inactive. Reactivate them before assigning a desk.' };
+  }
+
+  // Unassign: just free whatever desk they hold and return
+  if (!input.deskId) {
+    const { data: priorDesks } = await context.supabase
+      .from('desks')
+      .select('id, name, office_id')
+      .eq('current_staff_id', input.staffId);
+
+    if (priorDesks && priorDesks.length > 0) {
+      const { error } = await context.supabase
+        .from('desks')
+        .update({ current_staff_id: null })
+        .eq('current_staff_id', input.staffId);
+      if (error) return { error: error.message };
+
+      for (const prior of priorDesks) {
+        await logAuditEvent(context, {
+          actionType: 'desk_staff_unassigned',
+          entityType: 'desk',
+          entityId: prior.id,
+          officeId: prior.office_id,
+          summary: `Unassigned ${staff.full_name} from desk ${prior.name}`,
+          metadata: { staffId: staff.id },
+        });
+      }
+    }
+
+    revalidatePath('/admin/desks');
+    revalidatePath('/admin/staff');
+    return { success: true };
+  }
+
+  // Load target desk with office active status
+  const { data: desk } = await context.supabase
+    .from('desks')
+    .select('id, name, is_active, office_id, current_staff_id, office:offices(id, is_active, organization_id)')
+    .eq('id', input.deskId)
+    .maybeSingle();
+
+  const deskOffice = Array.isArray(desk?.office) ? desk?.office[0] : desk?.office;
+  if (!desk || !deskOffice || deskOffice.organization_id !== context.staff.organization_id) {
+    return { error: 'Desk not found in your organization.' };
+  }
+
+  await requireOfficeAccess(context, desk.office_id);
+
+  if (desk.is_active === false) {
+    return { error: 'This desk is inactive. Reactivate it before assigning someone.' };
+  }
+  if (deskOffice.is_active === false) {
+    return { error: 'Cannot assign to a desk in a closed office.' };
+  }
+
+  // No-op: staff already on this desk
+  if (desk.current_staff_id === input.staffId) {
+    return { success: true };
+  }
+
+  // Cross-office guard — require explicit confirmation from the caller
+  const crossOffice = !!staff.office_id && staff.office_id !== desk.office_id;
+  if (crossOffice && !input.allowOfficeChange) {
+    return { error: 'CROSS_OFFICE', crossOffice: true, targetOfficeId: desk.office_id };
+  }
+
+  // Free any desk this staff currently holds (invariant: 1 desk per staff)
+  await context.supabase
+    .from('desks')
+    .update({ current_staff_id: null })
+    .eq('current_staff_id', input.staffId);
+
+  // Free the target desk if someone else is on it
+  if (desk.current_staff_id && desk.current_staff_id !== input.staffId) {
+    await context.supabase
+      .from('desks')
+      .update({ current_staff_id: null })
+      .eq('id', desk.id);
+  }
+
+  // Assign
+  const { error: assignErr } = await context.supabase
+    .from('desks')
+    .update({ current_staff_id: input.staffId })
+    .eq('id', desk.id);
+  if (assignErr) return { error: assignErr.message };
+
+  // Move staff office if cross-office and confirmed
+  if (crossOffice && input.allowOfficeChange) {
+    await context.supabase
+      .from('staff')
+      .update({ office_id: desk.office_id })
+      .eq('id', input.staffId);
+  }
+
+  await logAuditEvent(context, {
+    actionType: 'desk_staff_assigned',
+    entityType: 'desk',
+    entityId: desk.id,
+    officeId: desk.office_id,
+    summary: `Assigned ${staff.full_name} to desk ${desk.name}`,
+    metadata: {
+      staffId: staff.id,
+      crossOffice,
+      previousOfficeId: staff.office_id,
+      previousOccupantId: desk.current_staff_id ?? null,
+    },
+  });
+
+  revalidatePath('/admin/desks');
+  revalidatePath('/admin/staff');
+  return { success: true };
+}
+
 // ─── Staff ──────────────────────────────────────────────────────────────────
+
+/**
+ * Real-time availability check for a staff email within the current org.
+ * Returns { available: boolean, valid: boolean }.
+ * Called while the user types in the Add Team Member form.
+ */
+export async function checkStaffEmailAvailability(
+  rawEmail: string
+): Promise<{ available: boolean; valid: boolean }> {
+  const email = (rawEmail ?? '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { available: false, valid: false };
+  }
+  const context = await getAdminContext();
+  await requireOrganizationAdmin(context);
+  const { data } = await context.supabase
+    .from('staff')
+    .select('id')
+    .eq('organization_id', context.staff.organization_id)
+    .ilike('email', email)
+    .limit(1);
+  return { available: !(data && data.length > 0), valid: true };
+}
 
 export async function createStaffMember(formData: FormData) {
   const context = await getAdminContext();
