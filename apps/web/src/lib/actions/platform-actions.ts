@@ -489,13 +489,14 @@ async function seedConfirmedTemplate(
   }
 
   // ── Auto-create virtual queue code + WhatsApp/Messenger defaults ────
-  // Pick the first department and first service to create a default join code
+  // Lock the default join code to office + first department only. Leaving
+  // service_id null means WhatsApp / Messenger users see the service picker
+  // when the department has 2+ services — previously we pinned the first
+  // service, which silently routed every customer to it.
   const firstDeptCode = seededStarterOffice.departments[0]?.code;
   const firstDeptId = firstDeptCode ? departmentIdsByCode.get(firstDeptCode) : null;
-  const firstSvcCode = seededStarterOffice.departments[0]?.services[0]?.code;
-  const firstSvcId = firstSvcCode ? serviceIdsByCode.get(firstSvcCode) : null;
 
-  if (firstDeptId && firstSvcId) {
+  if (firstDeptId) {
     const vqcToken = 'vqc_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
     const { data: createdVqc } = await context.supabase
       .from('virtual_queue_codes')
@@ -503,7 +504,7 @@ async function seedConfirmedTemplate(
         organization_id: context.staff.organization_id,
         office_id: createdOffice.id,
         department_id: firstDeptId,
-        service_id: firstSvcId,
+        service_id: null,
         qr_token: vqcToken,
         is_active: true,
       })

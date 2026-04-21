@@ -6,82 +6,17 @@ import { TeamModal } from './TeamModal';
 import { BusinessAdminModal } from './BusinessAdminModal';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { speak, buildSample, parseVoiceSettings } from '../lib/voice';
-import { VOICE_CATALOG } from '@qflo/shared';
+import {
+  VOICE_CATALOG,
+  PRESET_KEYS,
+  getFieldLabel,
+  migrateToIntakeFields,
+  type IntakeField,
+  type IntakeFieldScope,
+} from '@qflo/shared';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
 import { ALGERIA_WILAYAS, getCommunes } from '../lib/algeria-wilayas';
-
-// ── Intake Fields types (inlined from @qflo/shared) ─────────────
-type IntakeFieldType = 'preset' | 'custom';
-type IntakeFieldScope = 'both' | 'sameday' | 'booking';
-interface IntakeField {
-  key: string;
-  type: IntakeFieldType;
-  enabled: boolean;
-  required: boolean;
-  scope?: IntakeFieldScope;
-  label?: string;
-  label_fr?: string;
-  label_ar?: string;
-}
-type PresetKey = 'name' | 'phone' | 'age' | 'wilaya' | 'reason';
-const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string; label_ar: string }> = {
-  name:   { label: 'Full name',        label_fr: 'Nom complet',         label_ar: '\u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644' },
-  phone:  { label: 'Phone number',     label_fr: 'Num\u00e9ro de t\u00e9l\u00e9phone', label_ar: '\u0631\u0642\u0645 \u0627\u0644\u0647\u0627\u062a\u0641' },
-  age:    { label: 'Age',              label_fr: '\u00c2ge',             label_ar: '\u0627\u0644\u0639\u0645\u0631' },
-  wilaya: { label: 'Wilaya',           label_fr: 'Wilaya',             label_ar: '\u0627\u0644\u0648\u0644\u0627\u064a\u0629' },
-  reason: { label: 'Reason of visit',  label_fr: 'Motif de visite',    label_ar: '\u0633\u0628\u0628 \u0627\u0644\u0632\u064a\u0627\u0631\u0629' },
-};
-const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'age', 'wilaya', 'reason'];
-
-function getFieldLabel(field: IntakeField, locale: 'en' | 'fr' | 'ar'): string {
-  if (field.type === 'preset') {
-    const preset = INTAKE_PRESETS[field.key as PresetKey];
-    if (preset) {
-      if (locale === 'ar') return preset.label_ar;
-      if (locale === 'fr') return preset.label_fr;
-      return preset.label;
-    }
-  }
-  if (locale === 'ar' && field.label_ar) return field.label_ar;
-  if (locale === 'fr' && field.label_fr) return field.label_fr;
-  return field.label || field.key;
-}
-
-function migrateToIntakeFields(settings: Record<string, any>): IntakeField[] {
-  if (Array.isArray(settings.intake_fields) && settings.intake_fields.length > 0) {
-    return settings.intake_fields;
-  }
-  // Fresh orgs (no legacy flag at all) default to name ON. Only orgs that
-  // explicitly turned name off stay off.
-  const hasLegacyRequireName = typeof settings.require_name_sameday === 'boolean';
-  const requireName = hasLegacyRequireName ? settings.require_name_sameday : true;
-  const customFields: { label: string; label_fr?: string; label_ar?: string }[] =
-    Array.isArray(settings.custom_intake_fields) ? settings.custom_intake_fields : [];
-  // Keep this in sync with packages/shared/src/intake-fields.ts —
-  // name + phone are ON so every platform collects identity by default.
-  // Channels that already know the customer exclude these via excludeKeys.
-  const fields: IntakeField[] = [
-    { key: 'name', type: 'preset', enabled: !!requireName, required: false },
-    { key: 'phone', type: 'preset', enabled: true, required: false },
-    { key: 'age', type: 'preset', enabled: false, required: false },
-    { key: 'wilaya', type: 'preset', enabled: true, required: false },
-    { key: 'reason', type: 'preset', enabled: true, required: false },
-  ];
-  for (const cf of customFields) {
-    if (!cf.label?.trim()) continue;
-    fields.push({
-      key: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      type: 'custom',
-      enabled: true,
-      required: false,
-      label: cf.label,
-      label_fr: cf.label_fr || '',
-      label_ar: cf.label_ar || '',
-    });
-  }
-  return fields;
-}
 
 function generateCustomFieldKey(existing: IntakeField[]): string {
   const taken = new Set(existing.map(f => f.key));
