@@ -103,12 +103,17 @@ export function getFieldPlaceholder(field: IntakeField, locale: 'en' | 'fr' | 'a
  *  pre-fills both from the saved profile) exclude those fields via the
  *  `excludeKeys` arg on `getEnabledIntakeFields`. */
 export function getDefaultIntakeFields(): IntakeField[] {
+  // Brand-new orgs start with the minimum-viable identity set: name +
+  // phone. Everything else is off by default — admins opt in per
+  // business. Channels that already know the customer (WhatsApp has the
+  // phone; mobile pre-fills) drop the relevant presets via `excludeKeys`
+  // on `getEnabledIntakeFields` so customers aren't asked twice.
   return [
     { key: 'name', type: 'preset', enabled: true, required: false },
     { key: 'phone', type: 'preset', enabled: true, required: false },
     { key: 'age', type: 'preset', enabled: false, required: false },
-    { key: 'wilaya', type: 'preset', enabled: true, required: false },
-    { key: 'reason', type: 'preset', enabled: true, required: false },
+    { key: 'wilaya', type: 'preset', enabled: false, required: false },
+    { key: 'reason', type: 'preset', enabled: false, required: false },
   ];
 }
 
@@ -123,24 +128,23 @@ export function migrateToIntakeFields(settings: Record<string, any>): IntakeFiel
     return settings.intake_fields;
   }
 
-  // If the org never had the legacy flag set at all, treat it as a fresh
-  // install and default name ON. Only respect an explicit `false` from a
-  // previously-configured business.
+  // Distinguish fresh orgs from legacy ones by the presence of the old
+  // `require_name_sameday` flag. Fresh orgs get only name + phone on by
+  // default (everything else opt-in). Legacy orgs keep their historical
+  // wilaya + reason defaults so enabling the new migration path can't
+  // silently strip fields they've been collecting for months.
   const hasLegacyRequireName = typeof settings.require_name_sameday === 'boolean';
+  const isFreshInstall = !hasLegacyRequireName;
   const requireName = hasLegacyRequireName ? settings.require_name_sameday : true;
   const customFields: { label: string; label_fr?: string; label_ar?: string }[] =
     Array.isArray(settings.custom_intake_fields) ? settings.custom_intake_fields : [];
 
-  // Legacy migration: name respects the old require_name_sameday toggle (or
-  // defaults ON for fresh orgs); phone defaults ON so identity is collected
-  // everywhere (channels that auto-collect will exclude it). Wilaya + reason
-  // were always asked in booking flow.
   const fields: IntakeField[] = [
     { key: 'name', type: 'preset', enabled: !!requireName, required: false },
     { key: 'phone', type: 'preset', enabled: true, required: false },
     { key: 'age', type: 'preset', enabled: false, required: false },
-    { key: 'wilaya', type: 'preset', enabled: true, required: false },
-    { key: 'reason', type: 'preset', enabled: true, required: false },
+    { key: 'wilaya', type: 'preset', enabled: !isFreshInstall, required: false },
+    { key: 'reason', type: 'preset', enabled: !isFreshInstall, required: false },
   ];
 
   // Append existing custom fields as enabled

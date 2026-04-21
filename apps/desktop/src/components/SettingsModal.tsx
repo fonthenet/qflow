@@ -1144,24 +1144,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     marginTop: 4,
   };
 
-  const Toggle = ({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) => (
-    <button
-      type="button"
-      onClick={() => onChange(!on)}
-      style={{
-        width: 42, height: 24, borderRadius: 12, border: 'none', flexShrink: 0,
-        background: on ? '#22c55e' : '#475569',
-        position: 'relative', cursor: 'pointer', transition: 'background 0.15s',
-        padding: 0,
-      }}
-      aria-pressed={on}
-    >
-      <span style={{
-        position: 'absolute', top: 2, left: on ? 20 : 2, width: 20, height: 20,
-        borderRadius: 10, background: '#fff', transition: 'left 0.15s',
-      }} />
-    </button>
-  );
+  // Toggle lives at module scope (see end of file). Defining it inside
+  // this component gave React a new component identity on every render,
+  // which caused the underlying <button> to unmount/remount during any
+  // upstream state change — enough to drop a click if it landed in the
+  // wrong tick. This kept the "Always open" toggle feeling unresponsive.
 
   // Action buttons rendered by schema (type === 'button'). Keyed by field.key.
   // Handlers receive the live form state so they can read the latest unsaved
@@ -1705,18 +1692,28 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           <Toggle
             on={values.visit_intake_override_mode === 'always_open'}
             onChange={(on) => {
-              if (on) {
-                // Turning ON: snapshot the current weekly schedule so we can
-                // put it back if the admin toggles OFF again.
-                scheduleBeforeAlwaysOpenRef.current = JSON.parse(JSON.stringify(schedule));
-              } else {
-                // Turning OFF: restore the pre-always-open snapshot if we have
-                // one, otherwise fall back to the last loaded schedule so the
-                // admin never ends up with an all-zero / blanked-out calendar.
-                const restored = scheduleBeforeAlwaysOpenRef.current ?? originalSchedule;
-                setSchedule(JSON.parse(JSON.stringify(restored)));
-              }
+              // Update the persisted flag FIRST so the UI can't get stuck
+              // on a failed side-effect below (previously the JSON
+              // snapshot line ran first; if that ever threw the toggle
+              // click silently no-op'd).
               setValues(prev => ({ ...prev, visit_intake_override_mode: on ? 'always_open' : 'business_hours' }));
+              try {
+                if (on) {
+                  // Turning ON: snapshot the current weekly schedule so we can
+                  // put it back if the admin toggles OFF again.
+                  scheduleBeforeAlwaysOpenRef.current = JSON.parse(JSON.stringify(schedule ?? {}));
+                } else {
+                  // Turning OFF: restore the pre-always-open snapshot if we have
+                  // one, otherwise fall back to the last loaded schedule so the
+                  // admin never ends up with an all-zero / blanked-out calendar.
+                  const restored = scheduleBeforeAlwaysOpenRef.current ?? originalSchedule;
+                  setSchedule(JSON.parse(JSON.stringify(restored ?? {})));
+                }
+              } catch {
+                // Snapshot/restore is a convenience, not a correctness
+                // requirement — failure here must not prevent the toggle
+                // itself from flipping.
+              }
             }}
           />
         </div>
@@ -3111,5 +3108,30 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         </div>
       </div>
     </div>
+  );
+}
+
+// Module-scoped stable Toggle. Keeping it out here means React preserves
+// the underlying DOM node across SettingsModal re-renders; otherwise
+// rapid upstream state changes (audio-device polling, localStorage sync
+// effects, etc.) remount the button and occasionally drop clicks.
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!on)}
+      style={{
+        width: 42, height: 24, borderRadius: 12, border: 'none', flexShrink: 0,
+        background: on ? '#22c55e' : '#475569',
+        position: 'relative', cursor: 'pointer', transition: 'background 0.15s',
+        padding: 0,
+      }}
+      aria-pressed={on}
+    >
+      <span style={{
+        position: 'absolute', top: 2, left: on ? 20 : 2, width: 20, height: 20,
+        borderRadius: 10, background: '#fff', transition: 'left 0.15s',
+      }} />
+    </button>
   );
 }
