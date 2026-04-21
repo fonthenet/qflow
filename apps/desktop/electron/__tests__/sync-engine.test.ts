@@ -2,17 +2,24 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { createTestDB } from './helpers';
 
-// Mock electron safeStorage
+// Mock electron safeStorage + app
 vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => false,
     decryptString: () => '',
   },
+  app: {
+    isPackaged: true,
+    getPath: () => '/tmp/test-qflo',
+  },
 }));
 
-// Mock logTicketEvent from db module
+// Mock db module
 vi.mock('../db', () => ({
   logTicketEvent: vi.fn(),
+  setSyncNotifier: vi.fn(),
+  enqueueSync: vi.fn(),
+  deriveOrgIdForSyncItem: vi.fn(),
 }));
 
 // Import after mocks are set up
