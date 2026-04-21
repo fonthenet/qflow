@@ -77,6 +77,7 @@ export default async function DesksPage({
         staffList={staffList ?? []}
         currentOfficeFilter={params.office ?? ''}
         currentDepartmentFilter={params.department ?? ''}
+        currentUserRole={context.staff.role ?? ''}
       />
     </>
   );

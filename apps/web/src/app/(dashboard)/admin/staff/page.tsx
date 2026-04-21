@@ -41,6 +41,12 @@ export default async function StaffPage() {
     .eq('organization_id', context.staff.organization_id)
     .order('full_name');
 
+  const { data: desks } = await context.supabase
+    .from('desks')
+    .select('*, department:departments(id, name), office:offices(id, name), current_staff:staff(id, full_name)')
+    .eq('organization_id', context.staff.organization_id)
+    .order('name');
+
   if (error) {
     return (
       <div className="p-6">
@@ -61,7 +67,9 @@ export default async function StaffPage() {
         staff={staff ?? []}
         offices={offices ?? []}
         departments={normalizedDepartments}
+        desks={desks ?? []}
         roleDefinitions={platformConfig.rolePolicy.roles}
+        currentUserRole={context.staff.role ?? ''}
       />
     </>
   );
