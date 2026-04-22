@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getSupabase } from '../lib/supabase';
 import type { StaffSession } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { Signup } from './Signup';
 
 interface Props {
   onLogin: (session: StaffSession) => void;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function Login({ onLogin, locale }: Props) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberPassword, setRememberPassword] = useState(false);
@@ -354,6 +356,10 @@ export function Login({ onLogin, locale }: Props) {
   }
 
   // ── Login screen (after license verified) ──
+  if (mode === 'signup') {
+    return <Signup onSignedUp={onLogin} onCancel={() => setMode('signin')} locale={locale} />;
+  }
+
   return (
     <div className="login-container">
       <div className="login-card">
@@ -404,6 +410,16 @@ export function Login({ onLogin, locale }: Props) {
             {loading ? t('Signing in...') : t('Sign In')}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center', marginTop: 14, fontSize: 13, color: 'var(--text2, #94a3b8)' }}>
+          {t("Don't have an account?")}{' '}
+          <button
+            onClick={() => setMode('signup')}
+            style={{ background: 'none', border: 'none', color: 'var(--primary, #3b82f6)', cursor: 'pointer', fontWeight: 600, padding: 0, fontSize: 13 }}
+          >
+            {t('Create one')}
+          </button>
+        </div>
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
           <button className="theme-toggle" onClick={toggleTheme} aria-label={t('Toggle theme')} title={t('Toggle theme')}>

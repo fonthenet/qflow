@@ -195,6 +195,19 @@ contextBridge.exposeInMainWorld('qf', {
   },
 
   // Ticket change events (push-based, no polling needed)
+  mini: {
+    restoreMain: () => ipcRenderer.invoke('mini:restore-main'),
+    hide: () => ipcRenderer.invoke('mini:hide'),
+    getEnabled: () => ipcRenderer.invoke('mini:get-enabled'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('mini:set-enabled', enabled),
+  },
+
+  notifications: {
+    getEnabled: () => ipcRenderer.invoke('notifications:get-enabled'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('notifications:set-enabled', enabled),
+    show: (title: string, body: string) => ipcRenderer.invoke('notifications:show', title, body),
+  },
+
   tickets: {
     onChange: (callback: () => void) => {
       const handler = () => callback();

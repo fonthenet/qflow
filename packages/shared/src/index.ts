@@ -8,3 +8,4 @@ export * from './org-settings';
 export * from './algeria';
 export * from './voices';
 export * from './arabic-numbers';
+export * from './onboarding-templates';

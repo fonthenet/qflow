@@ -52,6 +52,105 @@ process.on('unhandledRejection', (reason) => {
 });
 
 let mainWindow: BrowserWindow | null = null;
+let miniWindow: BrowserWindow | null = null;
+
+// Broadcast a renderer IPC event to every open BrowserWindow (main +
+// mini). Every ticket-mutating handler uses this so both windows stay
+// in sync — without it the mini's `tickets.onChange` subscription
+// never fires and updates look stuck.
+function broadcast(channel: string, ...args: any[]) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send(channel, ...args);
+  }
+  if (channel === 'tickets:changed') detectAndNotifyChanges();
+}
+
+// ── Mini-queue preference + active-call gate ──────────────────────
+// The mini only opens if (a) the user has opted in AND (b) there's a
+// called / serving ticket in the current session's office — no point
+// popping a floating card when there's nothing to act on.
+function getMiniQueueEnabled(): boolean {
+  try {
+    const row = getDB().prepare("SELECT value FROM session WHERE key = 'mini_queue_enabled'").get() as { value?: string } | undefined;
+    if (row?.value === 'false') return false;
+    return true;
+  } catch { return true; }
+}
+function setMiniQueueEnabled(enabled: boolean) {
+  try {
+    getDB().prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('mini_queue_enabled', ?)").run(enabled ? 'true' : 'false');
+  } catch {}
+}
+function loadCurrentSessionRaw(): any | null {
+  try {
+    const row = getDB().prepare("SELECT value FROM session WHERE key = 'current'").get() as { value?: string } | undefined;
+    return row?.value ? JSON.parse(row.value) : null;
+  } catch { return null; }
+}
+function hasActiveCall(officeId: string): boolean {
+  try {
+    const row = getDB().prepare("SELECT COUNT(*) AS n FROM tickets WHERE office_id = ? AND status IN ('called','serving')").get(officeId) as { n?: number } | undefined;
+    return (row?.n ?? 0) > 0;
+  } catch { return false; }
+}
+
+// ── Desktop notifications (Windows toast) ─────────────────────────
+// Opt-in per-station alert when a customer-initiated ticket lands or
+// an external channel cancels one. Walk-in tickets created by the
+// operator themselves are skipped — no point pinging them for their
+// own action.
+function getDesktopNotificationsEnabled(): boolean {
+  try {
+    const row = getDB().prepare("SELECT value FROM session WHERE key = 'desktop_notifications_enabled'").get() as { value?: string } | undefined;
+    return row?.value === 'true';
+  } catch { return false; }
+}
+function setDesktopNotificationsEnabled(enabled: boolean) {
+  try {
+    getDB().prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('desktop_notifications_enabled', ?)").run(enabled ? 'true' : 'false');
+  } catch {}
+}
+function showDesktopNotification(title: string, body: string) {
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body, silent: false });
+    n.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+    n.show();
+  } catch {}
+}
+
+type TicketSnapshot = { status: string; ticket_number: string; source: string | null };
+let ticketSnapshot: Map<string, TicketSnapshot> | null = null;
+function detectAndNotifyChanges() {
+  if (!getDesktopNotificationsEnabled()) return;
+  const sess = loadCurrentSessionRaw();
+  if (!sess?.office_id) return;
+  let rows: any[] = [];
+  try {
+    rows = getDB().prepare(
+      "SELECT id, ticket_number, status, source FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving','cancelled','no_show')"
+    ).all(sess.office_id) as any[];
+  } catch { return; }
+  const next = new Map<string, TicketSnapshot>();
+  for (const r of rows) next.set(r.id, { status: r.status, ticket_number: r.ticket_number, source: r.source ?? null });
+  if (!ticketSnapshot) { ticketSnapshot = next; return; }
+  for (const [id, cur] of next) {
+    const prev = ticketSnapshot.get(id);
+    const isCustomerSource = cur.source && cur.source !== 'walk_in';
+    if (!prev && cur.status === 'waiting' && isCustomerSource) {
+      showDesktopNotification(translate(currentLocale, 'New ticket'), `${cur.ticket_number} — ${cur.source}`);
+    } else if (prev && prev.status !== 'cancelled' && cur.status === 'cancelled' && isCustomerSource) {
+      showDesktopNotification(translate(currentLocale, 'Ticket cancelled'), cur.ticket_number);
+    }
+  }
+  ticketSnapshot = next;
+}
 let tray: Tray | null = null;
 let syncEngine: SyncEngine | null = null;
 let kioskUrl: string | null = null;
@@ -371,7 +470,113 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // ── Mini floating queue window ────────────────────────────────────
+  // When the user clicks the minimize button, hide the main window and
+  // pop a small always-on-top card with the current serving + next
+  // waiting tickets. Clicking "Open" on the card restores the main
+  // window and closes the mini.
+  mainWindow.on('minimize', () => {
+    // Only pop the mini when the user has opted in AND there's a
+    // called/serving ticket worth showing. Otherwise let the window
+    // minimize normally — no floating card, no surprise.
+    if (!getMiniQueueEnabled()) return;
+    const sess = loadCurrentSessionRaw();
+    if (!sess?.office_id) return;
+    if (!hasActiveCall(sess.office_id)) return;
+    openMiniWindow();
+  });
 }
+
+function openMiniWindow() {
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.show();
+    miniWindow.focus();
+    return;
+  }
+  miniWindow = new BrowserWindow({
+    width: 320,
+    height: 420,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+    backgroundColor: '#0f172a',
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    miniWindow.loadURL(process.env.VITE_DEV_SERVER_URL + '#mini');
+  } else {
+    miniWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'mini' });
+  }
+
+  miniWindow.once('ready-to-show', () => {
+    miniWindow?.show();
+  });
+
+  miniWindow.on('closed', () => {
+    miniWindow = null;
+  });
+}
+
+function closeMiniWindow() {
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.close();
+  }
+  miniWindow = null;
+}
+
+ipcMain.handle('mini:restore-main', () => {
+  closeMiniWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+ipcMain.handle('mini:hide', () => {
+  // Just close the mini; main is already minimized to the taskbar so
+  // the user can click its tile there to come back.
+  closeMiniWindow();
+});
+
+ipcMain.handle('mini:get-enabled', () => getMiniQueueEnabled());
+ipcMain.handle('mini:set-enabled', (_e, enabled: boolean) => {
+  setMiniQueueEnabled(!!enabled);
+  if (!enabled) closeMiniWindow();
+  return true;
+});
+
+ipcMain.handle('notifications:get-enabled', () => getDesktopNotificationsEnabled());
+ipcMain.handle('notifications:set-enabled', (_e, enabled: boolean) => {
+  setDesktopNotificationsEnabled(!!enabled);
+  if (enabled) {
+    // Seed the snapshot so we don't fire for every existing ticket on
+    // the very first broadcast after enabling.
+    ticketSnapshot = null;
+    detectAndNotifyChanges();
+  }
+  return true;
+});
+
+// Renderer-triggered toast (used for pending_approval tickets and
+// pending appointments — those live in Supabase only and the renderer
+// is the one that sees them first, so it asks main to notify).
+ipcMain.handle('notifications:show', (_e, title: string, body: string) => {
+  if (!getDesktopNotificationsEnabled()) return false;
+  showDesktopNotification(String(title || 'Qflo Station'), String(body || ''));
+  return true;
+});
 
 function createTray() {
   // Use white-on-transparent tray icon (visible on dark taskbars)
@@ -521,6 +726,7 @@ function setupIPC() {
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
     APP_VERSION: CONFIG.APP_VERSION,
+    cloudUrl: CONFIG.CLOUD_URL,
   }));
 
   // ── Database recovery / health ────────────────────────────────────
@@ -687,7 +893,7 @@ function setupIPC() {
     });
 
     notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
-    mainWindow?.webContents.send('tickets:changed');
+    broadcast('tickets:changed');
     notifyStationClients({ type: 'tickets_changed' });
 
     // Immediately push to cloud so web/mobile displays update within 1-2s
@@ -841,7 +1047,7 @@ function setupIPC() {
         ticket.estimated_wait_minutes ?? null
       );
       notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
-      mainWindow?.webContents.send('tickets:changed');
+      broadcast('tickets:changed');
       notifyStationClients({ type: 'tickets_changed' });
       return { id: ticket.id, ticket_number: ticket.ticket_number };
     } catch (err: any) {
@@ -952,7 +1158,7 @@ function setupIPC() {
     } else {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
     }
-    mainWindow?.webContents.send('tickets:changed');
+    broadcast('tickets:changed');
     notifyStationClients({ type: 'tickets_changed' });
 
     // ── Direct API call for instant notification (3-hop path) ──
@@ -2557,7 +2763,7 @@ app.whenReady().then(async () => {
     () => {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
       // Tell renderer to refresh tickets immediately (event-driven, no polling needed)
-      mainWindow?.webContents.send('tickets:changed');
+      broadcast('tickets:changed');
       notifyStationClients({ type: 'tickets_changed' });
     },
     (error) => {
@@ -2662,7 +2868,7 @@ app.whenReady().then(async () => {
     // Notify Station UI instantly when a ticket is created from the local kiosk
     // Also push to cloud immediately so QR tracking works remotely
     setOnTicketCreated((syncQueueId: string) => {
-      mainWindow?.webContents.send('tickets:changed');
+      broadcast('tickets:changed');
       notifyStationClients({ type: 'tickets_changed' });
       syncEngine?.pushImmediate(syncQueueId);
     });

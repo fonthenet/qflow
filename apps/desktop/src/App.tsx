@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Component, type ReactNode } from 'react';
 import { Login } from './screens/Login';
 import { Station } from './screens/Station';
+import { MiniQueue } from './screens/MiniQueue';
 import { StatusBar } from './components/StatusBar';
 import { ConfirmDialogProvider } from './components/ConfirmDialog';
 import type { StaffSession, SyncStatus, UpdateStatus } from './lib/types';
@@ -36,6 +37,21 @@ class ErrorBoundary extends Component<{ children: ReactNode; locale: DesktopLoca
 }
 
 export function App() {
+  // Mini floating queue window — spawned by main.ts when the user
+  // minimizes the Station. Renders a compact always-on-top card that
+  // reuses the existing SQLite + IPC plumbing, nothing else. Apply
+  // the saved theme synchronously before render so the mini doesn't
+  // flash dark when the user is on a light theme.
+  if (typeof window !== 'undefined' && window.location.hash === '#mini') {
+    try {
+      const saved = localStorage.getItem('qflo_theme');
+      if (saved === 'dark' || saved === 'light') {
+        document.documentElement.setAttribute('data-theme', saved);
+      }
+    } catch {}
+    return <MiniQueue />;
+  }
+
   const STAFF_STATUS_KEY = 'qflo_station_staff_status';
   const QUEUE_PAUSED_KEY = 'qflo_station_queue_paused';
   const isHttpBridge = !!(window as any).__QF_HTTP_MODE__;

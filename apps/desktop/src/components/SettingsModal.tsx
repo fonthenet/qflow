@@ -26,6 +26,97 @@ function generateCustomFieldKey(existing: IntakeField[]): string {
 }
 // ── End Intake Fields types ─────────────────────────────────────
 
+// ── Floating Mini Queue toggle ──────────────────────────────────
+// Station-local preference — controls whether minimizing the Station
+// pops a small always-on-top card with the current called/serving
+// tickets. Persisted in the SQLite session table via main process
+// IPC so it survives restarts.
+function StationPrefToggleCard({ t, icon, title, help, getEnabled, setEnabled: persist, defaultEnabled }: {
+  t: (k: string, v?: any) => string;
+  icon: string;
+  title: string;
+  help: string;
+  getEnabled: () => Promise<boolean> | boolean;
+  setEnabled: (v: boolean) => Promise<unknown> | unknown;
+  defaultEnabled: boolean;
+}) {
+  const [enabled, setEnabledState] = useState(defaultEnabled);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    Promise.resolve(getEnabled()).then((v) => {
+      setEnabledState(!!v);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggle = async (next: boolean) => {
+    setEnabledState(next);
+    try { await persist(next); } catch {}
+  };
+
+  return (
+    <div style={{ background: 'var(--surface2, #334155)', borderRadius: 10, padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{icon} {title}</div>
+          <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', lineHeight: 1.4 }}>{help}</div>
+        </div>
+        <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0 }}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={!loaded}
+            onChange={(e) => toggle(e.target.checked)}
+            style={{ opacity: 0, width: 0, height: 0 }}
+          />
+          <span style={{
+            position: 'absolute', cursor: loaded ? 'pointer' : 'wait',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: enabled ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)',
+            transition: '0.2s', borderRadius: 24,
+          }}>
+            <span style={{
+              position: 'absolute',
+              height: 18, width: 18, left: enabled ? 22 : 3, top: 3,
+              background: '#fff', transition: '0.2s', borderRadius: '50%',
+            }} />
+          </span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function MiniQueueToggleCard({ t }: { t: (k: string, v?: any) => string }) {
+  return (
+    <StationPrefToggleCard
+      t={t}
+      icon="📌"
+      title={t('Floating mini queue')}
+      help={t('When you minimize Qflo Station and there is an active call, show a small floating card with quick actions (Start, Complete, Recall, Cancel).')}
+      getEnabled={() => (window as any).qf?.mini?.getEnabled?.() ?? true}
+      setEnabled={(v) => (window as any).qf?.mini?.setEnabled?.(v)}
+      defaultEnabled={true}
+    />
+  );
+}
+
+function NotificationsToggleCard({ t }: { t: (k: string, v?: any) => string }) {
+  return (
+    <StationPrefToggleCard
+      t={t}
+      icon="🔔"
+      title={t('Desktop notifications')}
+      help={t('Show a Windows toast when a customer joins the queue (WhatsApp, web, kiosk) or cancels their ticket. Walk-in tickets you create here are skipped.')}
+      getEnabled={() => (window as any).qf?.notifications?.getEnabled?.() ?? false}
+      setEnabled={(v) => (window as any).qf?.notifications?.setEnabled?.(v)}
+      defaultEnabled={false}
+    />
+  );
+}
+
 interface Props {
   organizationId: string;
   officeId?: string;
@@ -2872,6 +2963,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                 ) : activeSection === 'account' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>
+
+                    <MiniQueueToggleCard t={t} />
+                    <NotificationsToggleCard t={t} />
 
                     {/* Change Email */}
                     <div style={{ background: 'var(--surface2, #334155)', borderRadius: 10, padding: 16 }}>

@@ -2157,8 +2157,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         const list = data as any[];
         // Notify on new pending arrivals
         if (list.length > prevPendingCount.current && prevPendingCount.current > 0) {
-          showToast(translate(locale, '{n} new ticket(s) awaiting approval', { n: list.length - prevPendingCount.current }), 'info');
+          const delta = list.length - prevPendingCount.current;
+          showToast(translate(locale, '{n} new ticket(s) awaiting approval', { n: delta }), 'info');
           try { new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQBvAAAA').play().catch(() => {}); } catch {}
+          try {
+            (window as any).qf?.notifications?.show?.(
+              translate(locale, 'Approval needed'),
+              translate(locale, '{n} new ticket(s) awaiting approval', { n: delta }),
+            );
+          } catch {}
         }
         prevPendingCount.current = list.length;
         setPendingTickets(list);
@@ -2232,6 +2239,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     department_id: string | null;
   };
   const [pendingAppointmentsAll, setPendingAppointmentsAll] = useState<PendingAppt[]>([]);
+  const prevPendingApptCount = useRef(0);
 
   useEffect(() => {
     if (!session.office_id) return;
@@ -2255,7 +2263,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           console.warn('[Station] pending appts fetch returned null — auth may have expired', error);
           return;
         }
-        setPendingAppointmentsAll(data as PendingAppt[]);
+        const list = data as PendingAppt[];
+        if (list.length > prevPendingApptCount.current && prevPendingApptCount.current > 0) {
+          const delta = list.length - prevPendingApptCount.current;
+          try {
+            (window as any).qf?.notifications?.show?.(
+              translate(locale, 'Approval needed'),
+              translate(locale, '{n} new appointment(s) awaiting approval', { n: delta }),
+            );
+          } catch {}
+        }
+        prevPendingApptCount.current = list.length;
+        setPendingAppointmentsAll(list);
       } catch (e) {
         if (!cancelled) console.warn('[Station] pending appointments fetch failed', e);
       }
