@@ -28,6 +28,7 @@ import { useOperatorStore } from '@/lib/operator-store';
 import { supabase } from '@/lib/supabase';
 import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { TableSuggestion } from '@/components/TableSuggestion';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -304,6 +305,20 @@ export default function DeskScreen() {
   const [availableDesks, setAvailableDesks] = useState<any[]>([]);
   const [switchLoading, setSwitchLoading] = useState(false);
   const [upcomingAppts, setUpcomingAppts] = useState<any[]>([]);
+  const [businessCategory, setBusinessCategory] = useState<string | null>(null);
+
+  // Pull org business_category once so TableSuggestion knows whether
+  // to render at all.
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    supabase.from('organizations').select('settings').eq('id', orgId).single().then(({ data }) => {
+      if (cancelled) return;
+      const cat = ((data?.settings as any)?.business_category ?? null) as string | null;
+      setBusinessCategory(cat);
+    });
+    return () => { cancelled = true; };
+  }, [orgId]);
 
   const screenWidth = useScreenWidth();
   const isWide = screenWidth > 768;
@@ -904,6 +919,12 @@ export default function DeskScreen() {
           ) : null}
         </View>
       </View>
+
+      <TableSuggestion
+        officeId={officeId}
+        category={businessCategory}
+        ticket={activeTicket as any}
+      />
 
       {/* Customer & meta */}
       <View style={styles.metaCompact}>
