@@ -272,7 +272,7 @@ export function getBankBranchOverlay(): DeepPartial<IndustryTemplate> {
       numberingFormat: 'department_sequence',
       priorityMode: 'category_weight',
       routingMode: 'department_first',
-      capacityLimit: 100,
+      capacityLimit: 90,
       estimatedWaitStrategy: 'historical_average',
       remoteJoinNotice: 'Prenez votre ticket à distance et venez quand votre numéro approche.',
     },

@@ -8,11 +8,16 @@ vi.mock('electron', () => ({
     isEncryptionAvailable: () => false,
     decryptString: () => '',
   },
+  app: {
+    isPackaged: false,
+    getPath: () => '/tmp',
+  },
 }));
 
 // Mock logTicketEvent from db module
 vi.mock('../db', () => ({
   logTicketEvent: vi.fn(),
+  setSyncNotifier: vi.fn(),
 }));
 
 // Import after mocks are set up
