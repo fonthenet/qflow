@@ -7,6 +7,7 @@ import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { TableSuggestionBar } from '../components/TableSuggestionBar';
+import { FloorMap } from '../components/FloorMap';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
@@ -1296,7 +1297,10 @@ function getTicketCustomerName(customerData: unknown) {
 }
 
 /** Extract custom intake fields from customer_data (excludes known system keys) */
-function getCustomIntakeFields(customerData: unknown): [string, string][] {
+function getCustomIntakeFields(
+  customerData: unknown,
+  locale: 'en' | 'fr' | 'ar' = 'en',
+): Array<{ key: string; label: string; value: string }> {
   if (!customerData || typeof customerData !== 'object' || Array.isArray(customerData)) return [];
   const data = customerData as Record<string, unknown>;
   const systemKeys = new Set([
@@ -1305,12 +1309,20 @@ function getCustomIntakeFields(customerData: unknown): [string, string][] {
     'source', 'messenger_psid', 'whatsapp_phone',
     'wilaya', 'reason', 'reason_of_visit',
   ]);
-  const entries: [string, string][] = [];
-  for (const [key, value] of Object.entries(data)) {
+  const entries: Array<{ key: string; label: string; value: string }> = [];
+  for (const [key, raw] of Object.entries(data)) {
     if (systemKeys.has(key)) continue;
-    if (typeof value === 'string' && value.trim()) {
-      entries.push([key, value.trim()]);
-    }
+    let value: string;
+    if (typeof raw === 'string') value = raw.trim();
+    else if (typeof raw === 'number' && Number.isFinite(raw)) value = String(raw);
+    else continue;
+    if (!value) continue;
+    // Resolve preset keys (e.g. party_size) to their trilingual labels.
+    const preset = INTAKE_PRESETS[key as PresetKey];
+    const label = preset
+      ? (locale === 'ar' ? preset.label_ar : locale === 'fr' ? preset.label_fr : preset.label)
+      : key;
+    entries.push({ key, label, value });
   }
   return entries;
 }
@@ -3877,9 +3889,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
-                {getCustomIntakeFields(activeTicket.customer_data).map(([key, value]) => (
+                {getCustomIntakeFields(activeTicket.customer_data, locale).map(({ key, label, value }) => (
                   <div key={key} className="active-notes" style={{ fontSize: 13, color: 'var(--text2)' }}>
-                    <strong>{key}:</strong> {value}
+                    <strong>{label}:</strong> {value}
                   </div>
                 ))}
                 <div className="active-meta">
@@ -4019,9 +4031,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
-                {getCustomIntakeFields(activeTicket.customer_data).map(([key, value]) => (
+                {getCustomIntakeFields(activeTicket.customer_data, locale).map(({ key, label, value }) => (
                   <div key={key} className="active-notes" style={{ fontSize: 13, color: 'var(--text2)' }}>
-                    <strong>{key}:</strong> {value}
+                    <strong>{label}:</strong> {value}
                   </div>
                 ))}
                 <div className="active-meta">
@@ -4193,7 +4205,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             display: mainView === 'queue' ? 'flex' : 'none',
             flex: 1, width: '100%', alignItems: 'stretch', overflow: 'hidden',
           }}>
-            {/* Idle panel — left side (or full width when booking closed) */}
+            {/* Floor map replaces the idle panel for restaurants/cafes:
+                the operator manages many tables concurrently, not one
+                active ticket. Non-restaurant orgs keep the classic
+                single-ticket idle panel. */}
+            {(orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe') ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <FloorMap
+                  officeId={session.office_id}
+                  staffId={session.staff_id}
+                  deskId={session.desk_id ?? null}
+                  locale={locale}
+                />
+              </div>
+            ) : (
             <div className="idle-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               {queuePaused || staffStatus !== 'available' ? (
                 <>
@@ -4359,6 +4384,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 </>
               )}
             </div>
+            )}
 
           </div>
           )}

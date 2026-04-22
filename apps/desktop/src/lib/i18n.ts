@@ -1333,6 +1333,15 @@ const FR: Messages = {
   'Suggested: {code}': 'Suggérée : {code}',
   'perfect fit': 'correspond parfaitement',
   'Seat at {code}': 'Placer à {code}',
+  'Floor map': 'Plan de salle',
+  'Seat next': 'Placer suivant',
+  'Utilisation': 'Utilisation',
+  'Transfer to another table': 'Transférer vers une autre table',
+  'Cancel ticket': 'Annuler le ticket',
+  'Cancel ticket at {code}?': 'Annuler le ticket à {code} ?',
+  'Select a destination table for {code}': 'Sélectionnez une table de destination pour {code}',
+  'No tables yet. Add them in Business Administration → Tables.': 'Aucune table. Ajoutez-les dans Administration → Tables.',
+  'No matching table': 'Aucune table ne correspond',
 
   // ─── Starter template names (office / depts / services) ───
   'Main location': 'Emplacement principal',
@@ -2703,6 +2712,15 @@ const AR: Messages = {
   'Suggested: {code}': 'مقترحة: {code}',
   'perfect fit': 'مطابقة مثالية',
   'Seat at {code}': 'أجلس في {code}',
+  'Floor map': 'خريطة الصالة',
+  'Seat next': 'إجلاس التالي',
+  'Utilisation': 'الإشغال',
+  'Transfer to another table': 'نقل إلى طاولة أخرى',
+  'Cancel ticket': 'إلغاء التذكرة',
+  'Cancel ticket at {code}?': 'إلغاء التذكرة في {code}؟',
+  'Select a destination table for {code}': 'اختر طاولة الوجهة لـ {code}',
+  'No tables yet. Add them in Business Administration → Tables.': 'لا توجد طاولات. أضفها في إدارة الأعمال ← الطاولات.',
+  'No matching table': 'لا توجد طاولة مطابقة',
 
   // ─── Starter template names ───
   'Main location': 'الموقع الرئيسي',
@@ -3231,6 +3249,15 @@ const EN: Messages = {
   'Suggested: {code}': 'Suggested: {code}',
   'perfect fit': 'perfect fit',
   'Seat at {code}': 'Seat at {code}',
+  'Floor map': 'Floor map',
+  'Seat next': 'Seat next',
+  'Utilisation': 'Utilisation',
+  'Transfer to another table': 'Transfer to another table',
+  'Cancel ticket': 'Cancel ticket',
+  'Cancel ticket at {code}?': 'Cancel ticket at {code}?',
+  'Select a destination table for {code}': 'Select a destination table for {code}',
+  'No tables yet. Add them in Business Administration → Tables.': 'No tables yet. Add them in Business Administration → Tables.',
+  'No matching table': 'No matching table',
 
   // ─── Starter template names ───
   'Main location': 'Main location',
