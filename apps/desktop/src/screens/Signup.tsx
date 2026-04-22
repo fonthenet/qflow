@@ -76,7 +76,7 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
 
       setProgress(t('Finishing up...'));
       const session: StaffSession = {
-        user_id: '',
+        user_id: body.user_id ?? '',
         staff_id: body.staff_id ?? '',
         email,
         full_name: fullName,
@@ -218,7 +218,26 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
             >
               ← {t('Change category')}
             </button>
-            <button type="submit" className="btn-primary" disabled={loading || !canSubmit} style={{ flex: 2 }}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={loading || !canSubmit}
+              style={{ flex: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            >
+              {loading && (
+                <span
+                  aria-hidden
+                  style={{
+                    width: 14,
+                    height: 14,
+                    border: '2px solid rgba(255,255,255,0.35)',
+                    borderTopColor: '#fff',
+                    borderRadius: '50%',
+                    animation: 'spin 0.8s linear infinite',
+                    display: 'inline-block',
+                  }}
+                />
+              )}
               {loading ? t('Creating business...') : t('Create business')}
             </button>
           </div>

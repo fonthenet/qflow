@@ -253,6 +253,7 @@ export async function POST(request: NextRequest) {
       desk_id: firstDeskId,
       desk_name: firstDeskName,
       staff_id: staff?.id ?? null,
+      user_id: authUserId,
       role: staff?.role ?? 'admin',
       session: {
         access_token: sessionData.session?.access_token ?? null,
