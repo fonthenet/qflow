@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { cloudFetch } from '../lib/cloud-fetch';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { TablesPanel } from './TablesPanel';
 
 const CLOUD_URL = 'https://qflo.net';
 
@@ -46,7 +47,7 @@ interface StaffRow {
   is_active: boolean | null;
 }
 
-type Tab = 'departments' | 'services' | 'desks' | 'team';
+type Tab = 'departments' | 'services' | 'desks' | 'tables' | 'team';
 
 interface Props {
   organizationId: string;
@@ -90,6 +91,7 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
   const [services, setServices] = useState<Service[]>([]);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [staff, setStaff] = useState<StaffRow[]>([]);
+  const [businessCategory, setBusinessCategory] = useState<string>('');
 
   const authBody = useMemo(
     () => ({ caller_user_id: callerUserId, organization_id: organizationId }),
@@ -105,6 +107,15 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
     try {
       await ensureAuth();
       const sb = await getSupabase();
+
+      // 0) Org-level business_category — drives the Tables tab visibility.
+      const orgRes = await sb
+        .from('organizations')
+        .select('settings')
+        .eq('id', organizationId)
+        .single();
+      const cat = ((orgRes.data?.settings as any)?.business_category ?? '') as string;
+      setBusinessCategory(cat);
 
       // 1) Offices are directly scoped by organization_id
       const offRes = await sb
@@ -516,6 +527,11 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
               <button style={tabBtn(tab === 'desks')} onClick={() => setTab('desks')}>
                 {t('Desks')} <span style={{ opacity: 0.6 }}>({desks.length})</span>
               </button>
+              {(businessCategory === 'restaurant' || businessCategory === 'cafe') && (
+                <button style={tabBtn(tab === 'tables')} onClick={() => setTab('tables')}>
+                  🍽️ {t('Tables')}
+                </button>
+              )}
               <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>
                 {t('Team')} <span style={{ opacity: 0.6 }}>({staff.length})</span>
               </button>
@@ -691,6 +707,15 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
                         </table>
                       </div>
                     </>
+                  )}
+
+                  {/* ── Tables (restaurants only) ─────────── */}
+                  {tab === 'tables' && (
+                    <TablesPanel
+                      officeId={offices[0]?.id ?? null}
+                      locale={locale}
+                      canManage={isAllowed}
+                    />
                   )}
 
                   {/* ── Team ──────────────────────────────── */}

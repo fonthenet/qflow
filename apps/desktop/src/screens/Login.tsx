@@ -406,7 +406,26 @@ export function Login({ onLogin, locale }: Props) {
             </label>
           </div>
 
-          <button type="submit" className="btn-primary btn-full" disabled={loading}>
+          <button
+            type="submit"
+            className="btn-primary btn-full"
+            disabled={loading}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+          >
+            {loading && (
+              <span
+                aria-hidden
+                style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid rgba(255,255,255,0.35)',
+                  borderTopColor: '#fff',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                  display: 'inline-block',
+                }}
+              />
+            )}
             {loading ? t('Signing in...') : t('Sign In')}
           </button>
         </form>
