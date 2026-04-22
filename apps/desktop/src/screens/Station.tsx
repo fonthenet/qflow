@@ -6,6 +6,7 @@ import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilay
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
+import { TableSuggestionBar } from '../components/TableSuggestionBar';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
@@ -4154,6 +4155,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     )}
                   </div>
                 )}
+
+                <TableSuggestionBar
+                  officeId={session.office_id}
+                  category={orgSettings.business_category ?? ''}
+                  ticket={activeTicket as any}
+                  locale={locale}
+                />
 
                 <div className="active-actions">
                   <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)} title="F10">
