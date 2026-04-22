@@ -1,28 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
-  getStarterTemplate,
+  getStarterSubtype,
+  getDefaultOptions,
   DEFAULT_OFFICE_HOURS,
   DEFAULT_TIMEZONE,
 } from '@qflo/shared';
 
 // ── POST /api/onboarding/create-business ───────────────────────────
-// Single unified onboarding endpoint shared by the web signup page,
-// the Station desktop app, and (future) mobile. Performs the full
-// end-to-end setup in one call using the Supabase service-role key:
-//
-//   1. Create the auth user
-//   2. Call create_organization_with_admin RPC (minimal intake_fields,
-//      minimal VQC defaults — matches the fixes we shipped earlier)
-//   3. Seed the chosen starter template (office with operating hours,
-//      departments, services, desks)
-//   4. Create the default virtual queue code (office + first dept,
-//      service_id=null so customers still see a service picker)
-//   5. Write org channel + booking defaults into settings
-//   6. Assign the admin to the first office/department/desk
-//
-// Returns the caller-facing summary + a session so the client can sign
-// the admin straight in without a second round-trip.
+// Unified onboarding endpoint shared by web, Station desktop, and
+// mobile. Creates the auth user, org, office (with operating hours),
+// departments, services, desks, restaurant_tables (if applicable),
+// the default virtual queue code, and channel/booking settings — all
+// in one call. Auth user is rolled back on failure.
 
 interface CreateBusinessBody {
   email?: string;
@@ -30,6 +20,8 @@ interface CreateBusinessBody {
   fullName?: string;
   businessName?: string;
   templateId?: string;
+  subtypeId?: string;
+  options?: Record<string, number>;
 }
 
 function slugify(name: string): string {
@@ -39,6 +31,12 @@ function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
+}
+
+function num(opts: Record<string, number> | undefined, key: string, fallback: number): number {
+  const v = opts?.[key];
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return Math.floor(v);
+  return fallback;
 }
 
 export async function POST(request: NextRequest) {
@@ -54,6 +52,7 @@ export async function POST(request: NextRequest) {
   const fullName = body.fullName?.trim();
   const businessName = body.businessName?.trim();
   const templateId = body.templateId;
+  const subtypeId = body.subtypeId;
 
   if (!email || !password || !fullName || !businessName || !templateId) {
     return NextResponse.json(
@@ -65,15 +64,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
   }
 
-  const template = getStarterTemplate(templateId);
-  if (!template) {
-    return NextResponse.json({ error: `Unknown templateId: ${templateId}` }, { status: 400 });
+  const subtype = getStarterSubtype(templateId, subtypeId);
+  if (!subtype) {
+    return NextResponse.json({ error: `Unknown templateId/subtypeId: ${templateId}/${subtypeId}` }, { status: 400 });
   }
+
+  const options = { ...getDefaultOptions(subtype), ...(body.options ?? {}) };
 
   const supabase = createAdminClient();
 
-  // 1. Create the auth user (auto-confirmed so the flow can finish in
-  // one HTTP call — matches the web onboarding UX).
+  // 1. Create the auth user (auto-confirmed so the flow finishes in one call).
   const { data: created, error: authErr } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
   const authUserId = created.user.id;
 
   try {
-    // 2. Org + admin staff row
+    // 2. Org + admin staff row (same RPC the web uses — minimal intake_fields)
     const slug = slugify(businessName) || 'business-' + Date.now().toString(36);
     const { data: orgId, error: rpcErr } = await supabase.rpc('create_organization_with_admin', {
       p_org_name: businessName,
@@ -98,12 +98,12 @@ export async function POST(request: NextRequest) {
     if (rpcErr || !orgId) throw rpcErr ?? new Error('RPC returned no org id');
     const organizationId = orgId as string;
 
-    // 3. Office with reasonable operating hours + timezone
+    // 3. Office
     const { data: office, error: officeErr } = await supabase
       .from('offices')
       .insert({
         organization_id: organizationId,
-        name: template.officeName,
+        name: subtype.officeName,
         is_active: true,
         timezone: DEFAULT_TIMEZONE,
         operating_hours: DEFAULT_OFFICE_HOURS,
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     // 4. Departments + services
     const deptIdByCode = new Map<string, string>();
-    for (const dept of template.departments) {
+    for (const dept of subtype.departments) {
       const { data: deptRow, error: deptErr } = await supabase
         .from('departments')
         .insert({ office_id: office.id, code: dept.code, name: dept.name, is_active: true })
@@ -137,26 +137,69 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Locate the admin staff row so we can claim desk #1
+    // 5. Admin staff row
     const { data: staff } = await supabase
       .from('staff')
       .select('id, role')
       .eq('auth_user_id', authUserId)
       .single();
 
-    // 6. Desks — first one opens and is claimed by the admin
-    const firstDeptCode = template.departments[0]?.code;
+    // 6. Desks — expand per subtype options (cashiers / tellers / chairs /
+    // counters / doctors). Falls back to the template's desk name list.
+    const firstDeptCode = subtype.departments[0]?.code;
     const firstDeptId = firstDeptCode ? deptIdByCode.get(firstDeptCode) ?? null : null;
-    let firstDeskId: string | null = null;
-    const firstDeskName = template.desks[0] ?? 'Desk 1';
+    const advisoryDeptId = deptIdByCode.get('ADV') ?? null;
 
-    for (let i = 0; i < template.desks.length; i++) {
-      const name = template.desks[i];
+    // Resolve how many desks of each kind to create.
+    const plan: { name: string; deptId: string | null }[] = [];
+    const pushN = (n: number, baseName: string, deptId: string | null) => {
+      for (let i = 1; i <= n; i++) plan.push({ name: n === 1 ? baseName : `${baseName} ${i}`, deptId });
+    };
+
+    switch (subtype.id) {
+      case 'restaurant-full':
+      case 'restaurant-cafe':
+        pushN(num(options, 'cashiers', subtype.desks.length), subtype.id === 'restaurant-cafe' ? 'Counter' : 'Caisse', firstDeptId);
+        break;
+      case 'medical-gp':
+      case 'medical-dental':
+        plan.push({ name: 'Reception', deptId: firstDeptId });
+        pushN(num(options, 'doctors', 1), subtype.id === 'medical-dental' ? 'Dentist' : 'Doctor', firstDeptId);
+        break;
+      case 'medical-pharmacy':
+        pushN(num(options, 'counters', 1), 'Counter', firstDeptId);
+        break;
+      case 'bank-full':
+        pushN(num(options, 'tellers', 2), 'Teller', firstDeptId);
+        pushN(num(options, 'advisors', 1), 'Advisor', advisoryDeptId ?? firstDeptId);
+        break;
+      case 'bank-small':
+        pushN(num(options, 'tellers', 1), 'Teller', firstDeptId);
+        break;
+      case 'retail-store':
+        pushN(num(options, 'counters', 1), 'Counter', firstDeptId);
+        break;
+      case 'retail-salon':
+      case 'retail-barber':
+        pushN(num(options, 'chairs', subtype.desks.length), 'Chair', firstDeptId);
+        break;
+      case 'public-docs':
+      case 'public-municipal':
+        pushN(num(options, 'counters', subtype.desks.length), 'Counter', firstDeptId);
+        break;
+      default:
+        for (const name of subtype.desks) plan.push({ name, deptId: firstDeptId });
+    }
+
+    let firstDeskId: string | null = null;
+    const firstDeskName = plan[0]?.name ?? subtype.desks[0] ?? 'Desk 1';
+    for (let i = 0; i < plan.length; i++) {
+      const { name, deptId } = plan[i];
       const { data: desk, error: deskErr } = await supabase
         .from('desks')
         .insert({
           office_id: office.id,
-          department_id: firstDeptId ?? (undefined as any),
+          department_id: (deptId ?? undefined) as any,
           name,
           is_active: true,
           current_staff_id: i === 0 ? staff?.id ?? null : null,
@@ -168,7 +211,24 @@ export async function POST(request: NextRequest) {
       if (i === 0 && desk) firstDeskId = desk.id;
     }
 
-    // Assign admin to the new office + first dept
+    // 7. Restaurant tables (only if the subtype opted in via `tables`)
+    const tableCount = num(options, 'tables', 0);
+    if (tableCount > 0) {
+      const rows = [];
+      for (let i = 1; i <= tableCount; i++) {
+        rows.push({
+          office_id: office.id,
+          code: `T${i}`,
+          label: `Table ${i}`,
+          capacity: 4,
+          status: 'available',
+        });
+      }
+      const { error: tblErr } = await supabase.from('restaurant_tables').insert(rows);
+      if (tblErr) throw new Error(`restaurant_tables: ${tblErr.message}`);
+    }
+
+    // 8. Assign admin to new office + first dept
     if (staff) {
       await supabase
         .from('staff')
@@ -176,7 +236,7 @@ export async function POST(request: NextRequest) {
         .eq('id', staff.id);
     }
 
-    // 7. Default virtual queue code (office + first dept only, no service lock)
+    // 9. Default virtual queue code (office + first dept only)
     let createdVqcId: string | null = null;
     if (firstDeptId) {
       const vqcToken =
@@ -197,11 +257,11 @@ export async function POST(request: NextRequest) {
       createdVqcId = vqc?.id ?? null;
     }
 
-    // 8. Org-level channel + booking defaults — merge so we don't
-    // clobber what create_organization_with_admin already stamped.
+    // 10. Org settings merge — channel + booking defaults + category
     const autoCode =
       businessName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) || 'QUEUE';
     const channelDefaults: Record<string, unknown> = {
+      business_category: subtype.businessCategory,
       whatsapp_enabled: true,
       messenger_enabled: true,
       whatsapp_code: autoCode,
@@ -228,22 +288,8 @@ export async function POST(request: NextRequest) {
       .update({ settings: { ...currentSettings, ...channelDefaults } as any })
       .eq('id', organizationId);
 
-    // 9. Build a session so the client can sign straight in.
-    const { data: sessionData, error: sessionErr } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (sessionErr) {
-      // Signup succeeded but password sign-in failed. Return what we
-      // created so the client can surface a useful error.
-      return NextResponse.json({
-        organization_id: organizationId,
-        office_id: office.id,
-        staff_id: staff?.id ?? null,
-        session: null,
-        warning: 'Business created. Please sign in with your email and password.',
-      });
-    }
+    // 11. Sign the admin straight in so the client doesn't need a second round-trip.
+    const { data: sessionData } = await supabase.auth.signInWithPassword({ email, password });
 
     return NextResponse.json({
       organization_id: organizationId,
@@ -255,17 +301,19 @@ export async function POST(request: NextRequest) {
       staff_id: staff?.id ?? null,
       user_id: authUserId,
       role: staff?.role ?? 'admin',
+      seeded: {
+        desks: plan.length,
+        departments: subtype.departments.length,
+        services: subtype.departments.reduce((n, d) => n + d.services.length, 0),
+        tables: tableCount,
+      },
       session: {
         access_token: sessionData.session?.access_token ?? null,
         refresh_token: sessionData.session?.refresh_token ?? null,
       },
     });
   } catch (err: any) {
-    // Rollback: delete the orphaned auth user so the operator can
-    // retry with the same email. Ignore any delete error.
-    try {
-      await supabase.auth.admin.deleteUser(authUserId);
-    } catch {}
+    try { await supabase.auth.admin.deleteUser(authUserId); } catch {}
     return NextResponse.json({ error: err?.message ?? 'Onboarding failed' }, { status: 500 });
   }
 }
