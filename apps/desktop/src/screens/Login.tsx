@@ -3,6 +3,7 @@ import { getSupabase } from '../lib/supabase';
 import type { StaffSession } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { Signup } from './Signup';
+import { QLogo } from '../components/QLogo';
 
 interface Props {
   onLogin: (session: StaffSession) => void;
@@ -248,7 +249,7 @@ export function Login({ onLogin, locale }: Props) {
       <div className="login-container">
         <div className="login-card">
           <div className="login-header">
-            <div className="login-logo">Q</div>
+            <QLogo size={72} style={{ margin: '0 auto 16px' }} />
             <h1>{t('Qflo Station')}</h1>
             <p>{t('Checking license...')}</p>
           </div>
@@ -364,7 +365,7 @@ export function Login({ onLogin, locale }: Props) {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <div className="login-logo">Q</div>
+          <QLogo size={72} style={{ margin: '0 auto 16px' }} />
           <h1>{t('Qflo Station')}</h1>
           <p>{t('Sign in to your operator account')}</p>
         </div>

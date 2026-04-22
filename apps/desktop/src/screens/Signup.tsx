@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { restoreSession } from '../lib/supabase';
 import type { StaffSession } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { QLogo } from '../components/QLogo';
 import {
   STARTER_TEMPLATES,
   getStarterTemplate,
@@ -24,7 +25,7 @@ function CardShell({ title, subtitle, maxWidth, children }: { title: string; sub
     <div className="login-container">
       <div className="login-card" style={{ maxWidth: maxWidth ?? 520 }}>
         <div className="login-header">
-          <div className="login-logo">Q</div>
+          <QLogo size={72} style={{ margin: '0 auto 16px' }} />
           <h1>{title}</h1>
           {subtitle && <p>{subtitle}</p>}
         </div>
@@ -331,15 +332,15 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
         <Row label={t('Category')} value={`${subtype.icon} ${t(subtype.titleKey)}`} />
         <Row label={t('Business name')} value={businessName} mono={`qflo.app/${slugify(businessName) || 'your-business'}`} />
         <Row label={t('Admin')} value={fullName} mono={email} />
-        <Row label={t('Office')} value={subtype.officeName} mono={`${t('Mon–Sat 9:00–18:00')} · Africa/Algiers`} />
+        <Row label={t('Office')} value={t(subtype.officeName)} mono={`${t('Mon–Sat 9:00–18:00')} · Africa/Algiers`} />
         <Row
           label={t('Departments')}
-          value={subtype.departments.map((d) => d.name).join(', ')}
+          value={subtype.departments.map((d) => t(d.name)).join(', ')}
           mono={`${serviceCount} ${t('services')}`}
         />
         <Row
           label={t('Services')}
-          value={subtype.departments.flatMap((d) => d.services.map((s) => s.name)).join(', ')}
+          value={subtype.departments.flatMap((d) => d.services.map((s) => t(s.name))).join(', ')}
         />
         <Row label={t('Desks')} value={`${totalDesks || subtype.desks.length}`} />
         {num(options, 'tables', 0) > 0 && (

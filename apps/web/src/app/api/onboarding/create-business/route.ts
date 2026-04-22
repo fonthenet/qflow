@@ -74,13 +74,44 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminClient();
 
   // 1. Create the auth user (auto-confirmed so the flow finishes in one call).
-  const { data: created, error: authErr } = await supabase.auth.admin.createUser({
+  // If the email is already taken, check whether it's an orphan from a
+  // prior failed signup (auth user exists but no staff row). Orphans
+  // are recycled transparently so the operator can retry with the same
+  // email. Real existing users get a clear 409.
+  let { data: created, error: authErr } = await supabase.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
     user_metadata: { full_name: fullName },
   });
-  if (authErr || !created.user) {
+
+  if (authErr && /already|registered|exists/i.test(authErr.message || '')) {
+    const { data: list } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    const existing = list?.users?.find((u) => (u.email ?? '').toLowerCase() === email.toLowerCase());
+    if (existing) {
+      const { data: staffRow } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('auth_user_id', existing.id)
+        .maybeSingle();
+      if (staffRow) {
+        return NextResponse.json(
+          { error: 'This email is already in use. Please sign in instead.' },
+          { status: 409 },
+        );
+      }
+      // Orphan — recycle and retry
+      await supabase.auth.admin.deleteUser(existing.id);
+      ({ data: created, error: authErr } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+      }));
+    }
+  }
+
+  if (authErr || !created?.user) {
     return NextResponse.json({ error: authErr?.message ?? 'Failed to create auth user' }, { status: 400 });
   }
   const authUserId = created.user.id;

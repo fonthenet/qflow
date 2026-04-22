@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { StaffSession, SyncStatus, UpdateStatus } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { useConfirmDialog } from './ConfirmDialog';
+import { QLogo } from './QLogo';
 
 /**
  * Humanize a raw role slug (e.g. "desk_operator" → "Desk Operator").
@@ -353,7 +354,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
           {logoUrl ? (
             <img src={logoUrl} alt="Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', borderRadius: 4 }} onError={() => setLogoUrl(null)} />
           ) : (
-            <span className="app-logo">Q</span>
+            <QLogo size={28} style={{ borderRadius: 6 }} />
           )}
           <span className="app-name">{(locale === 'ar' && orgNameAr) ? orgNameAr : (orgName ?? session?.office_name ?? t('Qflo Station'))}</span>
           {orgName && session?.office_name && orgName !== session.office_name && (
