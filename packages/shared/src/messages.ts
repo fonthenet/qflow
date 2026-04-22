@@ -41,6 +41,11 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     ar: "*تنبيه — {name}:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}* 📢\n\nتتبع: {url}",
     en: "📢 *Buzz — {name}:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}",
   },
+  table_changed: {
+    fr: "🔀 *Changement de table — {name} :* Votre ticket *{ticket}* a été déplacé. Merci de vous rendre maintenant à *{desk}*.\n\nSuivi : {url}",
+    ar: "*تغيير الطاولة — {name}:* تم نقل تذكرتك *{ticket}*. يرجى التوجه الآن إلى *{desk}* 🔀\n\nتتبع: {url}",
+    en: "🔀 *Table changed — {name}:* Your ticket *{ticket}* has been moved. Please go to *{desk}* now.\n\nTrack: {url}",
+  },
   serving: {
     fr: "▶️ Votre service a commencé chez *{name}* ! Ticket *{ticket}* — vous êtes maintenant pris en charge au *{desk}*.",
     ar: "بدأت خدمتك في *{name}*! التذكرة *{ticket}* — أنت الآن قيد الخدمة في *{desk}* ▶️",

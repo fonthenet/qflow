@@ -12,6 +12,7 @@ export type NotifyEvent =
   | 'called'
   | 'recall'
   | 'buzz'
+  | 'table_changed'
   | 'serving'
   | 'served'
   | 'no_show'

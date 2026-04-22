@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
 
   // ── Resolve wait-minutes from org settings (auto_no_show_timeout) ──
   let waitMinutes: number | undefined;
-  if (status === 'called' || notifyEvent === 'recall' || notifyEvent === 'buzz') {
+  if (status === 'called' || notifyEvent === 'recall' || notifyEvent === 'buzz' || notifyEvent === 'table_changed') {
     try {
       const { data: office } = await supabase
         .from('offices')
@@ -218,6 +218,7 @@ export async function POST(request: NextRequest) {
     called:           { type: 'called',  title: "🔔 YOUR TURN!",                body: `Ticket ${ticket.ticket_number} — Go to ${pushDeskName}`,                    tag: `called-${ticketId}` },
     recall:           { type: 'recall',  title: "⚠️ REMINDER — YOUR TURN!",     body: `Ticket ${ticket.ticket_number} — Go to ${pushDeskName} NOW`,                tag: `recall-${ticketId}` },
     buzz:             { type: 'buzz',    title: "📢 Staff is calling you",       body: `Ticket ${ticket.ticket_number} — Please go to ${pushDeskName}`,              tag: `buzz-${ticketId}` },
+    table_changed:    { type: 'buzz',    title: "🔀 Table changed",               body: `Ticket ${ticket.ticket_number} — Please go to ${pushDeskName} now`,         tag: `tbl-${ticketId}` },
     serving:          { type: 'serving', title: "Being Served",                  body: `Ticket ${ticket.ticket_number} at ${pushDeskName}`,                          tag: `serving-${ticketId}` },
     served:           { type: 'served',  title: "Visit Complete ✓",              body: "Thank you! Tap to leave feedback.",                                          tag: `served-${ticketId}` },
     no_show:          { type: 'no_show', title: "Missed Your Turn",              body: `Ticket ${ticket.ticket_number} was marked as no-show.`,                      tag: `noshow-${ticketId}` },
