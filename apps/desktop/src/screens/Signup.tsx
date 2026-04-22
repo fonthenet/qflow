@@ -17,6 +17,36 @@ interface Props {
 
 type Step = 'category' | 'subtype' | 'customize' | 'details' | 'review';
 
+// ── Shared small components (module-scope so React doesn't remount
+// them on every parent render — that was stealing input focus)
+function CardShell({ title, subtitle, maxWidth, children }: { title: string; subtitle?: string; maxWidth?: number; children: React.ReactNode }) {
+  return (
+    <div className="login-container">
+      <div className="login-card" style={{ maxWidth: maxWidth ?? 520 }}>
+        <div className="login-header">
+          <div className="login-logo">Q</div>
+          <h1>{title}</h1>
+          {subtitle && <p>{subtitle}</p>}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 14, height: 14, border: '2px solid rgba(255,255,255,0.35)',
+        borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite',
+        display: 'inline-block', marginRight: 8,
+      }}
+    />
+  );
+}
+
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -130,32 +160,6 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
       setProgress('');
     }
   };
-
-  // ── Shared small components ─────────────────────────────────────
-  const CardShell: React.FC<{ title: string; subtitle?: string; maxWidth?: number; children: React.ReactNode }> =
-    ({ title, subtitle, maxWidth, children }) => (
-      <div className="login-container">
-        <div className="login-card" style={{ maxWidth: maxWidth ?? 520 }}>
-          <div className="login-header">
-            <div className="login-logo">Q</div>
-            <h1>{title}</h1>
-            {subtitle && <p>{subtitle}</p>}
-          </div>
-          {children}
-        </div>
-      </div>
-    );
-
-  const Spinner = () => (
-    <span
-      aria-hidden
-      style={{
-        width: 14, height: 14, border: '2px solid rgba(255,255,255,0.35)',
-        borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite',
-        display: 'inline-block', marginRight: 8,
-      }}
-    />
-  );
 
   // ── Step: category ──────────────────────────────────────────────
   if (step === 'category') {

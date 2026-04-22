@@ -20,7 +20,7 @@ export interface IntakeField {
   label_ar?: string;
 }
 
-export type PresetKey = 'name' | 'phone' | 'age' | 'wilaya' | 'reason';
+export type PresetKey = 'name' | 'phone' | 'age' | 'wilaya' | 'reason' | 'party_size';
 
 /** Built-in preset definitions with trilingual labels */
 export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string; label_ar: string; placeholder?: string; placeholder_fr?: string; placeholder_ar?: string }> = {
@@ -64,9 +64,17 @@ export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string
     placeholder_fr: 'Pourquoi venez-vous ?',
     placeholder_ar: 'لماذا تزورنا؟',
   },
+  party_size: {
+    label: 'Party size',
+    label_fr: 'Nombre de personnes',
+    label_ar: 'عدد الأشخاص',
+    placeholder: 'e.g. 4',
+    placeholder_fr: 'ex. 4',
+    placeholder_ar: 'مثال: 4',
+  },
 };
 
-export const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'age', 'wilaya', 'reason'];
+export const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'age', 'wilaya', 'reason', 'party_size'];
 
 /** Get the display label for a field in the given locale */
 export function getFieldLabel(field: IntakeField, locale: 'en' | 'fr' | 'ar'): string {

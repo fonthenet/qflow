@@ -9,3 +9,4 @@ export * from './algeria';
 export * from './voices';
 export * from './arabic-numbers';
 export * from './onboarding-templates';
+export * from './restaurant-tables';

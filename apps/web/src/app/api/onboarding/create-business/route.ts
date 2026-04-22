@@ -260,6 +260,13 @@ export async function POST(request: NextRequest) {
     // 10. Org settings merge — channel + booking defaults + category
     const autoCode =
       businessName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) || 'QUEUE';
+
+    // Restaurant + cafe auto-enable the Party size intake preset so
+    // the kiosk / WhatsApp / mobile flows collect it, which then
+    // drives the smart-table suggestion on the desk panel.
+    const isRestaurantish =
+      subtype.businessCategory === 'restaurant' || subtype.businessCategory === 'cafe';
+
     const channelDefaults: Record<string, unknown> = {
       business_category: subtype.businessCategory,
       whatsapp_enabled: true,
@@ -283,9 +290,20 @@ export async function POST(request: NextRequest) {
       .eq('id', organizationId)
       .single();
     const currentSettings = (orgRow?.settings ?? {}) as Record<string, unknown>;
+
+    // For restaurant-ish subtypes, append party_size as an enabled
+    // preset in the intake_fields array so the kiosk / WhatsApp /
+    // mobile flows collect it during intake.
+    const intakeFields = Array.isArray(currentSettings.intake_fields)
+      ? (currentSettings.intake_fields as any[])
+      : [];
+    if (isRestaurantish && !intakeFields.some((f) => f?.key === 'party_size')) {
+      intakeFields.push({ key: 'party_size', type: 'preset', enabled: true, required: false });
+    }
+
     await supabase
       .from('organizations')
-      .update({ settings: { ...currentSettings, ...channelDefaults } as any })
+      .update({ settings: { ...currentSettings, ...channelDefaults, intake_fields: intakeFields } as any })
       .eq('id', organizationId);
 
     // 11. Sign the admin straight in so the client doesn't need a second round-trip.
