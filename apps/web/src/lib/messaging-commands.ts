@@ -1608,12 +1608,23 @@ export async function handleInboundMessage(
           return;
         }
 
-        if (selSession.state === 'pending_department') {
-          await handleDepartmentChoice(selSession, idx, identifier, selLocale, channel, sendMessage, profileName, bsuid);
-          return;
-        }
-        if (selSession.state === 'pending_service') {
-          await handleServiceChoice(selSession, idx, identifier, selLocale, channel, sendMessage, profileName, bsuid);
+        try {
+          if (selSession.state === 'pending_department') {
+            await handleDepartmentChoice(selSession, idx, identifier, selLocale, channel, sendMessage, profileName, bsuid);
+            return;
+          }
+          if (selSession.state === 'pending_service') {
+            await handleServiceChoice(selSession, idx, identifier, selLocale, channel, sendMessage, profileName, bsuid);
+            return;
+          }
+        } catch (err: any) {
+          // If the choice handler fails, always claim the message so we
+          // don't fall through to the directory / category matcher — the
+          // user's "1" meant "service #1", not "category #1".
+          console.error('[messaging] pending selection handler error', {
+            state: selSession.state, err: err?.message,
+          });
+          await sendMessage({ to: identifier, body: t('invalid_choice', selLocale) });
           return;
         }
       }
@@ -2874,7 +2885,18 @@ async function askJoinConfirmation(
       locale, channel,
       ...buildSessionIdentifiers(identifier, channel, bsuid),
     };
-    await supabase.from('whatsapp_sessions').insert(sessionData);
+    const { error: insErr } = await supabase.from('whatsapp_sessions').insert(sessionData);
+    if (insErr) {
+      // Without a pending_service row, the user's reply ("1", "2", …)
+      // would cascade to the directory category handler and pick a
+      // random business. Surface the failure so the customer can
+      // retry rather than silently routing to the wrong flow.
+      console.error('[askJoinConfirmation] pending_service insert failed', {
+        orgId: org.id, err: insErr.message,
+      });
+      await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
+      return;
+    }
 
     const list = formatNumberedList(deptServices, locale);
     await sendMessage({
@@ -2892,7 +2914,14 @@ async function askJoinConfirmation(
     locale, channel,
     ...buildSessionIdentifiers(identifier, channel, bsuid),
   };
-  await supabase.from('whatsapp_sessions').insert(sessionData);
+  const { error: deptInsErr } = await supabase.from('whatsapp_sessions').insert(sessionData);
+  if (deptInsErr) {
+    console.error('[askJoinConfirmation] pending_department insert failed', {
+      orgId: org.id, err: deptInsErr.message,
+    });
+    await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
+    return;
+  }
 
   const list = formatNumberedList(officeDepts, locale);
   await sendMessage({
