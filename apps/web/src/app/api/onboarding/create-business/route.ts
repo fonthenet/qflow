@@ -293,12 +293,38 @@ export async function POST(request: NextRequest) {
       businessName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) || 'QUEUE';
 
     // Ticket prefix = first + middle + last letter of the business name
-    // (letters only, uppercased). e.g. "Acme Corp" → "ACP", "Restaurant" → "RUT".
+    // AFTER stripping category/generic words (so "Restaurant Saphir" → SHR,
+    // not RUT which every restaurant would share). Words are compared
+    // case-insensitively and diacritics are normalized.
     const ticketPrefix = (() => {
-      const letters = businessName.toUpperCase().replace(/[^A-Z]/g, '');
+      const STOPWORDS = new Set([
+        // EN
+        'restaurant', 'cafe', 'coffee', 'clinic', 'bank', 'post', 'hotel',
+        'shop', 'store', 'the', 'and', 'of',
+        // FR
+        'restaurant', 'cafe', 'clinique', 'cabinet', 'banque', 'poste',
+        'hotel', 'boutique', 'salon', 'pharmacie', 'hopital', 'agence',
+        'le', 'la', 'les', 'du', 'de', 'des', 'et', 'aux', 'au',
+        // AR (Latin-script transliterations commonly used in business names)
+        'al', 'el',
+      ]);
+      const normalized = businessName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+      const meaningful = normalized
+        .split(/[^a-z]+/)
+        .filter((w) => w.length > 0 && !STOPWORDS.has(w))
+        .join('');
+      // If everything was stripped, fall back to the raw name letters.
+      const letters = (
+        meaningful.length >= 2
+          ? meaningful
+          : normalized.replace(/[^a-z]/g, '')
+      ).toUpperCase();
       if (letters.length === 0) return 'TK';
       if (letters.length === 1) return letters;
-      if (letters.length === 2) return letters[0] + letters[1];
+      if (letters.length === 2) return letters;
       return letters[0] + letters[Math.floor(letters.length / 2)] + letters[letters.length - 1];
     })();
 
