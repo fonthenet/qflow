@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale, source: bodySource } =
-    body as Record<string, string | undefined>;
+  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale, source: bodySource, partySize: bodyPartySize } =
+    body as Record<string, string | number | undefined>;
   const isInHouse = bodySource === 'in_house';
   // Resolve the channel tag that gets stored on the row. Whitelist known
   // values so e.g. the mobile app can claim its own 'mobile_app' badge.
@@ -56,6 +56,17 @@ export async function POST(request: NextRequest) {
   const cleanCustomerEmail = customerEmail ? sanitizeString(customerEmail, 254) : undefined;
   const cleanNotes = notes ? sanitizeString(notes as string, 500) : undefined;
   const cleanWilaya = wilaya ? normalizeWilayaDisplay(sanitizeString(wilaya as string, 100)) ?? undefined : undefined;
+
+  // party_size is only used by restaurant-category orgs; for others it stays null.
+  const partySizeNum = typeof bodyPartySize === 'number'
+    ? bodyPartySize
+    : typeof bodyPartySize === 'string' && bodyPartySize.trim() !== ''
+      ? Number(bodyPartySize)
+      : undefined;
+  const cleanPartySize =
+    typeof partySizeNum === 'number' && Number.isFinite(partySizeNum) && partySizeNum >= 1 && partySizeNum <= 50
+      ? Math.floor(partySizeNum)
+      : undefined;
 
   const supabase = createAdminClient();
 
@@ -142,6 +153,7 @@ export async function POST(request: NextRequest) {
       locale: (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : null,
       source: resolvedSource,
       ...(staffId ? { staff_id: staffId } : {}),
+      ...(typeof cleanPartySize === 'number' ? { party_size: cleanPartySize } : {}),
     })
     .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, calendar_token, staff_id')
     .single();

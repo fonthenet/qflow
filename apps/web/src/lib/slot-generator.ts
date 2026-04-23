@@ -36,6 +36,12 @@ export interface SlotGeneratorParams {
   serviceId: string;
   date: string; // YYYY-MM-DD
   staffId?: string; // optional: filter by staff availability
+  /**
+   * Restaurant reservations only: the party size the caller intends to
+   * book. Drives cover-cap math (a slot is "full" when adding this
+   * party would exceed covers_per_interval). Defaults to 2 when omitted.
+   */
+  partySize?: number;
 }
 
 export interface AvailableSlot {
@@ -138,7 +144,7 @@ function getDayOfWeek(date: string): string {
 export async function getAvailableSlots(
   params: SlotGeneratorParams
 ): Promise<SlotGeneratorResult> {
-  const { officeId, serviceId, date, staffId } = params;
+  const { officeId, serviceId, date, staffId, partySize } = params;
   // Cast to any: this module uses tables/columns not yet in generated types
   // (office_holidays, blocked_slots, staff.work_schedule, etc.)
   const supabase: any = createAdminClient();
@@ -168,6 +174,29 @@ export async function getAvailableSlots(
   const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 90);
   const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
   const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
+  // Restaurant reservations: cover-cap model gated by business_category.
+  const businessCategory: string = typeof orgSettings.business_category === 'string'
+    ? orgSettings.business_category
+    : '';
+  const isRestaurantOrg = businessCategory === 'restaurant'
+    || businessCategory === 'cafe'
+    || businessCategory === 'bar';
+  const coversPerInterval = Number(orgSettings.covers_per_interval ?? 20);
+  const turnMinutes = {
+    small: Number(orgSettings.reservation_turn_minutes?.small ?? 90),
+    medium: Number(orgSettings.reservation_turn_minutes?.medium ?? 120),
+    large: Number(orgSettings.reservation_turn_minutes?.large ?? 150),
+    xlarge: Number(orgSettings.reservation_turn_minutes?.xlarge ?? 180),
+  };
+  const turnMinutesFor = (p: number): number => {
+    if (!p || p <= 2) return turnMinutes.small;
+    if (p <= 4) return turnMinutes.medium;
+    if (p <= 6) return turnMinutes.large;
+    return turnMinutes.xlarge;
+  };
+  const requestedPartySize = isRestaurantOrg
+    ? Math.max(1, Math.min(50, Number(partySize ?? 2)))
+    : 0;
   const dailyTicketLimit = Number(orgSettings.daily_ticket_limit ?? 0);
   const allowCancellation = Boolean(orgSettings.allow_cancellation ?? false);
   const minLeadHours = Number(orgSettings.min_booking_lead_hours ?? 1);
@@ -317,16 +346,33 @@ export async function getAvailableSlots(
   const startOfDay = getDateStartIso(date, orgTimezone);
   const endOfDay = getDateEndIso(date, orgTimezone);
 
-  const { data: existingAppointments } = await supabase
+  // For restaurants: cover cap is office-wide (not per-service), and we
+  // need to pull overlapping reservations that started before startOfDay
+  // (a party seated at 23:30 yesterday with 180-min turn would still hold
+  // covers into today). Widen the lower bound by max turn time.
+  const maxTurnMinutes = Math.max(
+    turnMinutes.small,
+    turnMinutes.medium,
+    turnMinutes.large,
+    turnMinutes.xlarge,
+  );
+  const widenedStart = isRestaurantOrg
+    ? new Date(new Date(startOfDay).getTime() - maxTurnMinutes * 60 * 1000).toISOString()
+    : startOfDay;
+
+  const existingAppointmentsQuery = supabase
     .from('appointments')
-    .select('scheduled_at')
+    .select(isRestaurantOrg ? 'scheduled_at, party_size' : 'scheduled_at')
     .eq('office_id', officeId)
-    .eq('service_id', serviceId)
     // Only cancelled/no_show/declined free up a slot — completed appointments
     // still occupy the time slot (the patient was seen at that time).
     .not('status', 'in', '(cancelled,no_show,declined)')
-    .gte('scheduled_at', startOfDay)
+    .gte('scheduled_at', widenedStart)
     .lte('scheduled_at', endOfDay);
+  if (!isRestaurantOrg) {
+    existingAppointmentsQuery.eq('service_id', serviceId);
+  }
+  const { data: existingAppointments } = await existingAppointmentsQuery;
 
   // Count bookings per slot (using office timezone, not server UTC).
   // Guard against malformed rows (missing/invalid scheduled_at) so one
@@ -334,13 +380,27 @@ export async function getAvailableSlots(
   // booking grid down.
   const slotBookingCounts = new Map<string, number>();
   let totalDayBookings = 0;
+  // For restaurant orgs: keep the full list with timestamps and party sizes
+  // so we can compute cover overlap per candidate slot below.
+  const restaurantReservations: { startMs: number; endMs: number; covers: number }[] = [];
   for (const a of existingAppointments ?? []) {
     if (!a?.scheduled_at) continue;
     const d = new Date(a.scheduled_at);
     if (isNaN(d.getTime())) continue;
-    const t = timeInTz(d, orgTimezone);
-    slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
-    totalDayBookings++;
+    if (isRestaurantOrg) {
+      const covers = Math.max(1, Number((a as any).party_size ?? 1));
+      const startMs = d.getTime();
+      const endMs = startMs + turnMinutesFor(covers) * 60 * 1000;
+      restaurantReservations.push({ startMs, endMs, covers });
+      // Only count towards today's totals if it actually lands on this day.
+      if (startMs >= new Date(startOfDay).getTime() && startMs <= new Date(endOfDay).getTime()) {
+        totalDayBookings++;
+      }
+    } else {
+      const t = timeInTz(d, orgTimezone);
+      slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
+      totalDayBookings++;
+    }
   }
 
   // Also count ALL appointments for the day (all services) for daily limit
@@ -379,10 +439,30 @@ export async function getAvailableSlots(
       if (slotMs <= nowMs + minLeadMs) continue;
     }
 
-    // Check capacity
-    const booked = slotBookingCounts.get(slot) ?? 0;
-    const remaining = slotsPerInterval - booked;
-    const isTaken = remaining <= 0;
+    // Check capacity.
+    // Restaurants use the cover-cap / turn-time model; others use the
+    // legacy per-slot booking count against slots_per_interval.
+    let booked: number;
+    let capacity: number;
+    if (isRestaurantOrg) {
+      const slotStartMs = new Date(`${date}T${slot}:00Z`).getTime();
+      const slotEndMs = slotStartMs + turnMinutesFor(requestedPartySize) * 60 * 1000;
+      let covers = 0;
+      for (const r of restaurantReservations) {
+        if (r.startMs < slotEndMs && r.endMs > slotStartMs) covers += r.covers;
+      }
+      booked = covers;
+      capacity = coversPerInterval;
+    } else {
+      booked = slotBookingCounts.get(slot) ?? 0;
+      capacity = slotsPerInterval;
+    }
+    const remaining = isRestaurantOrg
+      ? capacity - booked - requestedPartySize + 1 // +1 so remaining represents "can you still fit this party"
+      : capacity - booked;
+    const isTaken = isRestaurantOrg
+      ? booked + requestedPartySize > capacity
+      : remaining <= 0;
 
     // Daily-limit-reached makes EVERY remaining slot effectively taken.
     // When the limit is reached we still include the slots so the
@@ -392,7 +472,7 @@ export async function getAvailableSlots(
       availableSlots.push({
         time: slot,
         remaining: 0,
-        total: slotsPerInterval,
+        total: isRestaurantOrg ? coversPerInterval : slotsPerInterval,
         available: false,
         reason: 'daily_limit',
       });
@@ -404,7 +484,7 @@ export async function getAvailableSlots(
       availableSlots.push({
         time: slot,
         remaining: 0,
-        total: slotsPerInterval,
+        total: isRestaurantOrg ? coversPerInterval : slotsPerInterval,
         available: false,
         reason: 'taken',
       });
@@ -413,8 +493,8 @@ export async function getAvailableSlots(
 
     availableSlots.push({
       time: slot,
-      remaining,
-      total: slotsPerInterval,
+      remaining: isRestaurantOrg ? Math.max(0, capacity - booked) : remaining,
+      total: isRestaurantOrg ? coversPerInterval : slotsPerInterval,
       available: true,
     });
   }

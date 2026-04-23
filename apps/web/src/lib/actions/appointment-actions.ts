@@ -28,6 +28,7 @@ interface CreateAppointmentData {
   locale?: string;
   notes?: string;
   wilaya?: string;
+  partySize?: number;
 }
 
 interface CreateRecurringAppointmentsData extends CreateAppointmentData {
@@ -137,6 +138,7 @@ export async function createAppointment(data: CreateAppointmentData) {
     notes: data.notes || null,
     wilaya: normalizeWilayaDisplay(data.wilaya) || null,
     ...(data.staffId ? { staff_id: data.staffId } : {}),
+    ...(typeof data.partySize === 'number' && data.partySize > 0 ? { party_size: data.partySize } : {}),
   };
 
   // Centralized booking gate — same rules as web/WhatsApp/Messenger paths.
@@ -655,6 +657,7 @@ export async function getAvailableSlots(
   serviceId: string,
   date: string,
   staffId?: string,
+  partySize?: number,
 ): Promise<{
   data: string[];
   detailed?: { time: string; remaining: number; total: number; available: boolean; reason?: 'taken' | 'daily_limit' }[];
@@ -669,6 +672,7 @@ export async function getAvailableSlots(
       serviceId,
       date,
       staffId,
+      partySize,
     });
 
     // `data` (legacy consumers) stays available-only so nothing books a
@@ -792,6 +796,7 @@ export async function createRecurringAppointments(data: CreateRecurringAppointme
       calendar_token: calendarToken,
       recurrence_parent_id: parentAppointment.id,
       ...(data.staffId ? { staff_id: data.staffId } : {}),
+      ...(typeof data.partySize === 'number' && data.partySize > 0 ? { party_size: data.partySize } : {}),
     };
 
     const { data: recurring, error } = await supabase

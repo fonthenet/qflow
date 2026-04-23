@@ -99,6 +99,7 @@ export function BookingForm({
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [intakeData, setIntakeData] = useState<Record<string, string>>({});
+  const [partySize, setPartySize] = useState<number>(2);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [appointment, setAppointment] = useState<any>(null);
@@ -148,6 +149,10 @@ export function BookingForm({
   _todayAnchor.setUTCDate(_todayAnchor.getUTCDate() + 1);
   const tomorrow = _todayAnchor.toISOString().split('T')[0];
   const orgSettings = organization?.settings ?? {};
+  const isReservationOrg =
+    orgSettings.business_category === 'restaurant'
+    || orgSettings.business_category === 'cafe'
+    || orgSettings.business_category === 'bar';
   // Dynamic intake fields from org settings
   const intakeFields = getEnabledIntakeFields(orgSettings, undefined, 'booking');
   const intakeLocale = (locale === 'ar' || locale === 'fr') ? locale : 'en';
@@ -184,7 +189,13 @@ export function BookingForm({
       setLoadingSlots(false);
       return;
     }
-    const result = await getAvailableSlots(office.id, selectedService.id, selectedDate);
+    const result = await getAvailableSlots(
+      office.id,
+      selectedService.id,
+      selectedDate,
+      selectedStaffId ?? undefined,
+      isReservationOrg ? partySize : undefined,
+    );
     if (result.error) {
       setError(result.error);
       setAvailableSlots([]);
@@ -194,7 +205,7 @@ export function BookingForm({
       setDetailedSlots(result.detailed ?? []);
     }
     setLoadingSlots(false);
-  }, [sandboxMode, sandbox?.sampleSlots, selectedDate, selectedService, office.id]);
+  }, [sandboxMode, sandbox?.sampleSlots, selectedDate, selectedService, office.id, selectedStaffId, isReservationOrg, partySize]);
 
   // Fetch slots when date changes
   useEffect(() => {
@@ -381,6 +392,7 @@ export function BookingForm({
       wilaya: (intakeData['wilaya'] ?? '').trim() || undefined,
       notes: notesFromIntake,
       ...(selectedStaffId ? { staffId: selectedStaffId } : {}),
+      ...(isReservationOrg ? { partySize } : {}),
     };
 
     if (isRecurring) {
@@ -841,6 +853,34 @@ export function BookingForm({
                 <p className="mt-3 text-center text-muted-foreground">
                   {formatSelectedDate(selectedDate)}
                 </p>
+              )}
+              {isReservationOrg && (
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted px-4 py-3">
+                  <label className="text-sm font-medium text-foreground">
+                    {t('Party size')}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPartySize((p) => Math.max(1, p - 1))}
+                      className="h-9 w-9 rounded-md border border-border bg-card text-lg font-semibold text-foreground hover:bg-muted"
+                      aria-label={t('Decrease')}
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[2ch] text-center text-lg font-semibold text-foreground">
+                      {partySize}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPartySize((p) => Math.min(20, p + 1))}
+                      className="h-9 w-9 rounded-md border border-border bg-card text-lg font-semibold text-foreground hover:bg-muted"
+                      aria-label={t('Increase')}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
             <button
