@@ -686,6 +686,46 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           )}
 
+          {/* ── Activation QR for the just-booked appointment ─────────────
+              Why: an in-house booking gives us the customer's phone but
+              WhatsApp won't let us message them until they have messaged
+              us first (24h window). This QR opens WhatsApp pre-filled
+              with "Hi <CODE>" — one tap + send on the customer's phone
+              opens the window, and the webhook's greeting handler then
+              replies with their booking list in their own language. */}
+          {futResult?.success && whatsappPhone && (() => {
+            const waCode = String((orgSettings as any)?.whatsapp_code ?? '').toUpperCase().trim();
+            const waNum = whatsappPhone.replace(/\D/g, '');
+            if (!waNum) return null;
+            const greetingText = waCode ? `Hi ${waCode}` : 'Hi';
+            const deeplink = `https://wa.me/${waNum}?text=${encodeURIComponent(greetingText)}`;
+            const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(deeplink)}`;
+            return (
+              <div style={{
+                marginTop: 6, padding: '10px 12px', borderRadius: 8,
+                border: '1px solid rgba(37,211,102,0.3)',
+                background: 'rgba(37,211,102,0.06)',
+                display: 'flex', gap: 10, alignItems: 'center',
+              }}>
+                <img
+                  src={qrSrc}
+                  alt="WhatsApp activation QR"
+                  style={{ width: 72, height: 72, borderRadius: 6, background: '#fff', padding: 3 }}
+                />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 11, lineHeight: 1.4 }}>
+                  <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 3 }}>
+                    📱 {t('Activate WhatsApp updates')}
+                  </div>
+                  <div style={{ color: 'var(--text2)' }}>
+                    {t('Ask the customer to scan this QR and tap send.')}
+                    {' '}
+                    {t('After that we can send reminders and updates.')}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Department — hidden when there's only one (auto-selected). */}
           {departments.length > 1 && (
             <div>

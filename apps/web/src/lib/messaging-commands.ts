@@ -585,6 +585,19 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '📅 للحجز، يرجى إرسال رمز المؤسسة أولاً.\n\nمثال: *موعد HADABI*\n\nأو أرسل *القائمة* لتصفح الأعمال المتاحة.',
     en: '📅 To book, please include the business code.\n\nExample: *BOOK HADABI*\n\nOr send *LIST* to browse available businesses.',
   },
+  // Sent when a customer opens the chat via the business-specific deeplink QR
+  // (e.g. "Hi HADABI") and has no upcoming bookings at that business.
+  greeting_welcome: {
+    fr: '👋 Bonjour et bienvenue chez *{name}* !\n\nVous n\'avez aucune réservation à venir.\n\n*Que souhaitez-vous faire ?*\n• *RDV {code}* — réserver un rendez-vous\n• *REJOINDRE {code}* — rejoindre la file\n• *LISTE* — voir d\'autres entreprises',
+    ar: '👋 مرحبًا بك في *{name}*!\n\nليس لديك أي حجز قادم.\n\n*ماذا تريد أن تفعل؟*\n• *موعد {code}* — حجز موعد\n• *انضم {code}* — الانضمام إلى الطابور\n• *القائمة* — تصفح أعمال أخرى',
+    en: '👋 Hello and welcome to *{name}*!\n\nYou have no upcoming bookings.\n\n*What would you like to do?*\n• *BOOK {code}* — book an appointment\n• *JOIN {code}* — join the queue\n• *LIST* — browse other businesses',
+  },
+  // Sent on a bare greeting ("Hi") with no business code attached.
+  greeting_welcome_generic: {
+    fr: '👋 Bonjour !\n\nVous n\'avez aucune réservation à venir.\n\n*Pour commencer :*\n• *RDV <code>* — réserver (ex: *RDV HADABI*)\n• *REJOINDRE <code>* — rejoindre une file\n• *LISTE* — parcourir les entreprises',
+    ar: '👋 مرحبًا!\n\nليس لديك أي حجز قادم.\n\n*للبدء:*\n• *موعد <الرمز>* — حجز موعد (مثال: *موعد HADABI*)\n• *انضم <الرمز>* — الانضمام إلى طابور\n• *القائمة* — تصفح الأعمال',
+    en: '👋 Hello!\n\nYou have no upcoming bookings.\n\n*To get started:*\n• *BOOK <code>* — book (e.g. *BOOK HADABI*)\n• *JOIN <code>* — join a queue\n• *LIST* — browse businesses',
+  },
 };
 
 // ── Notification messages — imported from @qflo/shared (single source of truth) ──
@@ -602,11 +615,73 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
+// ── Greeting detection ───────────────────────────────────────────────
+// Matches conversational openers like "Hi", "Salut", "سلام" — including
+// Darija / Algerian-French shorthand. Used so a customer who scans the
+// in-house booking QR and just sends a greeting immediately gets a
+// business-specific welcome (or their upcoming bookings list).
+//
+// The regex only fires on WHOLE-message matches after trimming and
+// stripping trailing punctuation/emojis, to avoid false positives when
+// the same token appears mid-sentence (e.g. "cc" in an email address).
+
+const GREETING_PATTERNS: ReadonlyArray<{ locale: Locale; re: RegExp }> = [
+  // English
+  { locale: 'en', re: /^(?:hi|hello|hey|heya|hiya|yo|sup|wassup|what'?s\s*up|howdy|greetings|gm|ga|ge|morning|afternoon|evening|good\s*(?:morning|afternoon|evening|day)|hi\s*there|hello\s*there|hey\s*there)$/i },
+  // French (incl. Algerian casual)
+  { locale: 'fr', re: /^(?:salut|slt|coucou|cc|bonjour|bjr|bonsoir|bsr|bonne\s*(?:journee|journée|soiree|soirée)|allo|allô|re|rebonjour|salutations)$/i },
+  // Arabic (script — includes MSA and darija)
+  { locale: 'ar', re: /^(?:سلام|السلام|ال?سلام\s*عليكم|وعليكم\s*السلام|مرحبا|مرحبًا|مرحباً|اهلا|أهلا|أهلاً|اهلا\s*وسهلا|أهلا\s*وسهلا|صباح\s*الخير|مساء\s*الخير|تحياتي|السلام\s*عليكم\s*ورحمة\s*الله)$/ },
+  // Arabic/Darija transliterated in Latin (very common on WhatsApp in Algeria)
+  { locale: 'ar', re: /^(?:salem|salam|selam|slm|slam|salaam|assalam|as?salamou?\s*alaykum|salam\s*[a3]laykum|sba7\s*(?:lkhir|el\s*khir)|sbah\s*(?:lkhir|el\s*khir)|msa\s*(?:lkhir|el\s*khir|2?\s*lkhir)|ahla|ahlan|marhaba|marhba|labas|labess|la\s*bas|wach|wech|weche|ki\s*dayr|kidayr|ki\s*rak|kirak|kiraki|ki\s*rakom)$/i },
+];
+
+/**
+ * If the cleaned inbound message looks like a greeting (optionally followed
+ * by a business code, e.g. "Hi HADABI"), return the detected locale and the
+ * code. Returns null otherwise. Keeps length bounded to avoid matching long
+ * real messages.
+ */
+function detectGreeting(cleaned: string): { locale: Locale; code: string | null } | null {
+  // Strip trailing punctuation/emojis, collapse spaces
+  const trimmed = cleaned.trim().replace(/[!.\?؟…\u2026,،\s]+$/u, '').trim();
+  if (trimmed.length === 0 || trimmed.length > 60) return null;
+
+  const parts = trimmed.split(/\s+/);
+  // Try progressively longer greeting prefixes (allows multi-word greetings
+  // like "good morning HADABI" or "السلام عليكم HADABI").
+  for (let splitAt = parts.length; splitAt >= 1; splitAt--) {
+    const greetingPart = parts.slice(0, splitAt).join(' ');
+    const codePart = parts.slice(splitAt).join(' ').trim();
+    // Code (if present) must look like a business code
+    if (codePart && !/^[A-Z0-9_-]{2,30}$/i.test(codePart)) continue;
+    for (const { locale, re } of GREETING_PATTERNS) {
+      if (re.test(greetingPart)) {
+        return { locale, code: codePart ? codePart.toUpperCase() : null };
+      }
+    }
+  }
+  return null;
+}
+
 /** Force RTL rendering for Arabic text on WhatsApp.
  *  Uses Right-to-Left Embedding (U+202B) + Pop Directional Formatting (U+202C)
  *  wrapping each line. Messenger ignores these markers (platform limitation). */
 function ensureRTL(text: string): string {
   return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
+}
+
+/** For Arabic we render list indices with Arabic-Indic digits so they're
+ *  strong-RTL characters — keeps bidi stable and the number lands at the
+ *  visual end of the RTL line instead of getting reordered by the weak
+ *  Latin digit + em-dash combo. */
+function toLocaleDigits(n: number, locale: Locale): string {
+  if (locale !== 'ar') return String(n);
+  const map = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return String(n).split('').map(c => {
+    const d = Number(c);
+    return Number.isFinite(d) ? map[d] : c;
+  }).join('');
 }
 
 /**
@@ -1889,6 +1964,74 @@ export async function handleInboundMessage(
       await handleCancelPick(identifier, allSessions, detectedLocale, channel, sendMessage);
     }
     return;
+  }
+
+  // ── Greeting ("Hi", "Salut", "سلام", optionally + business code) ──
+  // Fires when a customer scans the in-house booking deeplink QR and just
+  // sends a greeting. Rule: if they have any upcoming bookings → show the
+  // list (via handleMyBookings) in the detected locale; else reply with a
+  // welcome message, business-scoped when a code accompanied the greeting.
+  {
+    const greet = detectGreeting(cleaned);
+    if (greet) {
+      // Locale priority: explicit Arabic greeting → ar (the customer just
+      // typed Arabic, respect it). Otherwise prefer saved session locale
+      // so a returning Arabic-speaking customer who types "Hi" out of
+      // habit still gets Arabic. Fallback: greeting-detected locale.
+      const savedLocale = await getLastSessionLocale(identifier, channel, bsuid);
+      const greetLocale: Locale =
+        greet.locale === 'ar' ? 'ar' : (savedLocale ?? greet.locale);
+
+      // If a business code was attached, resolve it so we can show the
+      // business name on the empty-state welcome.
+      const greetOrg: OrgContext | null = greet.code
+        ? await findOrgByCode(greet.code, channel)
+        : null;
+
+      // Fetch upcoming bookings for this phone. Reuse the same query shape
+      // as handleMyBookings (last-9-digits match tolerates any phone format
+      // stored on the row).
+      const supabaseGreet = createAdminClient() as any;
+      const digits = identifier.replace(/\D/g, '');
+      const last9 = digits.slice(-9);
+      const nowIso = new Date().toISOString();
+      const in60dIso = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: greetAppts } = await supabaseGreet
+        .from('appointments')
+        .select('id, customer_phone')
+        .in('status', ['pending', 'confirmed', 'checked_in'])
+        .gte('scheduled_at', nowIso)
+        .lte('scheduled_at', in60dIso)
+        .not('customer_phone', 'is', null)
+        .limit(100);
+      const hasBooking = (greetAppts ?? []).some((a: any) => {
+        const d = String(a.customer_phone ?? '').replace(/\D/g, '');
+        return d.length >= 9 && d.slice(-9) === last9;
+      });
+
+      if (hasBooking) {
+        await handleMyBookings(identifier, greetLocale, sendMessage);
+        return;
+      }
+
+      // No bookings — business-scoped welcome if we resolved an org,
+      // otherwise the generic welcome.
+      if (greetOrg) {
+        await sendMessage({
+          to: identifier,
+          body: t('greeting_welcome', greetLocale, {
+            name: greetOrg.name,
+            code: greet.code ?? '',
+          }),
+        });
+      } else {
+        await sendMessage({
+          to: identifier,
+          body: t('greeting_welcome_generic', greetLocale),
+        });
+      }
+      return;
+    }
   }
 
   // ── MY BOOKINGS / MES RDV / مواعيدي ──
@@ -4652,7 +4795,14 @@ async function handleMyBookings(
     const org = officeOrgMap.get(a.office_id) ?? '';
     const svc = a.service_id ? (svcMap.get(a.service_id) ?? '') : '';
     const svcPart = svc ? ` — ${svc}` : '';
-    return `*${i + 1}* — 🏢 ${org}${svcPart}\n   📅 ${dateFormatted} ⏰ ${timeStr}\n   ${statusLabel(a.status)}`;
+    const idx = toLocaleDigits(i + 1, locale);
+    // Arabic: title-first so in RTL the title lands on the right (visual
+    // start) and the number on the left (visual end). Arabic-Indic digits
+    // are strong-RTL so bidi won't reflow them weirdly.
+    if (locale === 'ar') {
+      return `🏢 ${org}${svcPart} *${idx}*\n   📅 ${dateFormatted} ⏰ ${timeStr}\n   ${statusLabel(a.status)}`;
+    }
+    return `*${idx}* — 🏢 ${org}${svcPart}\n   📅 ${dateFormatted} ⏰ ${timeStr}\n   ${statusLabel(a.status)}`;
   }).join('\n\n');
 
   await sendMessage({ to: identifier, body: t('my_bookings_list', locale, { list }) });
