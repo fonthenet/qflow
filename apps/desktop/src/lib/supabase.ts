@@ -5,8 +5,16 @@ let supabase: SupabaseClient | null = null;
 export async function getSupabase(): Promise<SupabaseClient> {
   if (supabase) return supabase;
   const config = await window.qf.getConfig();
+  // CRITICAL: autoRefreshToken MUST be false. The main process is the
+  // sole authority for refreshing — it owns the DB-persisted refresh
+  // token and pushes fresh access tokens to the renderer via
+  // listenForTokenRefresh. If the renderer also auto-refreshes, both
+  // sides race on the same refresh_token (Supabase rotates on every
+  // refresh), one wins, the other gets "already used" → session dies →
+  // QF-AUTH-001 popup fires repeatedly. This was the cause of the
+  // 2026-04-21 regression where Call/Seat buttons did nothing.
   supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: false },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
   return supabase;
 }
@@ -32,11 +40,19 @@ export async function restoreSession(accessToken: string, refreshToken: string):
 export async function ensureAuth(): Promise<string> {
   const sb = await getSupabase();
 
-  // 1. Check existing session — lets Supabase auto-refresh work
+  // 1. Use the current session if it is still fresh. With autoRefresh
+  // disabled we MUST refuse expired tokens here, otherwise every query
+  // 401s silently. Treat anything within 60s of expiry as stale so the
+  // caller doesn't hit a 401 mid-flight.
   try {
     const { data: { session } } = await sb.auth.getSession();
     if (session?.access_token) {
-      return session.access_token;
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+      const freshForMs = expiresAt - Date.now();
+      if (freshForMs > 60_000) {
+        return session.access_token;
+      }
+      console.warn('[supabase] cached token expires in', freshForMs, 'ms — fetching fresh from main');
     }
   } catch {}
 

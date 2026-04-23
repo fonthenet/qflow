@@ -1056,15 +1056,16 @@ function setupIPC() {
     }
   });
 
-  ipcMain.handle('db:update-ticket', (_e, ticketId: string, updates: any) => {
+  ipcMain.handle('db:update-ticket', (_e, ticketId: string, updates: any, opts?: { deskName?: string }) => {
     // Validate ticketId format
     if (typeof ticketId !== 'string' || !ticketId) return null;
+    const overrideDeskName = typeof opts?.deskName === 'string' && opts.deskName.length > 0 ? opts.deskName : null;
 
     // Whitelist allowed update fields to prevent arbitrary column writes
     const ALLOWED_FIELDS = new Set([
       'status', 'desk_id', 'called_at', 'called_by_staff_id',
       'serving_started_at', 'completed_at', 'cancelled_at', 'parked_at',
-      'recall_count', 'notes', 'priority',
+      'recall_count', 'notes', 'priority', 'payment_status',
     ]);
     const safeUpdates: Record<string, any> = {};
     for (const [key, val] of Object.entries(updates)) {
@@ -1171,7 +1172,13 @@ function setupIPC() {
     if ((isStatusTransition || isRecall) && syncEngine?.isOnline) {
       // Always resolve desk name — either from the update payload or from the ticket's current desk
       let dskName: string | undefined;
-      if (safeUpdates.desk_id) {
+      // Restaurant/cafe path: renderer passes the table code as an
+      // explicit override because the ticket's desk_id is NULL (see
+      // FloorMap writeTicket comment — one host stand runs many tables).
+      if (overrideDeskName) {
+        dskName = overrideDeskName;
+      }
+      if (!dskName && safeUpdates.desk_id) {
         dskName = (db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any)?.name;
       }
       if (!dskName) {
@@ -2058,6 +2065,22 @@ function setupIPC() {
     return nextLocale;
   });
 
+  // POS currency-unit pref — 'da' (2-decimal dinars) or 'centimes'
+  // (×100 integer view). Storage is always DA; this only flips display
+  // + input parsing. Broadcast to renderer so open POS modals refresh.
+  ipcMain.handle('settings:get-pos-currency-unit', () => {
+    try {
+      const row = db.prepare("SELECT value FROM session WHERE key = 'pos_currency_unit'").get() as { value?: string } | undefined;
+      return row?.value === 'centimes' ? 'centimes' : 'da';
+    } catch { return 'da'; }
+  });
+  ipcMain.handle('settings:set-pos-currency-unit', (_e, unit: string) => {
+    const next = unit === 'centimes' ? 'centimes' : 'da';
+    db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('pos_currency_unit', ?)").run(next);
+    mainWindow?.webContents.send('settings:pos-currency-unit-changed', next);
+    return next;
+  });
+
   // ── Google Sheets CSV fetch (bypasses renderer CORS) ──────────
   ipcMain.handle('http:fetch-text', async (_e, url: string) => {
     try {
@@ -2087,6 +2110,436 @@ function setupIPC() {
 
   ipcMain.handle('templates:delete', (_e, id: string) => {
     db.prepare("DELETE FROM broadcast_templates WHERE id = ?").run(id);
+  });
+
+  // ── Menu (categories + items) ──────────────────────────────────
+  // Menu data is org-scoped and synced through the standard sync_queue
+  // so edits made offline (or from the web admin) converge. Station
+  // also pulls fresh menu data during pullLatest.
+  ipcMain.handle('menu:list-categories', (_e, orgId: string) => {
+    if (!orgId) return [];
+    return db.prepare(
+      "SELECT id, organization_id, name, sort_order, color, icon, active FROM menu_categories WHERE organization_id = ? AND active = 1 ORDER BY sort_order, name"
+    ).all(orgId);
+  });
+
+  ipcMain.handle('menu:list-items', (_e, orgId: string) => {
+    if (!orgId) return [];
+    return db.prepare(
+      "SELECT id, organization_id, category_id, name, price, discount_percent, sort_order, active FROM menu_items WHERE organization_id = ? AND active = 1 ORDER BY sort_order, name"
+    ).all(orgId);
+  });
+
+  ipcMain.handle('menu:upsert-category', (_e, orgId: string, cat: any) => {
+    if (!orgId || !cat?.name) return null;
+    const id = cat.id || randomUUID();
+    const now = new Date().toISOString();
+    const payload = {
+      id,
+      organization_id: orgId,
+      name: String(cat.name),
+      sort_order: Number(cat.sort_order ?? 0),
+      color: cat.color ?? null,
+      icon: cat.icon ?? null,
+      active: cat.active === false ? 0 : 1,
+      updated_at: now,
+    };
+    const exists = db.prepare('SELECT id FROM menu_categories WHERE id = ?').get(id) as any;
+    if (exists) {
+      db.prepare(
+        'UPDATE menu_categories SET name = ?, sort_order = ?, color = ?, icon = ?, active = ?, updated_at = ? WHERE id = ?'
+      ).run(payload.name, payload.sort_order, payload.color, payload.icon, payload.active, payload.updated_at, id);
+    } else {
+      db.prepare(
+        'INSERT INTO menu_categories (id, organization_id, name, sort_order, color, icon, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, orgId, payload.name, payload.sort_order, payload.color, payload.icon, payload.active, now, now);
+    }
+    const syncId = enqueueSync({
+      id: `menu_cat-${id}-${Date.now()}`,
+      operation: exists ? 'UPDATE' : 'INSERT',
+      table: 'menu_categories',
+      recordId: id,
+      payload: { ...payload, active: payload.active === 1 },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    return { id };
+  });
+
+  ipcMain.handle('menu:delete-category', (_e, orgId: string, id: string) => {
+    if (!orgId || !id) return null;
+    // Soft-delete by flipping active; keeps historical ticket_items.name snapshots valid.
+    const now = new Date().toISOString();
+    db.prepare('UPDATE menu_categories SET active = 0, updated_at = ? WHERE id = ? AND organization_id = ?').run(now, id, orgId);
+    db.prepare('UPDATE menu_items SET active = 0, updated_at = ? WHERE category_id = ? AND organization_id = ?').run(now, id, orgId);
+    const syncId = enqueueSync({
+      id: `menu_cat-del-${id}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'menu_categories',
+      recordId: id,
+      payload: { id, active: false, updated_at: now },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    return { ok: true };
+  });
+
+  ipcMain.handle('menu:upsert-item', (_e, orgId: string, item: any) => {
+    if (!orgId || !item?.name || !item?.category_id) return null;
+    const id = item.id || randomUUID();
+    const now = new Date().toISOString();
+    const payload = {
+      id,
+      organization_id: orgId,
+      category_id: String(item.category_id),
+      name: String(item.name),
+      price: item.price == null || item.price === '' ? null : Number(item.price),
+      discount_percent: Math.max(0, Math.min(100, Math.round(Number(item.discount_percent ?? 0)) || 0)),
+      sort_order: Number(item.sort_order ?? 0),
+      active: item.active === false ? 0 : 1,
+      updated_at: now,
+    };
+    const exists = db.prepare('SELECT id FROM menu_items WHERE id = ?').get(id) as any;
+    if (exists) {
+      db.prepare(
+        'UPDATE menu_items SET category_id = ?, name = ?, price = ?, discount_percent = ?, sort_order = ?, active = ?, updated_at = ? WHERE id = ?'
+      ).run(payload.category_id, payload.name, payload.price, payload.discount_percent, payload.sort_order, payload.active, payload.updated_at, id);
+    } else {
+      db.prepare(
+        'INSERT INTO menu_items (id, organization_id, category_id, name, price, discount_percent, sort_order, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, orgId, payload.category_id, payload.name, payload.price, payload.discount_percent, payload.sort_order, payload.active, now, now);
+    }
+    const syncId = enqueueSync({
+      id: `menu_item-${id}-${Date.now()}`,
+      operation: exists ? 'UPDATE' : 'INSERT',
+      table: 'menu_items',
+      recordId: id,
+      payload: { ...payload, active: payload.active === 1 },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    return { id };
+  });
+
+  ipcMain.handle('menu:delete-item', (_e, orgId: string, id: string) => {
+    if (!orgId || !id) return null;
+    const now = new Date().toISOString();
+    db.prepare('UPDATE menu_items SET active = 0, updated_at = ? WHERE id = ? AND organization_id = ?').run(now, id, orgId);
+    const syncId = enqueueSync({
+      id: `menu_item-del-${id}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'menu_items',
+      recordId: id,
+      payload: { id, active: false, updated_at: now },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    return { ok: true };
+  });
+
+  // ── Ticket items (orders attached to a seated ticket) ─────────
+  ipcMain.handle('ticket-items:list', (_e, ticketId: string) => {
+    if (!ticketId) return [];
+    return db.prepare(
+      "SELECT id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at FROM ticket_items WHERE ticket_id = ? ORDER BY added_at ASC"
+    ).all(ticketId);
+  });
+
+  ipcMain.handle('ticket-items:list-for-tickets', (_e, ticketIds: string[]) => {
+    if (!Array.isArray(ticketIds) || ticketIds.length === 0) return [];
+    const placeholders = ticketIds.map(() => '?').join(',');
+    return db.prepare(
+      `SELECT id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at
+       FROM ticket_items WHERE ticket_id IN (${placeholders}) ORDER BY added_at ASC`
+    ).all(...ticketIds);
+  });
+
+  ipcMain.handle('ticket-items:add', (_e, orgId: string, ticketId: string, item: any) => {
+    if (!orgId || !ticketId || !item?.name) return null;
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const payload = {
+      id,
+      ticket_id: ticketId,
+      organization_id: orgId,
+      menu_item_id: item.menu_item_id ?? null,
+      name: String(item.name),
+      price: item.price == null || item.price === '' ? null : Number(item.price),
+      qty: Math.max(1, Number(item.qty ?? 1)),
+      note: item.note ?? null,
+      added_at: now,
+      added_by: item.added_by ?? null,
+    };
+    db.prepare(
+      'INSERT INTO ticket_items (id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, ticketId, orgId, payload.menu_item_id, payload.name, payload.price, payload.qty, payload.note, now, payload.added_by);
+    const syncId = enqueueSync({
+      id: `ticket_item-${id}`,
+      operation: 'INSERT',
+      table: 'ticket_items',
+      recordId: id,
+      payload,
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    broadcast('tickets:changed');
+    return { id };
+  });
+
+  ipcMain.handle('ticket-items:update', (_e, orgId: string, id: string, updates: any) => {
+    if (!orgId || !id) return null;
+    const ALLOWED = new Set(['qty', 'note', 'price', 'name']);
+    const safe: Record<string, any> = {};
+    for (const [k, v] of Object.entries(updates || {})) {
+      if (ALLOWED.has(k)) safe[k] = v;
+    }
+    if (!Object.keys(safe).length) return null;
+    if (safe.qty !== undefined) safe.qty = Math.max(1, Number(safe.qty));
+    const sets = Object.keys(safe).map((k) => `${k} = ?`).join(', ');
+    db.prepare(`UPDATE ticket_items SET ${sets} WHERE id = ? AND organization_id = ?`).run(...Object.values(safe), id, orgId);
+    const syncId = enqueueSync({
+      id: `ticket_item-upd-${id}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'ticket_items',
+      recordId: id,
+      payload: { id, ...safe },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    broadcast('tickets:changed');
+    return { ok: true };
+  });
+
+  ipcMain.handle('ticket-items:delete', (_e, orgId: string, id: string) => {
+    if (!orgId || !id) return null;
+    db.prepare('DELETE FROM ticket_items WHERE id = ? AND organization_id = ?').run(id, orgId);
+    const syncId = enqueueSync({
+      id: `ticket_item-del-${id}`,
+      operation: 'DELETE',
+      table: 'ticket_items',
+      recordId: id,
+      payload: { id },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    broadcast('tickets:changed');
+    return { ok: true };
+  });
+
+  // ── POS: payments ───────────────────────────────────────────────
+  // Cash capture at checkout. Amount is the total charged (derived
+  // by the renderer from ticket_items). Tendered/change_given are
+  // cash-specific. Method stays flexible for future card/edahabia.
+  ipcMain.handle('payments:list-for-ticket', (_e, ticketId: string) => {
+    if (!ticketId) return [];
+    return db.prepare(
+      'SELECT id, ticket_id, organization_id, method, amount, tendered, change_given, note, paid_at, paid_by FROM ticket_payments WHERE ticket_id = ? ORDER BY paid_at'
+    ).all(ticketId);
+  });
+
+  ipcMain.handle('payments:create', (_e, orgId: string, ticketId: string, payment: any) => {
+    if (!orgId || !ticketId || !payment) return null;
+    const id = payment.id || randomUUID();
+    const now = new Date().toISOString();
+    const row = {
+      id,
+      ticket_id: ticketId,
+      organization_id: orgId,
+      method: String(payment.method || 'cash'),
+      amount: Number(payment.amount ?? 0),
+      tendered: payment.tendered == null ? null : Number(payment.tendered),
+      change_given: payment.change_given == null ? null : Number(payment.change_given),
+      note: payment.note ?? null,
+      paid_at: payment.paid_at || now,
+      paid_by: payment.paid_by ?? null,
+    };
+    db.prepare(
+      'INSERT INTO ticket_payments (id, ticket_id, organization_id, method, amount, tendered, change_given, note, paid_at, paid_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(row.id, row.ticket_id, row.organization_id, row.method, row.amount, row.tendered, row.change_given, row.note, row.paid_at, row.paid_by);
+    const syncId = enqueueSync({
+      id: `ticket_payment-${id}`,
+      operation: 'INSERT',
+      table: 'ticket_payments',
+      recordId: id,
+      payload: row,
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    return { id };
+  });
+
+  // ── POS: printers (local, per-station) ──────────────────────────
+  ipcMain.handle('printers:list-system', async () => {
+    // Windows-installed printers. Returned as { name, displayName, status }.
+    try {
+      const wc = mainWindow?.webContents;
+      if (!wc) return [];
+      const list = await wc.getPrintersAsync();
+      return list.map((p: any) => ({
+        name: p.name,
+        displayName: p.displayName || p.name,
+        description: p.description || '',
+        isDefault: !!p.isDefault,
+        status: p.status ?? 0,
+      }));
+    } catch (e) {
+      logger.warn('printers:list-system', 'failed', { error: (e as any)?.message });
+      return [];
+    }
+  });
+
+  ipcMain.handle('printers:list', () => {
+    return db.prepare('SELECT id, name, driver_name, width_mm, kind, is_default, enabled, created_at, updated_at FROM printers ORDER BY is_default DESC, name').all();
+  });
+
+  ipcMain.handle('printers:upsert', (_e, printer: any) => {
+    if (!printer?.name || !printer?.driver_name) return null;
+    const id = printer.id || randomUUID();
+    const now = new Date().toISOString();
+    const width_mm = Number(printer.width_mm) === 58 ? 58 : 80;
+    const kind = printer.kind === 'kitchen' ? 'kitchen' : 'receipt';
+    const is_default = printer.is_default ? 1 : 0;
+    const enabled = printer.enabled === false ? 0 : 1;
+    const exists = db.prepare('SELECT id FROM printers WHERE id = ?').get(id) as any;
+    // Only one default per kind
+    if (is_default) {
+      db.prepare('UPDATE printers SET is_default = 0 WHERE kind = ?').run(kind);
+    }
+    if (exists) {
+      db.prepare(
+        'UPDATE printers SET name = ?, driver_name = ?, width_mm = ?, kind = ?, is_default = ?, enabled = ?, updated_at = ? WHERE id = ?'
+      ).run(printer.name, printer.driver_name, width_mm, kind, is_default, enabled, now, id);
+    } else {
+      db.prepare(
+        'INSERT INTO printers (id, name, driver_name, width_mm, kind, is_default, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, printer.name, printer.driver_name, width_mm, kind, is_default, enabled, now, now);
+    }
+    return { id };
+  });
+
+  ipcMain.handle('printers:delete', (_e, id: string) => {
+    if (!id) return null;
+    db.prepare('DELETE FROM printers WHERE id = ?').run(id);
+    return { ok: true };
+  });
+
+  // ── POS: receipt printing ───────────────────────────────────────
+  // Opens a hidden BrowserWindow with the caller-supplied receipt
+  // HTML and sends it to the Windows driver by name. No native
+  // ESC/POS dep — the driver handles rasterization.
+  ipcMain.handle('receipts:print', async (_e, args: { driverName: string; html: string; widthMm?: number; silent?: boolean }) => {
+    if (!args?.driverName || !args?.html) return { success: false, error: 'missing args' };
+    const widthMicrons = (args.widthMm === 58 ? 58 : 80) * 1000;
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: true, contextIsolation: true },
+    });
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(args.html));
+      return await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        win.webContents.print(
+          {
+            silent: args.silent !== false,
+            deviceName: args.driverName,
+            margins: { marginType: 'none' },
+            pageSize: { width: widthMicrons, height: 297000 }, // tall, driver trims
+            printBackground: true,
+            color: false,
+          },
+          (success, err) => resolve({ success, error: err || undefined })
+        );
+      });
+    } catch (e: any) {
+      logger.warn('receipts:print failed', e);
+      return { success: false, error: e?.message || String(e) };
+    } finally {
+      try { win.close(); } catch { /* */ }
+    }
+  });
+
+  // ── POS: Z-report ───────────────────────────────────────────────
+  // Daily totals by category, staff, payment method, hour.
+  // `day` is an ISO date string YYYY-MM-DD interpreted in local tz.
+  ipcMain.handle('reports:z-report', (_e, orgId: string, day: string) => {
+    if (!orgId) return null;
+    const start = new Date(`${day}T00:00:00`);
+    const end = new Date(`${day}T23:59:59.999`);
+    const s = start.toISOString();
+    const e = end.toISOString();
+    const payments = db.prepare(
+      `SELECT tp.id, tp.ticket_id, tp.method, tp.amount, tp.tendered, tp.change_given, tp.paid_at, tp.paid_by, t.ticket_number
+       FROM ticket_payments tp
+       LEFT JOIN tickets t ON t.id = tp.ticket_id
+       WHERE tp.organization_id = ? AND tp.paid_at >= ? AND tp.paid_at <= ?
+       ORDER BY tp.paid_at`
+    ).all(orgId, s, e) as any[];
+    const items = db.prepare(
+      `SELECT ti.id, ti.ticket_id, ti.name, ti.price, ti.qty, ti.added_at, mi.category_id, mc.name AS category_name
+       FROM ticket_items ti
+       LEFT JOIN menu_items mi ON mi.id = ti.menu_item_id
+       LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+       WHERE ti.organization_id = ? AND ti.ticket_id IN (
+         SELECT DISTINCT ticket_id FROM ticket_payments WHERE organization_id = ? AND paid_at >= ? AND paid_at <= ?
+       )`
+    ).all(orgId, orgId, s, e) as any[];
+    const staffIds = Array.from(new Set(payments.map((p) => p.paid_by).filter(Boolean)));
+    const staff = staffIds.length
+      ? db.prepare(`SELECT id, full_name FROM staff WHERE id IN (${staffIds.map(() => '?').join(',')})`).all(...staffIds) as any[]
+      : [];
+    const staffMap = new Map(staff.map((s: any) => [s.id, s.full_name]));
+    // Aggregates
+    const totalRevenue = payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+    const txCount = payments.length;
+    const byMethod: Record<string, { count: number; amount: number }> = {};
+    for (const p of payments) {
+      const m = p.method || 'cash';
+      if (!byMethod[m]) byMethod[m] = { count: 0, amount: 0 };
+      byMethod[m].count += 1;
+      byMethod[m].amount += Number(p.amount) || 0;
+    }
+    const byCategory: Record<string, { name: string; qty: number; amount: number }> = {};
+    for (const it of items) {
+      const key = it.category_id || '_uncategorized';
+      const name = it.category_name || 'Uncategorized';
+      if (!byCategory[key]) byCategory[key] = { name, qty: 0, amount: 0 };
+      byCategory[key].qty += Number(it.qty) || 0;
+      byCategory[key].amount += (Number(it.price) || 0) * (Number(it.qty) || 0);
+    }
+    const byStaff: Record<string, { name: string; count: number; amount: number }> = {};
+    for (const p of payments) {
+      const key = p.paid_by || '_none';
+      const name = staffMap.get(p.paid_by) || '—';
+      if (!byStaff[key]) byStaff[key] = { name, count: 0, amount: 0 };
+      byStaff[key].count += 1;
+      byStaff[key].amount += Number(p.amount) || 0;
+    }
+    const byHour: Record<string, { count: number; amount: number }> = {};
+    for (const p of payments) {
+      const d = new Date(p.paid_at);
+      const h = String(d.getHours()).padStart(2, '0');
+      if (!byHour[h]) byHour[h] = { count: 0, amount: 0 };
+      byHour[h].count += 1;
+      byHour[h].amount += Number(p.amount) || 0;
+    }
+    return {
+      day,
+      totalRevenue,
+      txCount,
+      byMethod,
+      byCategory,
+      byStaff,
+      byHour,
+      payments: payments.map((p) => ({
+        ...p,
+        staff_name: staffMap.get(p.paid_by) || null,
+      })),
+    };
+  });
+
+  // ── POS: staff lookup (for receipt display) ─────────────────────
+  ipcMain.handle('staff:get', (_e, staffId: string) => {
+    if (!staffId) return null;
+    return db.prepare('SELECT id, full_name, email, role FROM staff WHERE id = ?').get(staffId);
   });
 
   // ── Debug ───────────────────────────────────────────────────────

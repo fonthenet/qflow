@@ -1802,6 +1802,17 @@ export class SyncEngine {
         throw new Error(`UPDATE failed: ${res.status}`);
       }
 
+      case 'DELETE': {
+        res = await fetch(`${baseUrl}?id=eq.${item.record_id}`, {
+          method: 'DELETE',
+          headers,
+          signal: AbortSignal.timeout(10000),
+        });
+        if (res.ok || res.status === 404) return { status: 0 };
+        if (res.status === 401 || res.status === 403) return { status: 401 };
+        throw new Error(`DELETE failed: ${res.status}`);
+      }
+
       default:
         throw new Error(`Unknown operation: ${item.operation}`);
     }
@@ -1937,6 +1948,69 @@ export class SyncEngine {
           this.onConfigChanged();
         }
       } catch { /* ignore */ }
+
+      // ── Menu (categories + items) ─────────────────────────────
+      // Pull menu rows for the active org. Skip for unsynced local rows
+      // (same protection as desks) so edits made here survive the pull.
+      const orgId: string | null = session?.organization_id ?? null;
+      if (orgId) {
+        try {
+          const [menuCatsRes, menuItemsRes, ticketItemsRes, ticketPaymentsRes] = await Promise.all([
+            fetch(`${this.supabaseUrl}/rest/v1/menu_categories?organization_id=eq.${orgId}&select=id,organization_id,name,sort_order,color,icon,active,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+            fetch(`${this.supabaseUrl}/rest/v1/menu_items?organization_id=eq.${orgId}&select=id,organization_id,category_id,name,price,discount_percent,sort_order,active,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+            // Ticket items are scoped to the org; we pull for tickets the station already has.
+            fetch(`${this.supabaseUrl}/rest/v1/ticket_items?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,menu_item_id,name,price,qty,note,added_at,added_by`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+            fetch(`${this.supabaseUrl}/rest/v1/ticket_payments?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,method,amount,tendered,change_given,note,paid_at,paid_by`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+          ]);
+
+          if (menuCatsRes?.ok) {
+            const rows = await menuCatsRes.json();
+            const pendingIds = new Set((this.db.prepare(
+              "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'menu_categories'"
+            ).all() as any[]).map((r: any) => r.record_id));
+            const stmt = this.db.prepare(`INSERT OR REPLACE INTO menu_categories (id, organization_id, name, sort_order, color, icon, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            for (const r of rows) {
+              if (pendingIds.has(r.id)) continue;
+              stmt.run(r.id, r.organization_id, r.name, r.sort_order ?? 0, r.color ?? null, r.icon ?? null, r.active === false ? 0 : 1, r.created_at ?? null, r.updated_at ?? null);
+            }
+          }
+          if (menuItemsRes?.ok) {
+            const rows = await menuItemsRes.json();
+            const pendingIds = new Set((this.db.prepare(
+              "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'menu_items'"
+            ).all() as any[]).map((r: any) => r.record_id));
+            const stmt = this.db.prepare(`INSERT OR REPLACE INTO menu_items (id, organization_id, category_id, name, price, discount_percent, sort_order, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            for (const r of rows) {
+              if (pendingIds.has(r.id)) continue;
+              stmt.run(r.id, r.organization_id, r.category_id, r.name, r.price ?? null, Math.max(0, Math.min(100, Number(r.discount_percent ?? 0) || 0)), r.sort_order ?? 0, r.active === false ? 0 : 1, r.created_at ?? null, r.updated_at ?? null);
+            }
+          }
+          if (ticketItemsRes?.ok) {
+            const rows = await ticketItemsRes.json();
+            const pendingIds = new Set((this.db.prepare(
+              "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'ticket_items'"
+            ).all() as any[]).map((r: any) => r.record_id));
+            const stmt = this.db.prepare(`INSERT OR REPLACE INTO ticket_items (id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            for (const r of rows) {
+              if (pendingIds.has(r.id)) continue;
+              stmt.run(r.id, r.ticket_id, r.organization_id, r.menu_item_id ?? null, r.name, r.price ?? null, r.qty ?? 1, r.note ?? null, r.added_at, r.added_by ?? null);
+            }
+          }
+          if (ticketPaymentsRes?.ok) {
+            const rows = await ticketPaymentsRes.json();
+            const pendingIds = new Set((this.db.prepare(
+              "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'ticket_payments'"
+            ).all() as any[]).map((r: any) => r.record_id));
+            const stmt = this.db.prepare(`INSERT OR REPLACE INTO ticket_payments (id, ticket_id, organization_id, method, amount, tendered, change_given, note, paid_at, paid_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            for (const r of rows) {
+              if (pendingIds.has(r.id)) continue;
+              stmt.run(r.id, r.ticket_id, r.organization_id, r.method ?? 'cash', r.amount ?? 0, r.tendered ?? null, r.change_given ?? null, r.note ?? null, r.paid_at, r.paid_by ?? null);
+            }
+          }
+        } catch (err: any) {
+          logger.warn('sync.pullLatest', 'Menu pull failed (non-fatal)', { error: err?.message });
+        }
+      }
 
       // Sync holidays
       if (holidaysRes && holidaysRes.ok) {

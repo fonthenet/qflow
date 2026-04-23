@@ -4,6 +4,9 @@ import { PrioritiesEditor } from './PrioritiesEditor';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { TeamModal } from './TeamModal';
 import { BusinessAdminModal } from './BusinessAdminModal';
+import { MenuEditor } from './MenuEditor';
+import { PrintersSection } from './PrintersSection';
+import { POSSection } from './POSSection';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { speak, buildSample, parseVoiceSettings } from '../lib/voice';
 import {
@@ -568,6 +571,24 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '🏢',
       title: t('Business Administration'),
       fields: [], // Custom-rendered: opens BusinessAdminModal
+    },
+    {
+      id: 'menu',
+      icon: '🍽️',
+      title: t('Menu'),
+      fields: [], // Custom-rendered: embeds MenuEditor
+    },
+    {
+      id: 'printers',
+      icon: '🖨️',
+      title: t('Printers'),
+      fields: [], // Custom-rendered: PrintersSection
+    },
+    {
+      id: 'pos',
+      icon: '💵',
+      title: t('POS'),
+      fields: [], // Custom-rendered: POSSection
     },
     {
       id: 'diagnostics',
@@ -2929,7 +2950,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               {/* RIGHT: Content panel */}
               <div style={{
                 flex: 1, overflowY: 'auto',
-                padding: (activeSection === 'team' || activeSection === 'business_admin') ? 0 : '16px 22px',
+                padding: (activeSection === 'team' || activeSection === 'business_admin' || activeSection === 'menu') ? 0 : '16px 22px',
                 display: 'flex', flexDirection: 'column', minHeight: 0,
               }}>
                 {activeSection === 'diagnostics' ? (
@@ -2960,6 +2981,20 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   ) : (
                     <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>{t('Loading...')}</p>
                   )
+                ) : activeSection === 'menu' ? (
+                  organizationId ? (
+                    <MenuEditor
+                      embedded
+                      orgId={organizationId}
+                      locale={locale}
+                    />
+                  ) : (
+                    <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>{t('Loading...')}</p>
+                  )
+                ) : activeSection === 'printers' ? (
+                  <PrintersSection t={t} locale={locale} />
+                ) : activeSection === 'pos' ? (
+                  <POSSection t={t} locale={locale} />
                 ) : activeSection === 'account' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>

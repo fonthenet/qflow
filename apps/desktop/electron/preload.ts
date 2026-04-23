@@ -15,8 +15,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:create-ticket', ticket),
     insertCloudTicket: (ticket: any) =>
       ipcRenderer.invoke('db:insert-cloud-ticket', ticket),
-    updateTicket: (ticketId: string, updates: any) =>
-      ipcRenderer.invoke('db:update-ticket', ticketId, updates),
+    updateTicket: (ticketId: string, updates: any, opts?: { deskName?: string }) =>
+      ipcRenderer.invoke('db:update-ticket', ticketId, updates, opts),
     saveNotes: (ticketId: string, notes: string) =>
       ipcRenderer.invoke('db:save-notes', ticketId, notes),
     callNext: (officeId: string, deskId: string, staffId: string) =>
@@ -94,6 +94,46 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('customer-drafts:clear', customerId),
   },
 
+  // Menu (categories + items) + ticket items
+  menu: {
+    listCategories: (orgId: string) => ipcRenderer.invoke('menu:list-categories', orgId),
+    listItems: (orgId: string) => ipcRenderer.invoke('menu:list-items', orgId),
+    upsertCategory: (orgId: string, cat: any) => ipcRenderer.invoke('menu:upsert-category', orgId, cat),
+    deleteCategory: (orgId: string, id: string) => ipcRenderer.invoke('menu:delete-category', orgId, id),
+    upsertItem: (orgId: string, item: any) => ipcRenderer.invoke('menu:upsert-item', orgId, item),
+    deleteItem: (orgId: string, id: string) => ipcRenderer.invoke('menu:delete-item', orgId, id),
+  },
+  ticketItems: {
+    list: (ticketId: string) => ipcRenderer.invoke('ticket-items:list', ticketId),
+    listForTickets: (ticketIds: string[]) => ipcRenderer.invoke('ticket-items:list-for-tickets', ticketIds),
+    add: (orgId: string, ticketId: string, item: any) => ipcRenderer.invoke('ticket-items:add', orgId, ticketId, item),
+    update: (orgId: string, id: string, updates: any) => ipcRenderer.invoke('ticket-items:update', orgId, id, updates),
+    delete: (orgId: string, id: string) => ipcRenderer.invoke('ticket-items:delete', orgId, id),
+  },
+
+  // POS: payments, printers, receipts, reports, staff
+  payments: {
+    listForTicket: (ticketId: string) => ipcRenderer.invoke('payments:list-for-ticket', ticketId),
+    create: (orgId: string, ticketId: string, payment: any) =>
+      ipcRenderer.invoke('payments:create', orgId, ticketId, payment),
+  },
+  printers: {
+    listSystem: () => ipcRenderer.invoke('printers:list-system'),
+    list: () => ipcRenderer.invoke('printers:list'),
+    upsert: (printer: any) => ipcRenderer.invoke('printers:upsert', printer),
+    delete: (id: string) => ipcRenderer.invoke('printers:delete', id),
+  },
+  receipts: {
+    print: (args: { driverName: string; html: string; widthMm?: number; silent?: boolean }) =>
+      ipcRenderer.invoke('receipts:print', args),
+  },
+  reports: {
+    zReport: (orgId: string, day: string) => ipcRenderer.invoke('reports:z-report', orgId, day),
+  },
+  staff: {
+    get: (staffId: string) => ipcRenderer.invoke('staff:get', staffId),
+  },
+
   // Broadcast templates (local SQLite)
   templates: {
     list: () => ipcRenderer.invoke('templates:list'),
@@ -105,6 +145,13 @@ contextBridge.exposeInMainWorld('qf', {
   settings: {
     getLocale: () => ipcRenderer.invoke('settings:get-locale'),
     setLocale: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
+    getPosCurrencyUnit: () => ipcRenderer.invoke('settings:get-pos-currency-unit'),
+    setPosCurrencyUnit: (unit: string) => ipcRenderer.invoke('settings:set-pos-currency-unit', unit),
+    onPosCurrencyUnitChange: (callback: (unit: string) => void) => {
+      const handler = (_: any, unit: string) => callback(unit);
+      ipcRenderer.on('settings:pos-currency-unit-changed', handler);
+      return () => ipcRenderer.removeListener('settings:pos-currency-unit-changed', handler);
+    },
     onLocaleChange: (callback: (locale: string) => void) => {
       const handler = (_: any, locale: string) => callback(locale);
       ipcRenderer.on('settings:locale-changed', handler);

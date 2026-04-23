@@ -148,13 +148,31 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
               <div style={{
                 width: 44, height: 44, borderRadius: 12, flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 22,
+                fontSize: 24, fontWeight: 800, lineHeight: 1,
                 background: state.variant === 'danger'
-                  ? 'rgba(239,68,68,0.12)' : state.isAlert ? 'rgba(34,197,94,0.12)' : 'rgba(59,130,246,0.12)',
+                  ? 'rgba(239,68,68,0.18)' : state.isAlert ? 'rgba(34,197,94,0.18)' : 'rgba(59,130,246,0.18)',
                 border: `1px solid ${state.variant === 'danger'
-                  ? 'rgba(239,68,68,0.2)' : state.isAlert ? 'rgba(34,197,94,0.2)' : 'rgba(59,130,246,0.2)'}`,
+                  ? 'rgba(239,68,68,0.45)' : state.isAlert ? 'rgba(34,197,94,0.45)' : 'rgba(59,130,246,0.45)'}`,
+                color: state.variant === 'danger'
+                  ? '#fca5a5' : state.isAlert ? '#86efac' : '#93c5fd',
               }}>
-                {state.variant === 'danger' ? '⚠' : state.isAlert ? '✓' : '?'}
+                {state.variant === 'danger' ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                ) : state.isAlert ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 {state.title && (

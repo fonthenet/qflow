@@ -6,6 +6,113 @@ import { sendMessengerMessage } from '@/lib/messenger';
 import { renderNotification, type Locale } from '@qflo/shared';
 import { APP_BASE_URL } from '@/lib/config';
 
+// ── Receipt block for 'served' ─────────────────────────────────────
+
+const RECEIPT_LABELS: Record<Locale, {
+  title: string; total: string; cashGiven: string; change: string;
+  paidCard: string; paidOther: string;
+}> = {
+  fr: {
+    title: '🧾 Récapitulatif',
+    total: 'Total',
+    cashGiven: 'Espèces reçues',
+    change: 'Monnaie rendue',
+    paidCard: 'Payé par carte',
+    paidOther: 'Payé',
+  },
+  ar: {
+    title: '🧾 ملخص الطلب',
+    total: 'المجموع',
+    cashGiven: 'المبلغ المستلم نقداً',
+    change: 'الباقي',
+    paidCard: 'الدفع بالبطاقة',
+    paidOther: 'مدفوع',
+  },
+  en: {
+    title: '🧾 Order summary',
+    total: 'Total',
+    cashGiven: 'Cash given',
+    change: 'Change',
+    paidCard: 'Paid by card',
+    paidOther: 'Paid',
+  },
+};
+
+// Customer-facing money: always DA, 2 decimals, thin-space grouping, comma
+// decimal (Algerian bank style). Keep trailing zeros — consistent is better
+// than "clever" rounding for a transaction record.
+function fmtDA(amount: number): string {
+  if (!isFinite(amount)) return '0,00 DA';
+  const [intPart, decPart] = amount.toFixed(2).split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202F');
+  return `${grouped},${decPart} DA`;
+}
+
+async function buildReceiptBlock(supabase: any, ticketId: string, locale: Locale): Promise<string | null> {
+  const L = RECEIPT_LABELS[locale] ?? RECEIPT_LABELS.fr;
+
+  const [{ data: items }, { data: payments }] = await Promise.all([
+    supabase.from('ticket_items')
+      .select('name, qty, price')
+      .eq('ticket_id', ticketId)
+      .order('added_at', { ascending: true }),
+    supabase.from('ticket_payments')
+      .select('method, amount, tendered, change_given')
+      .eq('ticket_id', ticketId)
+      .order('paid_at', { ascending: true }),
+  ]);
+
+  const hasItems = Array.isArray(items) && items.length > 0;
+  const hasPayment = Array.isArray(payments) && payments.length > 0;
+  if (!hasItems && !hasPayment) return null;
+
+  const lines: string[] = [`*${L.title}*`];
+
+  if (hasItems) {
+    for (const it of items) {
+      const price = Number(it.price ?? 0);
+      const line = price * Number(it.qty);
+      const right = price > 0 ? `  ${fmtDA(line)}` : '';
+      lines.push(`• ${it.qty}× ${it.name}${right}`);
+    }
+  }
+
+  const itemsTotal = hasItems
+    ? items.reduce((s: number, it: any) => s + Number(it.price ?? 0) * Number(it.qty), 0)
+    : 0;
+  const paidTotal = hasPayment
+    ? payments.reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0)
+    : 0;
+  const totalForDisplay = itemsTotal > 0 ? itemsTotal : paidTotal;
+
+  if (totalForDisplay > 0) {
+    lines.push(`*${L.total}: ${fmtDA(totalForDisplay)}*`);
+  }
+
+  if (hasPayment) {
+    const p = payments[0];
+    const methodKey = (p.method ?? 'cash').toLowerCase();
+    const amount = Number(p.amount ?? 0);
+    const tendered = p.tendered != null ? Number(p.tendered) : null;
+    const change = Number(p.change_given ?? 0);
+
+    if (methodKey === 'cash') {
+      // For cash, the customer cares about what they handed over and what
+      // came back. If the operator didn't record tendered, fall back to
+      // the amount so we still show something meaningful.
+      const given = tendered != null && tendered > 0 ? tendered : amount;
+      lines.push(`${L.cashGiven}: ${fmtDA(given)}`);
+      if (change > 0) lines.push(`${L.change}: ${fmtDA(change)}`);
+    } else if (methodKey === 'card') {
+      lines.push(`${L.paidCard}: ${fmtDA(amount)}`);
+    } else {
+      lines.push(`${L.paidOther}: ${fmtDA(amount)}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export type NotifyEvent =
@@ -181,7 +288,7 @@ export async function notifyCustomer(
     const timeStr = now.toLocaleTimeString(locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR', { hour: '2-digit', minute: '2-digit', hour12: false });
 
     // Render message
-    const messageBody = renderNotification(event, locale, {
+    let messageBody = renderNotification(event, locale, {
       name: orgName,
       ticket: ticket.ticket_number,
       desk: opts.deskName || '?',
@@ -191,6 +298,20 @@ export async function notifyCustomer(
       date: dateStr,
       time: timeStr,
     });
+
+    // For a completed visit, append a short receipt block so the customer
+    // has a record of what they ordered and paid. We always render money
+    // in DA (2 decimals, bank-style) for customer-facing messages — the
+    // centimes/dinar station pref is an operator convenience and doesn't
+    // belong in the receipt the customer keeps.
+    if (event === 'served') {
+      try {
+        const block = await buildReceiptBlock(supabase, ticketId, locale);
+        if (block) messageBody += '\n\n' + block;
+      } catch (e: any) {
+        console.warn(`[notify] receipt block failed for ticket ${ticketId}:`, e?.message);
+      }
+    }
 
     // Send via appropriate channel
     if (session.channel === 'whatsapp' && session.whatsapp_phone) {

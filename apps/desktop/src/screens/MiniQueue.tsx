@@ -126,8 +126,13 @@ export function MiniQueue() {
 
   const complete = (tk: Ticket) => withBusy(async () => {
     try {
+      // 'served' (not 'completed') is the valid terminal status in the
+      // tickets_status_check constraint. The DB trigger
+      // release_table_on_ticket_terminal clears any bound restaurant
+      // table automatically, so the floor map recovers without a
+      // second round-trip.
       await (window as any).qf?.db?.updateTicket?.(tk.id, {
-        status: 'completed',
+        status: 'served',
         completed_at: new Date().toISOString(),
       });
       flash(t('Completed {number}', { number: tk.ticket_number }), 'success');
@@ -240,10 +245,7 @@ export function MiniQueue() {
           tickets={serving}
           renderMeta={(tk) => elapsedSince(tk.serving_started_at ?? tk.called_at)}
           actions={(tk) => (
-            <>
-              <ActionBtn color={COLORS.serving} label={`✓ ${t('Complete')}`} onClick={() => complete(tk)} />
-              <ActionBtn color={COLORS.muted} label={t('No-show')} onClick={() => noShow(tk)} />
-            </>
+            <ActionBtn color={COLORS.serving} label={`✓ ${t('Complete')}`} onClick={() => complete(tk)} />
           )}
         />
 
@@ -256,6 +258,7 @@ export function MiniQueue() {
             <>
               <ActionBtn color={COLORS.called} label={t('Start')} onClick={() => startServing(tk)} />
               <ActionBtn color={COLORS.muted} label={t('Recall')} onClick={() => recall(tk)} />
+              <ActionBtn color={COLORS.muted} label={t('No-show')} onClick={() => noShow(tk)} />
               <ActionBtn color={COLORS.danger} label="✕" onClick={() => cancel(tk)} title={t('Cancel')} />
             </>
           )}

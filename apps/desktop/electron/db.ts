@@ -321,6 +321,81 @@ export function initDB() {
       updated_at INTEGER NOT NULL
     );
 
+    -- Menu categories (mirror of cloud menu_categories)
+    CREATE TABLE IF NOT EXISTS menu_categories (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      color TEXT,
+      icon TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    -- Menu items (mirror of cloud menu_items)
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      price REAL,
+      discount_percent INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    -- Ticket items (items added to a specific seated ticket).
+    -- name/price are snapshotted so menu edits don't rewrite history.
+    CREATE TABLE IF NOT EXISTS ticket_items (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      organization_id TEXT NOT NULL,
+      menu_item_id TEXT,
+      name TEXT NOT NULL,
+      price REAL,
+      qty INTEGER NOT NULL DEFAULT 1,
+      note TEXT,
+      added_at TEXT NOT NULL,
+      added_by TEXT
+    );
+
+    -- Payments captured at checkout. Cash-only for now; schema keeps
+    -- method flexible so card/edahabia can drop in later without a
+    -- migration. Amount = total charged; tendered/change_given only
+    -- meaningful for cash.
+    CREATE TABLE IF NOT EXISTS ticket_payments (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      organization_id TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT 'cash',
+      amount REAL NOT NULL,
+      tendered REAL,
+      change_given REAL,
+      note TEXT,
+      paid_at TEXT NOT NULL,
+      paid_by TEXT
+    );
+
+    -- Printers are per-station local config (not synced). Holds the
+    -- Windows printer driver name + width so the print service can
+    -- route receipts to the right device. is_default=1 selects the
+    -- default receipt printer on checkout.
+    CREATE TABLE IF NOT EXISTS printers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      driver_name TEXT NOT NULL,
+      width_mm INTEGER NOT NULL DEFAULT 80,
+      kind TEXT NOT NULL DEFAULT 'receipt',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
     -- Indexes (only on columns guaranteed to exist in CREATE TABLE above)
     CREATE INDEX IF NOT EXISTS idx_broadcast_templates_org ON broadcast_templates(organization_id);
     CREATE INDEX IF NOT EXISTS idx_office_holidays_lookup ON office_holidays(office_id, holiday_date);
@@ -329,6 +404,12 @@ export function initDB() {
     CREATE INDEX IF NOT EXISTS idx_tickets_dept ON tickets(department_id, status);
     CREATE INDEX IF NOT EXISTS idx_sync_queue_pending ON sync_queue(synced_at) WHERE synced_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_queue(created_at);
+    CREATE INDEX IF NOT EXISTS idx_menu_categories_org ON menu_categories(organization_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_menu_items_category ON menu_items(category_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_menu_items_org ON menu_items(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_ticket_items_ticket ON ticket_items(ticket_id);
+    CREATE INDEX IF NOT EXISTS idx_ticket_payments_ticket ON ticket_payments(ticket_id);
+    CREATE INDEX IF NOT EXISTS idx_ticket_payments_org_date ON ticket_payments(organization_id, paid_at);
   `);
 
   // ── Safe schema migrations (idempotent) ──
@@ -515,6 +596,74 @@ export function initDB() {
     customer_file TEXT,
     updated_at INTEGER NOT NULL
   )`);
+
+  // Menu tables (migration for existing installs — must match initial schema above).
+  db.exec(`CREATE TABLE IF NOT EXISTS menu_categories (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    color TEXT,
+    icon TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS menu_items (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price REAL,
+    discount_percent INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  try { db.exec(`ALTER TABLE menu_items ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+  db.exec(`CREATE TABLE IF NOT EXISTS ticket_items (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    menu_item_id TEXT,
+    name TEXT NOT NULL,
+    price REAL,
+    qty INTEGER NOT NULL DEFAULT 1,
+    note TEXT,
+    added_at TEXT NOT NULL,
+    added_by TEXT
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS ticket_payments (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'cash',
+    amount REAL NOT NULL,
+    tendered REAL,
+    change_given REAL,
+    note TEXT,
+    paid_at TEXT NOT NULL,
+    paid_by TEXT
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS printers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    driver_name TEXT NOT NULL,
+    width_mm INTEGER NOT NULL DEFAULT 80,
+    kind TEXT NOT NULL DEFAULT 'receipt',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN payment_status TEXT`); } catch { /* already exists */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_ticket_payments_ticket ON ticket_payments(ticket_id)`); } catch { /* */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_ticket_payments_org_date ON ticket_payments(organization_id, paid_at)`); } catch { /* */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_menu_categories_org ON menu_categories(organization_id, sort_order)`); } catch { /* */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_menu_items_category ON menu_items(category_id, sort_order)`); } catch { /* */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_menu_items_org ON menu_items(organization_id)`); } catch { /* */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_ticket_items_ticket ON ticket_items(ticket_id)`); } catch { /* */ }
 
   // One-time cleanup: remove demo/sample customers with @example.com emails
   try { db.exec(`DELETE FROM customers WHERE email LIKE '%@example.com'`); } catch { /* table may not exist yet */ }

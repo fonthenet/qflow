@@ -8,6 +8,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { TableSuggestionBar } from '../components/TableSuggestionBar';
 import { FloorMap } from '../components/FloorMap';
+import { MenuEditor } from '../components/MenuEditor';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
@@ -1722,6 +1723,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
+  const [showMenuEditor, setShowMenuEditor] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
@@ -3367,10 +3369,22 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     return () => clearInterval(iv);
   }, []);
 
+  // For restaurants/cafes the Floor Map owns called/serving tickets
+  // (each is bound to a table tile), so hide them from the side queue
+  // lists to avoid double-listing. Waiting + parked stay — the host
+  // still needs to see who's in the pre-call queue.
+  const isRestaurantFloor =
+    orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe';
   const waiting = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !t.parked_at), [tickets]);
   const parked = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !!t.parked_at), [tickets]);
-  const called = useMemo(() => tickets.filter((t) => t.status === 'called'), [tickets]);
-  const serving = useMemo(() => tickets.filter((t) => t.status === 'serving'), [tickets]);
+  const called = useMemo(
+    () => (isRestaurantFloor ? [] : tickets.filter((t) => t.status === 'called')),
+    [tickets, isRestaurantFloor]
+  );
+  const serving = useMemo(
+    () => (isRestaurantFloor ? [] : tickets.filter((t) => t.status === 'serving')),
+    [tickets, isRestaurantFloor]
+  );
 
   // ── Recent activity log ─────────────────────────────────────────
   const [recentActivity, setRecentActivity] = useState<Array<{ id?: string | null; ticket: string; action: string; time: string }>>([]);
@@ -3563,7 +3577,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           ? { padding: 0, justifyContent: 'flex-start', alignItems: 'stretch' }
           : showBookingModal && mainView === 'queue'
             ? { paddingRight: 0 }
-            : undefined
+            : (orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe')
+              ? { paddingLeft: 8, paddingRight: 8, alignItems: 'stretch', justifyContent: 'flex-start' }
+              : undefined
       }>
         {/* Timeline strip removed — Queue/Calendar tab toggle is sufficient */}
         {!session.desk_id ? (
@@ -3839,7 +3855,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             </div>
           )}
 
-          {activeTicket && (
+          {activeTicket && !(orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe') && (
           <div className="active-ticket-panel" style={{ display: mainView === 'queue' ? undefined : 'none' }}>
             {activeTicket.status === 'called' ? (
               <>
@@ -4199,8 +4215,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
           )}
 
-          {/* Queue view: idle panel + optional booking side panel (only when no active ticket) */}
-          {!activeTicket && (
+          {/* Queue view: idle panel (or floor map for restaurants) + optional booking side panel.
+              Restaurants/cafes always render the floor map even when an
+              "active ticket" exists — they manage many tables concurrently. */}
+          {(!activeTicket || orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe') && (
           <div style={{
             display: mainView === 'queue' ? 'flex' : 'none',
             flex: 1, width: '100%', alignItems: 'stretch', overflow: 'hidden',
@@ -4216,6 +4234,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   staffId={session.staff_id}
                   deskId={session.desk_id ?? null}
                   locale={locale}
+                  orgId={session.organization_id ?? null}
+                  currency={(orgSettings as any)?.currency || 'DA'}
+                  onOpenMenu={() => setShowMenuEditor(true)}
                 />
               </div>
             ) : (
@@ -4468,6 +4489,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             callerRole={session.role}
             initialSection={settingsInitialSection}
             onClose={() => { setShowSettingsModal(false); setSettingsInitialSection(undefined); setSettingsVersion(v => v + 1); }}
+          />
+        )}
+
+        {showMenuEditor && session.organization_id && (
+          <MenuEditor
+            orgId={session.organization_id}
+            locale={locale}
+            currency={(orgSettings as any)?.currency || 'DA'}
+            onClose={() => setShowMenuEditor(false)}
           />
         )}
 
@@ -5134,18 +5164,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   )}
                 </div>
                 {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
-                  <button
-                    className="btn-sm btn-call"
-                    aria-label={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
-                    onClick={() => updateTicketStatus(ticket.id, {
-                      status: 'called',
-                      desk_id: session.desk_id,
-                      called_by_staff_id: session.staff_id,
-                      called_at: new Date().toISOString(),
-                    })}
-                  >
-                    {translate(locale, 'Call')}
-                  </button>
+                  isRestaurantFloor ? null : (
+                    <button
+                      className="btn-sm btn-call"
+                      aria-label={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
+                      onClick={() => updateTicketStatus(ticket.id, {
+                        status: 'called',
+                        desk_id: session.desk_id,
+                        called_by_staff_id: session.staff_id,
+                        called_at: new Date().toISOString(),
+                      })}
+                    >
+                      {translate(locale, 'Call')}
+                    </button>
+                  )
                 )}
               </div>
             );})}

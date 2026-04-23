@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { cloudFetch } from '../lib/cloud-fetch';
+import { useConfirmDialog } from './ConfirmDialog';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { OrderPad, type TicketItem } from './OrderPad';
+import { PaymentModal } from './PaymentModal';
+import { ZReportModal } from './ZReportModal';
+import { formatMoney } from '../lib/money';
+import { usePosCurrencyUnit } from '../lib/use-pos-currency-unit';
 
 const CLOUD_URL = 'https://qflo.net';
 import {
@@ -28,6 +34,9 @@ interface Props {
   staffId: string | null;
   deskId: string | null;
   locale: DesktopLocale;
+  orgId: string | null;
+  currency?: string;
+  onOpenMenu?: () => void;
 }
 
 interface SeatedTicket {
@@ -53,14 +62,20 @@ const STATUS_COLORS: Record<TableStatus, { border: string; bg: string; label: st
 // state. Mapped on the fly from the ticket's status.
 const CALLING_COLORS = { border: '#eab308', bg: 'rgba(234,179,8,0.14)', label: '#fde047' };
 
-export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
+export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 'DA', onOpenMenu }: Props) {
   const t = useCallback((k: string, v?: Record<string, any>) => translate(locale, k, v), [locale]);
+  const currencyUnit = usePosCurrencyUnit();
+  const fmtMoney = useCallback((n: number) => formatMoney(n, currencyUnit, currency), [currencyUnit, currency]);
+  const { confirm: dialogConfirm, alert: dialogAlert } = useConfirmDialog();
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [tickets, setTickets] = useState<SeatedTicket[]>([]);
   const [waiting, setWaiting] = useState<SeatedTicket[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [transferFor, setTransferFor] = useState<RestaurantTable | null>(null);
-  const [callFor, setCallFor] = useState<SeatedTicket | null>(null);
+  // Table-first action flow: operator taps Call or Seat on an available tile,
+  // picks any waiting ticket from the modal (not just "next"). Single entry
+  // point — waiting strip below is read-only.
+  const [pickCustomerFor, setPickCustomerFor] = useState<{ table: RestaurantTable; mode: 'call' | 'seat' } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [completionSummary, setCompletionSummary] = useState<{
@@ -71,8 +86,25 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
     calledAt: string | null;
     seatedAt: string | null;
     completedAt: string;
+    items: TicketItem[];
+    itemsTotal: number;
   } | null>(null);
+  // Ticket items grouped by ticket_id so each serving tile can show its tally
+  // (item count + price total) and the OrderPad knows the current order.
+  const [itemsByTicket, setItemsByTicket] = useState<Map<string, TicketItem[]>>(new Map());
+  const [orderPadFor, setOrderPadFor] = useState<{ ticket: SeatedTicket; table: RestaurantTable } | null>(null);
+  // When the operator taps Complete on a table with priced items, we
+  // capture payment first through PaymentModal — only once the cash is
+  // recorded do we run the actual ticket→served transition.
+  const [payingFor, setPayingFor] = useState<{ ticket: SeatedTicket; table: RestaurantTable; items: TicketItem[]; total: number } | null>(null);
+  const [showZReport, setShowZReport] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; kind: 'success' | 'error' } | null>(null);
   const [, tick] = useState(0);
+
+  const showToast = (msg: string, kind: 'success' | 'error' = 'success') => {
+    setToast({ msg, kind });
+    setTimeout(() => setToast((curr) => (curr && curr.msg === msg ? null : curr)), 3500);
+  };
 
   // 1 Hz ticker so seat timers refresh.
   useEffect(() => {
@@ -129,6 +161,30 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
     return () => { unsub?.(); };
   }, [load]);
 
+  // Load ticket_items for every seated ticket so serving tiles can show a
+  // live tally (N items · total). Refreshes on every ticket change so the
+  // OrderPad and the tile stay in sync across sessions.
+  const loadTicketItems = useCallback(async () => {
+    try {
+      const ids = tickets.filter((x) => x.status === 'serving').map((x) => x.id);
+      if (ids.length === 0) { setItemsByTicket(new Map()); return; }
+      const rows: TicketItem[] = (await (window as any).qf?.ticketItems?.listForTickets?.(ids)) ?? [];
+      const map = new Map<string, TicketItem[]>();
+      for (const r of rows) {
+        if (!map.has(r.ticket_id)) map.set(r.ticket_id, []);
+        map.get(r.ticket_id)!.push(r);
+      }
+      setItemsByTicket(map);
+    } catch (err) {
+      console.warn('[FloorMap] loadTicketItems failed', err);
+    }
+  }, [tickets]);
+  useEffect(() => { loadTicketItems(); }, [loadTicketItems]);
+  useEffect(() => {
+    const unsub = (window as any).qf?.tickets?.onChange?.(loadTicketItems);
+    return () => { unsub?.(); };
+  }, [loadTicketItems]);
+
   const occupancy = useMemo(() => summarizeOccupancy(tables), [tables]);
 
   // Supabase is the source of truth for the floor map (load() reads
@@ -141,14 +197,14 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
     console.log('[FloorMap] writeTicket', { ticketId, updates, tableCode });
     const token = await ensureAuth();
     if (!token) {
-      alert(t('Not signed in — please log out and back in.'));
+      await dialogAlert(t('Not signed in — please log out and back in.'));
       throw new Error('ensureAuth returned empty token');
     }
     const sb = await getSupabase();
     const { error } = await sb.from('tickets').update(updates).eq('id', ticketId);
     if (error) {
       console.error('[FloorMap] ticket update failed', error, { ticketId, updates });
-      alert(`${t('Update failed')}: ${error.message}`);
+      await dialogAlert(`${t('Update failed')}: ${error.message}`);
       throw error;
     }
     // Pass the table code as deskName override so the WhatsApp/Messenger
@@ -160,17 +216,17 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
     }
   };
 
-  const callToTable = async (table: RestaurantTable, ticketId: string) => {
+  // Call a specific waiting ticket to a specific table (waiting → called).
+  // In restaurant mode the ticket's desk_id MUST stay NULL — the DB trigger
+  // check_desk_capacity rejects a second called/serving ticket per desk, but
+  // one host stand legitimately runs many tables concurrently. The
+  // ticket↔table binding lives in restaurant_tables.current_ticket_id; audit
+  // still works via called_by_staff_id. Pass the table code as deskName so
+  // the customer's notification reads "please go to T3".
+  const callTicketToTable = async (table: RestaurantTable, ticketId: string) => {
     setBusy(table.id);
     try {
       const nowIso = new Date().toISOString();
-      // waiting → called. In restaurant mode the ticket's desk_id MUST
-      // stay NULL — the DB trigger check_desk_capacity rejects a second
-      // called/serving ticket per desk, but one host stand legitimately
-      // runs many tables concurrently. The ticket↔table binding lives in
-      // restaurant_tables.current_ticket_id; audit still works via
-      // called_by_staff_id. Pass the table code as deskName so the
-      // customer's notification reads "please go to T3".
       await writeTicket(ticketId, {
         status: 'called',
         desk_id: null,
@@ -188,6 +244,60 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
     } finally { setBusy(null); }
   };
 
+  // Seat a specific waiting ticket at a specific table in one step (waiting
+  // → serving). Use when the party is already at the host stand. Same
+  // desk_id-null constraint as callTicketToTable.
+  const seatTicketAtTable = async (table: RestaurantTable, ticketId: string) => {
+    setBusy(table.id);
+    try {
+      const nowIso = new Date().toISOString();
+      await writeTicket(ticketId, {
+        status: 'serving',
+        desk_id: null,
+        called_at: nowIso,
+        called_by_staff_id: staffId,
+        serving_started_at: nowIso,
+      }, table.code);
+      await ensureAuth();
+      const sb = await getSupabase();
+      await sb.from('restaurant_tables').update({
+        status: 'occupied',
+        current_ticket_id: ticketId,
+        assigned_at: nowIso,
+      }).eq('id', table.id);
+      // Direct seat skips the "called" step, so the customer never got a
+      // buzz. Notify them now that they've been seated at {table.code}.
+      notifySeated(ticketId, table);
+      await load();
+    } finally { setBusy(null); }
+  };
+
+  // Fire the "seated" WhatsApp/Messenger notification for this ticket. Uses
+  // the 'serving' notifyEvent on /api/ticket-transition — the unified
+  // notification path (see apps/web/src/app/api/ticket-transition/route.ts).
+  // skipStatusUpdate is true because the ticket's status row is already
+  // set by writeTicket above; we only want the notification side-effect.
+  // Non-blocking — failure to notify must not fail the seat action.
+  const notifySeated = async (ticketId: string, table: RestaurantTable) => {
+    try {
+      const token = await ensureAuth();
+      if (!token) return;
+      cloudFetch(`${CLOUD_URL}/api/ticket-transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ticketId,
+          status: 'serving',
+          skipStatusUpdate: true,
+          notifyEvent: 'serving',
+          deskName: table.code,
+        }),
+      }).catch((err) => console.warn('[FloorMap] seated notify failed', err));
+    } catch (err) {
+      console.warn('[FloorMap] seated notify threw', err);
+    }
+  };
+
   const confirmSeated = async (table: RestaurantTable) => {
     if (!table.current_ticket_id) return;
     setBusy(table.id);
@@ -202,26 +312,11 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
       await ensureAuth();
       const sb = await getSupabase();
       await sb.from('restaurant_tables').update({ assigned_at: nowIso }).eq('id', table.id);
+      // Confirm-seated follows a prior "called" buzz — the customer now
+      // knows they've actually been seated. Fires the 'serving' template.
+      notifySeated(table.current_ticket_id, table);
       await load();
     } finally { setBusy(null); }
-  };
-
-  const callNextWaiting = async (table: RestaurantTable) => {
-    console.log('[FloorMap] Call next clicked', { table: table.code, waitingCount: waiting.length });
-    if (waiting.length === 0) {
-      alert(t('No waiting parties to call.'));
-      return;
-    }
-    const partyGuess = (t: SeatedTicket) => parsePartySize(t.customer_data?.party_size) ?? 2;
-    // Prefer the first ticket whose party size fits this table.
-    const best =
-      waiting.find((tk) => {
-        const n = partyGuess(tk);
-        return (table.capacity ?? 0) >= n
-          && (table.min_party_size == null || n >= table.min_party_size)
-          && (table.max_party_size == null || n <= table.max_party_size);
-      }) ?? waiting[0];
-    await callToTable(table, best.id);
   };
 
   const releaseTable = async (table: RestaurantTable) => {
@@ -248,16 +343,35 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
 
   const completeAtTable = async (table: RestaurantTable) => {
     if (!table.current_ticket_id) return;
-    // Snapshot the ticket + table BEFORE the write so the post-complete
-    // summary has all timestamps. Once the trigger frees the table row
-    // and the ticket moves to 'served', we lose the binding.
     const tk = ticketFor(table.current_ticket_id);
+    const capturedItems: TicketItem[] = tk ? (itemsByTicket.get(tk.id) ?? []) : [];
+    const itemsTotal = capturedItems.reduce((s, ti) => s + (ti.price != null ? ti.price * ti.qty : 0), 0);
+    // Has something to charge → go through PaymentModal first. The modal
+    // handles the confirm + cash capture + optional receipt print, then
+    // calls back into finalizeComplete to run the actual ticket
+    // transition. Free visits (no priced items) keep the simple confirm.
+    if (tk && itemsTotal > 0) {
+      setPayingFor({ ticket: tk, table, items: capturedItems, total: itemsTotal });
+      return;
+    }
+    if (!(await dialogConfirm(t('Complete visit at {code}?', { code: table.code }), { confirmLabel: t('Complete'), variant: 'info' }))) return;
+    await finalizeComplete(table, tk ?? null, capturedItems, itemsTotal);
+  };
+
+  const finalizeComplete = async (
+    table: RestaurantTable,
+    tk: SeatedTicket | null,
+    capturedItems: TicketItem[],
+    itemsTotal: number,
+  ) => {
+    if (!table.current_ticket_id) return;
     setBusy(table.id);
     try {
       const completedAt = new Date().toISOString();
       await writeTicket(table.current_ticket_id, {
         status: 'served',
         completed_at: completedAt,
+        payment_status: itemsTotal > 0 ? 'paid' : null,
       }, table.code);
       await ensureAuth();
       await clearTableRow(table.id);
@@ -270,6 +384,8 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
           calledAt: tk.called_at ?? null,
           seatedAt: tk.serving_started_at ?? table.assigned_at ?? null,
           completedAt,
+          items: capturedItems,
+          itemsTotal,
         });
       }
       await load();
@@ -278,7 +394,7 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
 
   const cancelAtTable = async (table: RestaurantTable) => {
     if (!table.current_ticket_id) return;
-    if (!confirm(t('Cancel ticket at {code}?', { code: table.code }))) return;
+    if (!(await dialogConfirm(t('Cancel ticket at {code}?', { code: table.code }), { confirmLabel: t('Cancel ticket'), variant: 'danger' }))) return;
     setBusy(table.id);
     try {
       await writeTicket(table.current_ticket_id, {
@@ -294,7 +410,7 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
 
   const noShowAtTable = async (table: RestaurantTable) => {
     if (!table.current_ticket_id) return;
-    if (!confirm(t('Mark as no-show at {code}?', { code: table.code }))) return;
+    if (!(await dialogConfirm(t('Mark as no-show at {code}?', { code: table.code }), { confirmLabel: t('No-show'), variant: 'danger' }))) return;
     setBusy(table.id);
     try {
       // Dedicated no_show status — keeps reporting distinct from
@@ -327,6 +443,12 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
       await sb.from('restaurant_tables').update({
         status: 'available', current_ticket_id: null, assigned_at: null,
       }).eq('id', transferFor.id);
+      const fromCode = transferFor.code;
+      showToast(t('Moved {ticket} from {from} → {to}. Customer notified.', {
+        ticket: tk?.ticket_number ?? '',
+        from: fromCode,
+        to: destination.code,
+      }), 'success');
       // Notify the customer about the table change via WhatsApp/Messenger.
       // Reuse the 'buzz' template ("Staff is trying to reach you — please
       // go to {desk}") with the destination code so the customer knows
@@ -383,7 +505,30 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
   const ticketFor = (id: string | null | undefined) => tickets.find((x) => x.id === id);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, height: '100%', overflow: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, height: '100%', overflow: 'auto', position: 'relative' }}>
+      {toast && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: 20,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '12px 20px',
+            borderRadius: 10,
+            background: toast.kind === 'success' ? '#16a34a' : '#ef4444',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 700,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+            zIndex: 10001,
+            maxWidth: '80vw',
+          }}
+          onClick={() => setToast(null)}
+        >
+          {toast.msg}
+        </div>,
+        document.body,
+      )}
       {/* Occupancy strip */}
       <div style={occStrip}>
         <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text2)' }}>
@@ -400,6 +545,32 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
             value={`${Math.round(occupancy.seatUtilisation * 100)}%`}
             color={occupancy.seatUtilisation > 0.8 ? '#ef4444' : occupancy.seatUtilisation > 0.6 ? '#f59e0b' : '#22c55e'}
           />
+          {onOpenMenu && (
+            <button
+              onClick={onOpenMenu}
+              title={t('Edit menu')}
+              style={{
+                padding: '4px 10px', borderRadius: 6,
+                border: '1px solid var(--border)', background: 'var(--surface)',
+                color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              🍽 {t('Menu')}
+            </button>
+          )}
+          <button
+            onClick={() => setShowZReport(true)}
+            title={t('Daily Z-Report')}
+            style={{
+              padding: '4px 10px', borderRadius: 6,
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            📊 {t('Z-Report')}
+          </button>
         </div>
       </div>
 
@@ -411,14 +582,20 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
       )}
 
       {/* Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10, alignContent: 'start', gridAutoRows: '1fr' }}>
         {tables.map((table) => {
           const tk = ticketFor(table.current_ticket_id);
           const isCalling = tk?.status === 'called';
           const isServing = tk?.status === 'serving';
           const colors = isCalling ? CALLING_COLORS : STATUS_COLORS[table.status];
-          const stateLabel = isCalling ? t('calling') : t(table.status);
-          const elapsed = (isCalling || isServing) ? elapsedFromIso(isServing ? tk?.serving_started_at ?? table.assigned_at : tk?.called_at ?? table.assigned_at) : null;
+          const timerIso = isServing ? tk?.serving_started_at ?? table.assigned_at : isCalling ? tk?.called_at ?? table.assigned_at : null;
+          const elapsed = timerIso ? elapsedFromIso(timerIso) : null;
+          const elapsedMin = timerIso ? minutesSinceIso(timerIso) : 0;
+          // Timer color ramps after 60/90 min at table so operators spot
+          // long-runners without checking every tile.
+          const timerColor = isServing
+            ? elapsedMin >= 90 ? '#ef4444' : elapsedMin >= 60 ? '#f59e0b' : 'var(--text)'
+            : isCalling ? '#eab308' : 'var(--text)';
           const isTransferTarget = transferFor && transferFor.id !== table.id && table.status === 'available';
           return (
             <div
@@ -430,47 +607,119 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
                 background: colors.bg,
                 cursor: isTransferTarget ? 'pointer' : 'default',
                 boxShadow: isTransferTarget ? `0 0 0 3px ${colors.border}55` : 'none',
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{table.code}</span>
-                <span style={{
-                  padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
-                  color: colors.label, background: colors.bg,
-                  border: `1px solid ${colors.border}55`,
-                  textTransform: 'uppercase', letterSpacing: 0.4,
-                }}>{stateLabel}</span>
+              {/* Calling banner — bold top strip so host spots it across the room */}
+              {isCalling && (
+                <div style={{
+                  margin: '-12px -12px 8px -12px',
+                  padding: '4px 10px',
+                  background: CALLING_COLORS.border,
+                  color: '#000',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <span>📣 {t('calling')}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{elapsed ?? '—'}</span>
+                </div>
+              )}
+
+              {/* Title row — code + timer (when serving) or small status dot */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>{table.code}</span>
+                {tk && isServing ? (
+                  <span style={{
+                    fontSize: 15, fontWeight: 800, color: timerColor,
+                    fontVariantNumeric: 'tabular-nums', letterSpacing: 0.3,
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                  }} title={t('Elapsed')}>
+                    ⏱ {elapsed ?? '—'}
+                  </span>
+                ) : (
+                  <span style={{
+                    width: 10, height: 10, borderRadius: '50%',
+                    background: colors.border,
+                    boxShadow: `0 0 0 2px ${colors.bg}`,
+                  }} title={t(table.status)} />
+                )}
               </div>
 
-              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>
-                👥 {table.capacity ?? '?'}
-                {table.zone && ` · ${table.zone}`}
+              {/* Capacity + zone — promoted to readable text */}
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PeopleIcon size={14} /><strong style={{ color: 'var(--text)', fontSize: 14 }}>{table.capacity ?? '?'}</strong></span>
+                {table.zone && (
+                  <span style={{
+                    fontSize: 11, padding: '1px 6px', borderRadius: 4,
+                    background: 'var(--surface2)', color: 'var(--text3)',
+                  }}>{table.zone}</span>
+                )}
               </div>
 
               {tk && (
                 <div style={seatedBox}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{tk.ticket_number}</div>
                   {tk.customer_data?.name && (
-                    <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{tk.customer_data.name}</div>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tk.customer_data.name}
+                    </div>
                   )}
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-                    {isCalling ? '📣' : '⏱️'} {elapsed ?? '—'}
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: tk.customer_data?.name ? 1 : 0 }}>
+                    {tk.ticket_number}
                   </div>
+                  {isServing && tk && (() => {
+                    const rows = itemsByTicket.get(tk.id) ?? [];
+                    if (rows.length === 0) return null;
+                    const count = rows.reduce((s, r) => s + r.qty, 0);
+                    const total = rows.reduce((s, r) => s + (r.price != null ? r.price * r.qty : 0), 0);
+                    return (
+                      <div style={{
+                        marginTop: 4, fontSize: 11, color: 'var(--text2)',
+                        display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600,
+                      }}>
+                        <span style={{
+                          display: 'inline-block', padding: '1px 6px', borderRadius: 4,
+                          background: 'rgba(59,130,246,0.18)', color: '#93c5fd',
+                          fontWeight: 700, fontSize: 10,
+                        }}>🍽 {count}</span>
+                        {total > 0 && (
+                          <span style={{ fontVariantNumeric: 'tabular-nums', color: '#86efac', fontWeight: 700 }}>
+                            {fmtMoney(total)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* Actions — state-driven */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 'auto', paddingTop: 8 }}>
                 {/* AVAILABLE: one-tap call-next when there's a queue */}
                 {table.status === 'available' && waiting.length > 0 && !transferFor && (
-                  <button
-                    onClick={() => callNextWaiting(table)}
-                    disabled={busy === table.id}
-                    style={{ ...btnSmall, background: '#eab308', color: '#000' }}
-                    title={t('Call next waiting party to this table')}
-                  >
-                    📣 {t('Call next')}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setPickCustomerFor({ table, mode: 'call' })}
+                      disabled={busy === table.id}
+                      style={{ ...btnSmall, background: '#eab308', color: '#000', flex: 1 }}
+                      title={t('Pick a waiting party to call to this table')}
+                    >
+                      📢 {t('Call')}
+                    </button>
+                    <button
+                      onClick={() => setPickCustomerFor({ table, mode: 'seat' })}
+                      disabled={busy === table.id}
+                      style={{ ...btnSmall, background: '#16a34a', color: '#fff', flex: 1 }}
+                      title={t('Pick a waiting party to seat at this table now')}
+                    >
+                      🪑 {t('Seat')}
+                    </button>
+                  </>
                 )}
 
                 {/* CALLING: confirm seated · no-show · cancel · transfer */}
@@ -495,7 +744,7 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
                     <button
                       onClick={() => setTransferFor(table)}
                       disabled={busy === table.id}
-                      style={btnSmall}
+                      style={btnIcon}
                       title={t('Transfer to another table')}
                     >
                       🔀
@@ -503,7 +752,7 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
                     <button
                       onClick={() => cancelAtTable(table)}
                       disabled={busy === table.id}
-                      style={{ ...btnSmall, color: '#fca5a5' }}
+                      style={{ ...btnIcon, color: '#fca5a5' }}
                       title={t('Cancel ticket')}
                     >
                       ✕
@@ -511,9 +760,28 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
                   </>
                 )}
 
-                {/* SERVING: complete · transfer · cancel */}
+                {/* SERVING: complete · transfer. Cancel is intentionally
+                    omitted — once a party is seated, the only valid exits
+                    are Complete (normal end of visit) or Transfer (table
+                    change). Cancelling mid-service would mis-state the
+                    ticket history and the schema doesn't support it here
+                    (no cancelled_at column on the serving path). */}
                 {isServing && (
                   <>
+                    <button
+                      onClick={() => {
+                        if (!orgId) {
+                          void dialogAlert(t('Organization not loaded — sign in again to place orders.'));
+                          return;
+                        }
+                        if (tk) setOrderPadFor({ ticket: tk, table });
+                      }}
+                      disabled={busy === table.id || !tk}
+                      style={{ ...btnSmall, background: '#3b82f6', color: '#fff' }}
+                      title={t('Add menu items to this ticket')}
+                    >
+                      🍽 {t('Menu')}
+                    </button>
                     <button
                       onClick={() => completeAtTable(table)}
                       disabled={busy === table.id}
@@ -524,18 +792,10 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
                     <button
                       onClick={() => setTransferFor(table)}
                       disabled={busy === table.id}
-                      style={btnSmall}
+                      style={btnIcon}
                       title={t('Transfer to another table')}
                     >
                       🔀
-                    </button>
-                    <button
-                      onClick={() => cancelAtTable(table)}
-                      disabled={busy === table.id}
-                      style={{ ...btnSmall, color: '#fca5a5' }}
-                      title={t('Cancel ticket')}
-                    >
-                      ✕
                     </button>
                   </>
                 )}
@@ -568,67 +828,94 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
         })}
       </div>
 
-      {/* Waiting strip at the bottom — each chip opens a table picker */}
+      {/* Waiting strip at the bottom — read-only status. The floor-map tiles
+          drive every action (Call / Seat) via the customer picker below, so
+          these chips are purely informational. */}
       {waiting.length > 0 && (
         <div style={waitingStrip}>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', marginBottom: 6 }}>
-            {t('Waiting')} ({waiting.length}) · {t('Click a party to call them to a specific table')}
+            {t('Waiting')} ({waiting.length})
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {waiting.slice(0, 12).map((tk) => {
               const ps = parsePartySize(tk.customer_data?.party_size);
               const fitCount = ps ? matchTablesForParty(tables, ps).length : 0;
+              const waitElapsed = elapsedFromIso(tk.created_at ?? null);
               return (
-                <button
+                <div
                   key={tk.id}
-                  onClick={() => { console.log('[FloorMap] waiting chip click', tk.ticket_number); setCallFor(tk); }}
-                  style={{ ...waitingChip, cursor: 'pointer', border: '1px solid var(--border)' }}
-                  title={t('Call this party to a table')}
+                  style={{ ...waitingChip, border: '1px solid var(--border)' }}
                 >
-                  <span style={{ fontWeight: 700 }}>📣 {tk.ticket_number}</span>
+                  <span style={{ fontWeight: 700 }}>🎫 {tk.ticket_number}</span>
                   {tk.customer_data?.name && <span style={{ opacity: 0.7 }}>· {tk.customer_data.name}</span>}
-                  {ps && <span style={{ opacity: 0.7 }}>· 👥 {ps}</span>}
+                  {ps && <span style={{ opacity: 0.7, display: 'inline-flex', alignItems: 'center', gap: 4 }}>· <PeopleIcon size={12} /> {ps}</span>}
+                  {waitElapsed && <span style={{ opacity: 0.7 }}>· ⏱ {waitElapsed}</span>}
                   {ps && fitCount === 0 && <span title={t('No matching table')} style={{ color: '#fca5a5' }}>⚠</span>}
-                </button>
+                </div>
               );
             })}
           </div>
         </div>
       )}
 
-      {/* Table picker modal — portaled to body to escape any parent
-          overflow/stacking context in the Station layout. */}
-      {callFor && createPortal(
-        <div style={modalBackdrop} onClick={() => setCallFor(null)}>
+      {/* Customer picker — table-first flow. Operator tapped Call or Seat on
+          an available tile; this modal lists every waiting ticket so they
+          can pick any party (not just the next in line). Suggested tickets
+          — those whose party size fits this table's capacity — are
+          highlighted. */}
+      {pickCustomerFor && createPortal(
+        <div style={modalBackdrop} onClick={() => setPickCustomerFor(null)}>
           <div style={modalCard} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>
-              📣 {t('Call {ticket} to which table?', { ticket: callFor.ticket_number })}
+              {pickCustomerFor.mode === 'call'
+                ? `📢 ${t('Call which party to {code}?', { code: pickCustomerFor.table.code })}`
+                : `🪑 ${t('Seat which party at {code}?', { code: pickCustomerFor.table.code })}`}
             </div>
-            {callFor.customer_data?.name && (
-              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>{callFor.customer_data.name}</div>
-            )}
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+              {pickCustomerFor.table.capacity
+                ? t('Capacity: {n}', { n: pickCustomerFor.table.capacity })
+                : ''}
+            </div>
             {(() => {
-              const ps = parsePartySize(callFor.customer_data?.party_size);
-              const avail = tables.filter((x) => x.status === 'available');
-              const suggestedIds = new Set(
-                ps ? matchTablesForParty(avail, ps).filter((m) => m.fits).map((m) => m.table.id) : []
-              );
-              if (avail.length === 0) {
-                return <div style={{ color: 'var(--text2)', fontSize: 13 }}>{t('No available tables right now.')}</div>;
+              if (waiting.length === 0) {
+                return <div style={{ color: 'var(--text2)', fontSize: 13 }}>{t('No waiting parties to call.')}</div>;
               }
+              const table = pickCustomerFor.table;
+              const cap = table.capacity ?? 0;
+              const minP = table.min_party_size ?? null;
+              const maxP = table.max_party_size ?? null;
+              // A ticket is "suggested" when its party size fits this specific table.
+              const fitsThisTable = (tk: SeatedTicket) => {
+                const n = parsePartySize(tk.customer_data?.party_size);
+                if (n == null) return false;
+                if (cap > 0 && n > cap) return false;
+                if (minP != null && n < minP) return false;
+                if (maxP != null && n > maxP) return false;
+                return true;
+              };
+              const anyFits = waiting.some(fitsThisTable);
+              const allFit = waiting.every(fitsThisTable);
+              const distinguishes = anyFits && !allFit;
               return (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-                  {avail.map((tab) => {
-                    const suggested = suggestedIds.has(tab.id);
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                  {waiting.map((tk) => {
+                    const suggested = distinguishes && fitsThisTable(tk);
+                    const doesNotFit = !fitsThisTable(tk) && parsePartySize(tk.customer_data?.party_size) != null;
+                    const ps = parsePartySize(tk.customer_data?.party_size);
+                    const waitElapsed = elapsedFromIso(tk.created_at ?? null);
                     return (
                       <button
-                        key={tab.id}
+                        key={tk.id}
                         onClick={async () => {
-                          const tk = callFor;
-                          setCallFor(null);
-                          await callToTable(tab, tk.id);
+                          const picked = pickCustomerFor;
+                          setPickCustomerFor(null);
+                          if (picked.mode === 'call') {
+                            await callTicketToTable(picked.table, tk.id);
+                          } else {
+                            await seatTicketAtTable(picked.table, tk.id);
+                          }
                         }}
-                        disabled={busy === tab.id}
+                        disabled={busy === table.id}
                         style={{
                           padding: 10,
                           borderRadius: 8,
@@ -637,11 +924,18 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
                           color: 'var(--text)',
                           textAlign: 'left',
                           cursor: 'pointer',
+                          opacity: doesNotFit ? 0.6 : 1,
                         }}
+                        title={doesNotFit ? t('Party size does not fit this table') : undefined}
                       >
-                        <div style={{ fontWeight: 800, fontSize: 16 }}>{tab.code} {suggested && '⭐'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                          👥 {tab.capacity ?? '?'}{tab.zone ? ` · ${tab.zone}` : ''}
+                        <div style={{ fontWeight: 800, fontSize: 15 }}>
+                          {tk.customer_data?.name || tk.ticket_number}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                          <span>{tk.ticket_number}</span>
+                          {ps && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>· <PeopleIcon size={11} /> {ps}</span>}
+                          {waitElapsed && <span>· ⏱ {waitElapsed}</span>}
+                          {doesNotFit && <span style={{ color: '#fca5a5' }}>⚠</span>}
                         </div>
                       </button>
                     );
@@ -650,7 +944,7 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
               );
             })()}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-              <button style={btnGhost} onClick={() => setCallFor(null)}>{t('Close')}</button>
+              <button style={btnGhost} onClick={() => setPickCustomerFor(null)}>{t('Close')}</button>
             </div>
           </div>
         </div>,
@@ -680,6 +974,38 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
               <SummaryRow label={t('Seated at')} value={formatTime(completionSummary.seatedAt)} />
             )}
             <SummaryRow label={t('Completed at')} value={formatTime(completionSummary.completedAt)} />
+
+            {completionSummary.items.length > 0 && (
+              <>
+                <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', marginBottom: 6 }}>
+                  🍽 {t('Served')} ({completionSummary.items.reduce((s, i) => s + i.qty, 0)})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
+                  {completionSummary.items.map((i) => (
+                    <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
+                      <span style={{ color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <strong>{i.qty}×</strong> {i.name}
+                        {i.note && <span style={{ color: '#fbbf24', fontStyle: 'italic' }}> · {i.note}</span>}
+                      </span>
+                      {i.price != null && (
+                        <span style={{ color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtMoney(i.price * i.qty)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {completionSummary.itemsTotal > 0 && (
+                  <SummaryRow
+                    label={t('Items total')}
+                    value={fmtMoney(completionSummary.itemsTotal)}
+                    emphasis
+                  />
+                )}
+              </>
+            )}
+
             <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
             {completionSummary.calledAt && completionSummary.seatedAt && (
               <SummaryRow
@@ -717,6 +1043,51 @@ export function FloorMap({ officeId, staffId, deskId, locale }: Props) {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* OrderPad — menu + running order for the currently serving ticket */}
+      {orderPadFor && orgId && (
+        <OrderPad
+          orgId={orgId}
+          staffId={staffId}
+          ticketId={orderPadFor.ticket.id}
+          ticketNumber={orderPadFor.ticket.ticket_number}
+          tableCode={orderPadFor.table.code}
+          locale={locale}
+          currency={currency}
+          onClose={() => setOrderPadFor(null)}
+          onChanged={loadTicketItems}
+        />
+      )}
+
+      {/* PaymentModal — cash capture before final Complete. Runs the
+          ticket→served transition in finalizeComplete on success. */}
+      {payingFor && orgId && (
+        <PaymentModal
+          orgId={orgId}
+          staffId={staffId}
+          ticketId={payingFor.ticket.id}
+          ticketNumber={payingFor.ticket.ticket_number}
+          tableCode={payingFor.table.code}
+          items={payingFor.items}
+          locale={locale}
+          currency={currency}
+          onClose={() => setPayingFor(null)}
+          onPaid={async () => {
+            const snap = payingFor;
+            setPayingFor(null);
+            await finalizeComplete(snap.table, snap.ticket, snap.items, snap.total);
+          }}
+        />
+      )}
+
+      {showZReport && orgId && (
+        <ZReportModal
+          orgId={orgId}
+          locale={locale}
+          currency={currency}
+          onClose={() => setShowZReport(false)}
+        />
       )}
     </div>
   );
@@ -776,13 +1147,35 @@ function elapsedFromIso(iso?: string | null): string | null {
   return `${h}h${String(m % 60).padStart(2, '0')}`;
 }
 
+// Inline SVG people icon — the 👥 emoji renders as dim purple on Windows and
+// vanishes in dark mode. This SVG inherits currentColor so it adapts to theme.
+function PeopleIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0, verticalAlign: '-2px' }} aria-hidden="true">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function minutesSinceIso(iso?: string | null): number {
+  if (!iso) return 0;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return 0;
+  return Math.floor(ms / 60000);
+}
+
 const tileStyle: React.CSSProperties = {
   borderRadius: 12,
   border: '2px solid',
   padding: 12,
   display: 'flex',
   flexDirection: 'column',
-  minHeight: 140,
+  minHeight: 200,
   transition: 'box-shadow 0.2s ease',
 };
 
@@ -840,14 +1233,38 @@ const waitingChip: React.CSSProperties = {
 };
 
 const btnSmall: React.CSSProperties = {
-  padding: '4px 8px',
-  borderRadius: 6,
+  padding: '8px 12px',
+  borderRadius: 8,
   background: 'var(--surface2)',
   color: 'var(--text)',
   border: '1px solid var(--border)',
-  fontSize: 11,
-  fontWeight: 600,
+  fontSize: 13,
+  fontWeight: 700,
   cursor: 'pointer',
+  minHeight: 34,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+// Icon-only action buttons (transfer, cancel). Square footprint with a
+// large glyph so the emoji/symbol actually reads at a glance. Kept
+// compact so three actions fit on one row inside a 220px tile.
+const btnIcon: React.CSSProperties = {
+  padding: '4px 6px',
+  borderRadius: 8,
+  background: 'var(--surface2)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  fontSize: 18,
+  lineHeight: 1,
+  fontWeight: 700,
+  cursor: 'pointer',
+  minWidth: 34,
+  minHeight: 34,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const btnGhost: React.CSSProperties = {
