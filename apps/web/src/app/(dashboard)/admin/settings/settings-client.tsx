@@ -177,6 +177,9 @@ export function SettingsClient({
   const [ticketPrefix, setTicketPrefix] = useState<string>(
     settings.ticket_number_prefix ?? ''
   );
+  const [ticketFormat, setTicketFormat] = useState<string>(
+    settings.ticket_number_format ?? 'dept_numeric'
+  );
   const [autoNoShowTimeout, setAutoNoShowTimeout] = useState<number>(
     settings.auto_no_show_timeout ?? 1
   );
@@ -457,6 +460,7 @@ export function SettingsClient({
         settings: {
           default_check_in_mode: checkInMode,
           ticket_number_prefix: ticketPrefix,
+          ticket_number_format: ticketFormat,
           auto_no_show_timeout: autoNoShowTimeout,
           max_queue_size: maxQueueSize,
           default_display_layout: displayLayout,
@@ -1208,6 +1212,24 @@ export function SettingsClient({
               </div>
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Ticket Number Format')}
+                </label>
+                <select
+                  value={ticketFormat}
+                  onChange={(e) => setTicketFormat(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  style={{ colorScheme: 'light dark' }}
+                >
+                  <option value="dept_numeric">{t('Department only')} — SERVICE-0001</option>
+                  <option value="prefix_numeric">{t('Prefix only')} — TK-0001</option>
+                  <option value="prefix_dept_numeric">{t('Prefix + department')} — TK-SERVICE-0001</option>
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('Choose how ticket numbers are composed. Prefix is only used in the last two formats.')}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
                   {t('Ticket Number Prefix')}
                 </label>
                 <input
@@ -1215,7 +1237,8 @@ export function SettingsClient({
                   value={ticketPrefix}
                   onChange={(e) => setTicketPrefix(e.target.value)}
                   placeholder={t('e.g. TK-')}
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  disabled={ticketFormat === 'dept_numeric'}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
                 />
               </div>
               <div>

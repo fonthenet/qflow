@@ -292,6 +292,16 @@ export async function POST(request: NextRequest) {
     const autoCode =
       businessName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) || 'QUEUE';
 
+    // Ticket prefix = first + middle + last letter of the business name
+    // (letters only, uppercased). e.g. "Acme Corp" → "ACP", "Restaurant" → "RUT".
+    const ticketPrefix = (() => {
+      const letters = businessName.toUpperCase().replace(/[^A-Z]/g, '');
+      if (letters.length === 0) return 'TK';
+      if (letters.length === 1) return letters;
+      if (letters.length === 2) return letters[0] + letters[1];
+      return letters[0] + letters[Math.floor(letters.length / 2)] + letters[letters.length - 1];
+    })();
+
     // Restaurant + cafe auto-enable the Party size intake preset so
     // the kiosk / WhatsApp / mobile flows collect it, which then
     // drives the smart-table suggestion on the desk panel.
@@ -303,6 +313,8 @@ export async function POST(request: NextRequest) {
       whatsapp_enabled: true,
       messenger_enabled: true,
       whatsapp_code: autoCode,
+      ticket_number_prefix: `${ticketPrefix}-`,
+      ticket_number_format: 'prefix_numeric',
       booking_mode: 'simple',
       booking_horizon_days: 90,
       slot_duration_minutes: 30,

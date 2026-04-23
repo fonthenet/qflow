@@ -166,7 +166,20 @@ export function TablesPanel({ officeId, locale, canManage }: Props) {
             {t('{n} tables', { n: tables.length })}
           </div>
           <button
-            onClick={() => setForm({ ...EMPTY_FORM })}
+            onClick={() => {
+              // Suggest the next free T-number by scanning existing codes.
+              // Matches "T12" → 12 and skips anything that doesn't fit the
+              // pattern (custom codes like "VIP-A" are simply ignored and
+              // won't influence the suggestion).
+              const used = new Set<number>();
+              for (const tbl of tables) {
+                const m = /^T(\d+)$/i.exec(tbl.code.trim());
+                if (m) used.add(parseInt(m[1], 10));
+              }
+              let next = 1;
+              while (used.has(next)) next++;
+              setForm({ ...EMPTY_FORM, code: `T${next}`, label: `Table ${next}` });
+            }}
             style={btnPrimary}
           >
             + {t('Add table')}
@@ -190,7 +203,7 @@ export function TablesPanel({ officeId, locale, canManage }: Props) {
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-          {tables.map((tbl) => (
+          {[...tables].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' })).map((tbl) => (
             <TableCard
               key={tbl.id}
               table={tbl}
