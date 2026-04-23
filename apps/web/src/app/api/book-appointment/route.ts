@@ -22,8 +22,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale, source: bodySource, partySize: bodyPartySize } =
-    body as Record<string, string | number | undefined>;
+  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale, source: bodySource } =
+    body as Record<string, string | undefined>;
+  const bodyPartySize = (body as { partySize?: number | string })?.partySize;
   const isInHouse = bodySource === 'in_house';
   // Resolve the channel tag that gets stored on the row. Whitelist known
   // values so e.g. the mobile app can claim its own 'mobile_app' badge.
