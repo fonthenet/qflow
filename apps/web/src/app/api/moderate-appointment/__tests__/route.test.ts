@@ -38,6 +38,11 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/lifecycle', () => ({
   transitionAppointment: transitionAppointmentMock,
+  onTicketTerminal: vi.fn(),
+}));
+
+vi.mock('@/lib/notify', () => ({
+  notifyCustomer: vi.fn().mockResolvedValue({ sent: false, channel: null }),
 }));
 
 vi.mock('@/lib/actions/appointment-actions', () => ({
@@ -274,11 +279,18 @@ describe('POST /api/moderate-appointment', () => {
   it('complete: returns 200 and marks appointment completed', async () => {
     const updateChain: any = {};
     updateChain.eq = vi.fn().mockReturnValue(updateChain);
-    updateChain.in = vi.fn().mockResolvedValue({ error: null });
-    updateChain.then = (fn: any) => Promise.resolve({ error: null }).then(fn);
+    updateChain.in = vi.fn().mockResolvedValue({ error: null, count: 1 });
+    updateChain.then = (fn: any) => Promise.resolve({ error: null, count: 1 }).then(fn);
+
+    const selectChain: any = {};
+    selectChain.eq = vi.fn().mockReturnValue(selectChain);
+    selectChain.in = vi.fn().mockResolvedValue({ data: [] });
+    selectChain.single = vi.fn().mockResolvedValue({ data: null });
+    selectChain.then = (fn: any) => Promise.resolve({ data: [] }).then(fn);
 
     mockAdminSupabase.from.mockImplementation((table: string) => ({
       update: vi.fn().mockReturnValue(updateChain),
+      select: vi.fn().mockReturnValue(selectChain),
     }));
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'complete' });
