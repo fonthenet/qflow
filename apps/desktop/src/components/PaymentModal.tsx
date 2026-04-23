@@ -28,7 +28,7 @@ interface Props {
   locale: DesktopLocale;
   currency?: string;
   onClose: () => void;
-  onPaid: () => void;
+  onPaid: (payment: { method: 'cash'; amount: number; tendered: number; change: number }) => void;
 }
 
 export function PaymentModal({
@@ -113,7 +113,7 @@ export function PaymentModal({
           console.warn('[PaymentModal] print failed', printErr);
         }
       }
-      onPaid();
+      onPaid({ method: 'cash', amount: amt, tendered: tend, change: Math.max(0, tend - amt) });
     } catch (e: any) {
       setErr(e?.message ?? 'Payment failed');
     } finally {

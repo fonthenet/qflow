@@ -88,6 +88,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
     completedAt: string;
     items: TicketItem[];
     itemsTotal: number;
+    payment: { method: 'cash'; amount: number; tendered: number; change: number } | null;
   } | null>(null);
   // Ticket items grouped by ticket_id so each serving tile can show its tally
   // (item count + price total) and the OrderPad knows the current order.
@@ -363,6 +364,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
     tk: SeatedTicket | null,
     capturedItems: TicketItem[],
     itemsTotal: number,
+    payment: { method: 'cash'; amount: number; tendered: number; change: number } | null = null,
   ) => {
     if (!table.current_ticket_id) return;
     setBusy(table.id);
@@ -386,6 +388,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
           completedAt,
           items: capturedItems,
           itemsTotal,
+          payment,
         });
       }
       await load();
@@ -1003,6 +1006,20 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
                     emphasis
                   />
                 )}
+                {completionSummary.payment && (
+                  <>
+                    <SummaryRow
+                      label={t('Cash received')}
+                      value={fmtMoney(completionSummary.payment.tendered)}
+                    />
+                    {completionSummary.payment.change > 0 && (
+                      <SummaryRow
+                        label={t('Change')}
+                        value={fmtMoney(completionSummary.payment.change)}
+                      />
+                    )}
+                  </>
+                )}
               </>
             )}
 
@@ -1073,10 +1090,10 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
           locale={locale}
           currency={currency}
           onClose={() => setPayingFor(null)}
-          onPaid={async () => {
+          onPaid={async (payment) => {
             const snap = payingFor;
             setPayingFor(null);
-            await finalizeComplete(snap.table, snap.ticket, snap.items, snap.total);
+            await finalizeComplete(snap.table, snap.ticket, snap.items, snap.total, payment);
           }}
         />
       )}
