@@ -69,8 +69,13 @@ export default withSentryConfig(nextConfig, {
   // Suppress source map upload logs
   silent: !process.env.CI,
 
-  // Automatically tree-shake Sentry logger in production
-  disableLogger: true,
+  // Tree-shake Sentry debug logging from production bundles.
+  // Replaces deprecated disableLogger option (removed in v10.50.0+).
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 
   // Upload source maps but don't expose them to clients
   sourcemaps: {

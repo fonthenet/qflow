@@ -1,0 +1,197 @@
+[
+  {
+    "slug": "clinic",
+    "category": "healthcare",
+    "name_en": "Clinic",
+    "name_fr": "Clinique",
+    "name_ar": "عيادة",
+    "default_modules": ["queue", "appointments", "patients", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Patient", "fr": "Patient", "ar": "مريض" },
+      "queue": { "en": "Waiting Room", "fr": "Salle d'attente", "ar": "غرفة الانتظار" },
+      "desk": { "en": "Consultation Room", "fr": "Cabinet", "ar": "غرفة الاستشارة" }
+    }
+  },
+  {
+    "slug": "hospital",
+    "category": "healthcare",
+    "name_en": "Hospital",
+    "name_fr": "Hôpital",
+    "name_ar": "مستشفى",
+    "default_modules": ["queue", "appointments", "patients", "staff", "departments"],
+    "default_terminology": {
+      "ticket": { "en": "Patient", "fr": "Patient", "ar": "مريض" },
+      "queue": { "en": "Waiting Area", "fr": "Zone d'attente", "ar": "منطقة الانتظار" },
+      "desk": { "en": "Consultation", "fr": "Consultation", "ar": "استشارة" }
+    }
+  },
+  {
+    "slug": "pharmacy",
+    "category": "healthcare",
+    "name_en": "Pharmacy",
+    "name_fr": "Pharmacie",
+    "name_ar": "صيدلية",
+    "default_modules": ["queue", "pos"],
+    "default_terminology": {
+      "ticket": { "en": "Customer", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Counter", "fr": "Guichet", "ar": "شباك" }
+    }
+  },
+  {
+    "slug": "salon",
+    "category": "beauty",
+    "name_en": "Salon",
+    "name_fr": "Salon",
+    "name_ar": "صالون",
+    "default_modules": ["queue", "appointments", "pos", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Client", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Chair", "fr": "Siège", "ar": "كرسي" }
+    }
+  },
+  {
+    "slug": "barbershop",
+    "category": "beauty",
+    "name_en": "Barbershop",
+    "name_fr": "Coiffeur",
+    "name_ar": "حلاقة",
+    "default_modules": ["queue", "pos", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Client", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Chair", "fr": "Siège", "ar": "كرسي" }
+    }
+  },
+  {
+    "slug": "bank",
+    "category": "financial",
+    "name_en": "Bank",
+    "name_fr": "Banque",
+    "name_ar": "بنك",
+    "default_modules": ["queue", "appointments", "customers", "staff", "departments"],
+    "default_terminology": {
+      "ticket": { "en": "Client", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Counter", "fr": "Guichet", "ar": "شباك" }
+    }
+  },
+  {
+    "slug": "insurance",
+    "category": "financial",
+    "name_en": "Insurance Agency",
+    "name_fr": "Agence d'assurance",
+    "name_ar": "وكالة تأمين",
+    "default_modules": ["queue", "appointments", "customers", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Client", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Agent", "fr": "Agent", "ar": "وكيل" }
+    }
+  },
+  {
+    "slug": "public_service",
+    "category": "government",
+    "name_en": "Public Service Office",
+    "name_fr": "Service public",
+    "name_ar": "مصلحة عامة",
+    "default_modules": ["queue", "appointments", "customers", "staff", "departments"],
+    "default_terminology": {
+      "ticket": { "en": "Citizen", "fr": "Citoyen", "ar": "مواطن" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Counter", "fr": "Guichet", "ar": "شباك" }
+    }
+  },
+  {
+    "slug": "municipality",
+    "category": "government",
+    "name_en": "Municipality",
+    "name_fr": "Mairie",
+    "name_ar": "بلدية",
+    "default_modules": ["queue", "appointments", "customers", "staff", "departments"],
+    "default_terminology": {
+      "ticket": { "en": "Citizen", "fr": "Citoyen", "ar": "مواطن" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Counter", "fr": "Guichet", "ar": "شباك" }
+    }
+  },
+  {
+    "slug": "telecom",
+    "category": "telecom",
+    "name_en": "Telecom Store",
+    "name_fr": "Agence télécom",
+    "name_ar": "وكالة اتصالات",
+    "default_modules": ["queue", "appointments", "customers", "pos", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Customer", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Advisor", "fr": "Conseiller", "ar": "مستشار" }
+    }
+  },
+  {
+    "slug": "embassy",
+    "category": "government",
+    "name_en": "Embassy / Consulate",
+    "name_fr": "Ambassade / Consulat",
+    "name_ar": "سفارة / قنصلية",
+    "default_modules": ["queue", "appointments", "customers", "staff", "departments"],
+    "default_terminology": {
+      "ticket": { "en": "Applicant", "fr": "Demandeur", "ar": "طالب" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Window", "fr": "Guichet", "ar": "شباك" }
+    }
+  },
+  {
+    "slug": "restaurant",
+    "category": "hospitality",
+    "name_en": "Restaurant",
+    "name_fr": "Restaurant",
+    "name_ar": "مطعم",
+    "default_modules": ["queue", "pos", "tables", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Table", "fr": "Table", "ar": "طاولة" },
+      "queue": { "en": "Waitlist", "fr": "Liste d'attente", "ar": "قائمة الانتظار" },
+      "desk": { "en": "Section", "fr": "Section", "ar": "قسم" }
+    }
+  },
+  {
+    "slug": "gym",
+    "category": "fitness",
+    "name_en": "Gym / Fitness Center",
+    "name_fr": "Salle de sport",
+    "name_ar": "نادي رياضي",
+    "default_modules": ["queue", "appointments", "customers", "pos", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Member", "fr": "Membre", "ar": "عضو" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Station", "fr": "Station", "ar": "محطة" }
+    }
+  },
+  {
+    "slug": "school",
+    "category": "education",
+    "name_en": "School / University",
+    "name_fr": "École / Université",
+    "name_ar": "مدرسة / جامعة",
+    "default_modules": ["queue", "appointments", "customers", "staff", "departments"],
+    "default_terminology": {
+      "ticket": { "en": "Student", "fr": "Étudiant", "ar": "طالب" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Desk", "fr": "Bureau", "ar": "مكتب" }
+    }
+  },
+  {
+    "slug": "retail",
+    "category": "retail",
+    "name_en": "Retail Store",
+    "name_fr": "Commerce de détail",
+    "name_ar": "متجر تجزئة",
+    "default_modules": ["queue", "pos", "customers", "staff"],
+    "default_terminology": {
+      "ticket": { "en": "Customer", "fr": "Client", "ar": "عميل" },
+      "queue": { "en": "Queue", "fr": "File d'attente", "ar": "طابور" },
+      "desk": { "en": "Counter", "fr": "Caisse", "ar": "صندوق" }
+    }
+  }
+]

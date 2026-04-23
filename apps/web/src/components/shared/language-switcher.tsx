@@ -12,6 +12,9 @@ const localeLabels: Record<AppLocale, string> = {
   en: 'EN',
   fr: 'FR',
   ar: 'AR',
+  ja: 'JA',
+  ko: 'KO',
+  vi: 'VI',
 };
 
 /** Save the user's language choice so it persists across visits. */

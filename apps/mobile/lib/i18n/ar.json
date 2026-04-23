@@ -1,0 +1,98 @@
+{
+  "common": {
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "save": "حفظ",
+    "close": "إغلاق",
+    "back": "رجوع",
+    "next": "التالي",
+    "error": "خطأ",
+    "loading": "جار التحميل…",
+    "retry": "إعادة المحاولة",
+    "ok": "حسناً",
+    "copy": "نسخ",
+    "copied": "تم النسخ!",
+    "share": "مشاركة",
+    "refresh": "تحديث",
+    "lastUpdated": "آخر تحديث {{time}}"
+  },
+  "landing": {
+    "title": "تجنّب الانتظار.",
+    "subtitle": "انضم إلى الطوابير، احجز المواعيد وتابع دورك — كل ذلك من هاتفك.",
+    "scanCta": "امسح رمز QR",
+    "offlineBanner": "أنت غير متصل — عرض البيانات المحفوظة"
+  },
+  "scan": {
+    "title": "مسح رمز QR",
+    "subtitle": "وجّه الكاميرا نحو رمز QR الخاص بـ Qflo عند مكتب الخدمة.",
+    "requestingCamera": "جار طلب الوصول إلى الكاميرا…",
+    "cameraNeeded": "مطلوب الوصول إلى الكاميرا",
+    "cameraNeededMsg": "يحتاج Qflo إلى الكاميرا لمسح رموز QR.",
+    "allowCamera": "السماح للكاميرا",
+    "enterManually": "إدخال الرمز يدوياً",
+    "enterCode": "إدخال رمز",
+    "enterCodePlaceholder": "لصق أو كتابة رمز",
+    "join": "انضمام",
+    "invalidQR": "رمز QR غير معروف",
+    "scanTip": "حافظ على الثبات — المسح تلقائي"
+  },
+  "queue": {
+    "yourTicket": "تذكرتك",
+    "position": "الموقع {{pos}} في الطابور",
+    "estimatedWait": "انتظار تقريبي {{min}} دقيقة",
+    "status_waiting": "في الانتظار",
+    "status_called": "جار استدعاؤك!",
+    "status_serving": "جار تقديم الخدمة",
+    "status_done": "اكتمل — شكراً لزيارتك",
+    "status_cancelled": "ملغى",
+    "noTicket": "لا توجد تذكرة نشطة",
+    "offlineCached": "عرض التذكرة المحفوظة — آخر تحديث {{time}}"
+  },
+  "appointments": {
+    "title": "مواعيدي",
+    "empty": "لا توجد مواعيد قادمة",
+    "bookNew": "حجز موعد",
+    "upcoming": "القادمة",
+    "past": "السابقة"
+  },
+  "profile": {
+    "title": "الملف الشخصي",
+    "signIn": "تسجيل الدخول",
+    "signOut": "تسجيل الخروج",
+    "language": "اللغة",
+    "theme": "المظهر",
+    "themeLight": "فاتح",
+    "themeDark": "داكن",
+    "themeSystem": "النظام",
+    "biometric": "Face ID / البصمة",
+    "biometricEnable": "تفعيل الفتح البيومتري",
+    "notifications": "الإشعارات",
+    "privacy": "سياسة الخصوصية",
+    "terms": "شروط الخدمة",
+    "version": "الإصدار {{ver}}"
+  },
+  "auth": {
+    "signInTitle": "مرحباً بك في Qflo",
+    "signInSubtitle": "سجّل دخولك لحفظ سجل حجوزاتك والحصول على تذكيرات.",
+    "emailPlaceholder": "البريد الإلكتروني",
+    "sendMagicLink": "إرسال رابط تسجيل الدخول",
+    "checkEmail": "تحقق من بريدك — أرسلنا لك رابطاً.",
+    "continueAsGuest": "المتابعة بدون تسجيل دخول"
+  },
+  "notifications": {
+    "permissionTitle": "ابقَ على اطلاع",
+    "permissionBody": "سيُعلمك Qflo عندما يقترب دورك حتى لا تنتظر في الغرفة.",
+    "allow": "السماح بالإشعارات",
+    "skip": "ليس الآن"
+  },
+  "biometric": {
+    "promptReason": "أكّد هويتك للمتابعة",
+    "notAvailable": "المصادقة البيومترية غير متاحة على هذا الجهاز.",
+    "notEnrolled": "لا توجد بيانات بيومترية مسجّلة. يرجى إعداد Face ID أو بصمة الإصبع في إعدادات الجهاز."
+  },
+  "error": {
+    "network": "خطأ في الشبكة — تحقق من اتصالك",
+    "generic": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+    "ticketNotFound": "التذكرة غير موجودة أو انتهت صلاحيتها."
+  }
+}

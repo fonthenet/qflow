@@ -121,11 +121,29 @@ interface OrgContext {
   settings: Record<string, any>;
 }
 
+/** Locales implemented for WhatsApp/Messenger channels. LINE/KakaoTalk/Zalo (ja/ko/vi) use their own handlers. */
+/**
+ * Supported locales for customer-facing messaging.
+ *
+ * **Fully translated** (production-ready):
+ *   - en: English
+ *   - fr: French (incl. Algerian French)
+ *   - ar: Arabic (MSA + Darija with transliteration support)
+ *
+ * **MVP/Fallback** (fallback to English if key missing):
+ *   - ja: Japanese (LINE channel)
+ *   - ko: Korean (KakaoTalk channel)
+ *   - vi: Vietnamese (Zalo channel)
+ *
+ * Template builders fall back to English gracefully if ja/ko/vi entries
+ * are not yet translated, ensuring no broken rendering.
+ */
 export type Locale = 'fr' | 'ar' | 'en' | 'ja' | 'ko' | 'vi';
 
 // ── i18n translations ────────────────────────────────────────────────
+// Templates can omit ja/ko/vi entries; the `t()` function falls back to English.
 
-const messages: Record<string, Record<Locale, string>> = {
+const messages: Record<string, Partial<Record<Locale, string>> & Record<'en' | 'fr' | 'ar', string>> = {
   welcome: {
     fr: [
       '👋 Bienvenue sur *Qflo* !',
@@ -600,9 +618,34 @@ const messages: Record<string, Record<Locale, string>> = {
   },
 };
 
+// ── Template lookup with locale fallback ────────────────────────────
+/**
+ * Get a message template, falling back to English if the requested locale
+ * is not yet translated (e.g., ja/ko/vi MVP locales).
+ * Safely handles missing template keys (should not occur in production,
+ * but prevents silent failures).
+ */
+function tpl(locale: Locale, templates: Record<Locale, string>): string {
+  return templates[locale] ?? templates.en ?? '(message not found)';
+}
+
 // ── Notification messages — imported from @qflo/shared (single source of truth) ──
-import { notificationMessages, renderNotification, getEnabledIntakeFields, getFieldLabel, type IntakeField } from '@qflo/shared';
+import { notificationMessages, renderNotification, getEnabledIntakeFields, getFieldLabel as sharedGetFieldLabel, type IntakeField } from '@qflo/shared';
 export { notificationMessages, renderNotification };
+
+// Wrapper for getFieldLabel that handles ja/ko/vi fallback to English
+function getFieldLabel(field: IntakeField, locale: Locale): string {
+  const sharedLocale = (locale === 'ja' || locale === 'ko' || locale === 'vi') ? 'en' : locale;
+  return sharedGetFieldLabel(field, sharedLocale);
+}
+
+// Re-export formatWilaya with Locale fallback support
+export { resolveWilaya };
+const originalFormatWilaya = formatWilaya;
+export function formatWilayaLocale(w: any, locale: Locale): string {
+  const wilayaLocale = (locale === 'ja' || locale === 'ko' || locale === 'vi') ? 'en' : locale;
+  return originalFormatWilaya(w, wilayaLocale);
+}
 
 // ── Locale detection ─────────────────────────────────────────────────
 
@@ -689,7 +732,7 @@ function toLocaleDigits(n: number, locale: Locale): string {
  * These errors are embedded in the {error} variable of the `join_error` template.
  * Without this, Arabic/French users see English error text inside a translated wrapper.
  */
-const errorTranslations: Record<string, Record<Locale, string>> = {
+const errorTranslations: Record<string, Partial<Record<Locale, string>> & Record<'en' | 'fr' | 'ar', string>> = {
   'Closed for the day': {
     fr: 'Fermé pour la journée',
     ar: 'مغلق لباقي اليوم',
@@ -742,7 +785,7 @@ export function translateError(error: string, locale: Locale): string {
   const opensMatch = error.match(/^Opens at (.+)$/);
   if (opensMatch) {
     const time = opensMatch[1];
-    const opensAt: Record<Locale, string> = {
+    const opensAt: Partial<Record<Locale, string>> & Record<'en' | 'fr' | 'ar', string> = {
       fr: `Ouvre à ${time}`,
       ar: `يفتح على الساعة ${time}`,
       en: `Opens at ${time}`,
@@ -753,7 +796,8 @@ export function translateError(error: string, locale: Locale): string {
 }
 
 export function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
-  let msg = messages[key]?.[locale] ?? messages[key]?.['fr'] ?? key;
+  // Fallback chain: requested locale → English (for ja/ko/vi MVP) → key as literal
+  let msg = messages[key]?.[locale] ?? messages[key]?.['en'] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? '?'));
@@ -763,7 +807,9 @@ export function t(key: string, locale: Locale, vars?: Record<string, string | nu
 }
 
 export function tNotification(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
-  const msg = renderNotification(key, locale, vars);
+  // Fall back to English for ja/ko/vi since @qflo/shared only has en/fr/ar
+  const sharedLocale = (locale === 'ja' || locale === 'ko' || locale === 'vi') ? 'en' : locale;
+  const msg = renderNotification(key, sharedLocale, vars);
   return locale === 'ar' ? ensureRTL(msg) : msg;
 }
 
@@ -1122,9 +1168,30 @@ async function findAllActiveSessionsByUser(
     });
 }
 
-export const positionLabel: Record<Locale, string> = { fr: 'Position', ar: 'الترتيب', en: 'Position' };
-export const nowServingLabel: Record<Locale, string> = { fr: 'En service', ar: 'يُخدم الآن', en: 'Now serving' };
-export const minLabel: Record<Locale, string> = { fr: 'min', ar: 'دقيقة', en: 'min' };
+export const positionLabel: Record<Locale, string> = {
+  fr: 'Position',
+  ar: 'الترتيب',
+  en: 'Position',
+  ja: 'Position',
+  ko: 'Position',
+  vi: 'Position',
+};
+export const nowServingLabel: Record<Locale, string> = {
+  fr: 'En service',
+  ar: 'يُخدم الآن',
+  en: 'Now serving',
+  ja: 'Now serving',
+  ko: 'Now serving',
+  vi: 'Now serving',
+};
+export const minLabel: Record<Locale, string> = {
+  fr: 'min',
+  ar: 'دقيقة',
+  en: 'min',
+  ja: 'min',
+  ko: 'min',
+  vi: 'min',
+};
 
 /** Fetch ticket number, service name, join time, and tracking URL for the already_in_queue message. */
 async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ ticket: string; service: string; joined: string; url: string }> {
@@ -1494,7 +1561,7 @@ export async function handleInboundMessage(
           await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', customLocale) });
           return;
         }
-        answers[fieldKey] = formatWilaya(resolved, customLocale);
+        answers[fieldKey] = formatWilayaLocale(resolved, customLocale);
       } else if (fieldKey === 'reason') {
         // Reason: 1-200 chars, allow SKIP/PASSER/تخطي
         const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
@@ -1589,7 +1656,7 @@ export async function handleInboundMessage(
           await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', intakeLocale) });
           return;
         }
-        const canonical = formatWilaya(resolved, intakeLocale);
+        const canonical = formatWilayaLocale(resolved, intakeLocale);
         await supabaseIntake
           .from('whatsapp_sessions')
           .update({ intake_wilaya: canonical, state: 'awaiting_intake_reason' })
@@ -1974,14 +2041,14 @@ export async function handleInboundMessage(
   {
     const greet = detectGreeting(cleaned);
     if (greet) {
-      // Locale priority: a non-English greeting is an explicit language
-      // signal — the customer just typed in that language, so respect it
-      // (French "slt", Arabic "سلام"/"salem"). English is the default
-      // fallback token ("hi/hello") and carries no signal, so for English
-      // greetings prefer the saved session locale if we have one.
-      const savedLocale = await getLastSessionLocale(identifier, channel, bsuid);
-      const greetLocale: Locale =
-        greet.locale === 'en' ? (savedLocale ?? 'en') : greet.locale;
+      // Locale priority: the detected greeting locale is the customer's
+      // explicit signal — the language they chose to type right now. Respect
+      // it unconditionally, including English ("Hi", "Hello"). Otherwise
+      // users who once had a French session get locked into French even
+      // after they switch to typing English. Saved session locale is only
+      // consulted downstream (e.g. during MY BOOKINGS) where no fresh signal
+      // exists.
+      const greetLocale: Locale = greet.locale;
 
       // If a business code was attached, resolve it so we can show the
       // business name on the empty-state welcome.
@@ -4203,7 +4270,7 @@ async function handleBookingState(
         await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', locale) });
         return true;
       }
-      const canonical = formatWilaya(resolved, locale);
+      const canonical = formatWilayaLocale(resolved, locale);
       await supabase.from('whatsapp_sessions').update({
         booking_customer_wilaya: canonical,
         state: 'booking_enter_reason',

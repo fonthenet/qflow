@@ -1,0 +1,98 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "error": "Error",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "ok": "OK",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "share": "Share",
+    "refresh": "Refresh",
+    "lastUpdated": "Last updated {{time}}"
+  },
+  "landing": {
+    "title": "Skip the wait.",
+    "subtitle": "Join queues, book appointments, and track your place — all from your phone.",
+    "scanCta": "Scan a QR code",
+    "offlineBanner": "You're offline — showing cached data"
+  },
+  "scan": {
+    "title": "Scan QR Code",
+    "subtitle": "Point your camera at a Qflo QR code at the service desk.",
+    "requestingCamera": "Requesting camera access…",
+    "cameraNeeded": "Camera Access Required",
+    "cameraNeededMsg": "Qflo needs the camera to scan QR codes at service locations.",
+    "allowCamera": "Allow Camera",
+    "enterManually": "Enter code manually",
+    "enterCode": "Enter Code",
+    "enterCodePlaceholder": "Paste or type a code",
+    "join": "Join",
+    "invalidQR": "Unrecognised QR code",
+    "scanTip": "Hold steady — scanning automatically"
+  },
+  "queue": {
+    "yourTicket": "Your ticket",
+    "position": "Position {{pos}} in queue",
+    "estimatedWait": "~{{min}} min wait",
+    "status_waiting": "Waiting",
+    "status_called": "You're being called!",
+    "status_serving": "Being served",
+    "status_done": "Done — thanks for visiting",
+    "status_cancelled": "Cancelled",
+    "noTicket": "No active ticket",
+    "offlineCached": "Showing cached ticket — last updated {{time}}"
+  },
+  "appointments": {
+    "title": "My Appointments",
+    "empty": "No upcoming appointments",
+    "bookNew": "Book an appointment",
+    "upcoming": "Upcoming",
+    "past": "Past"
+  },
+  "profile": {
+    "title": "Profile",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "language": "Language",
+    "theme": "Appearance",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "biometric": "Face ID / Fingerprint",
+    "biometricEnable": "Enable biometric unlock",
+    "notifications": "Notifications",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "version": "Version {{ver}}"
+  },
+  "auth": {
+    "signInTitle": "Welcome to Qflo",
+    "signInSubtitle": "Sign in to save your booking history and get personalised reminders.",
+    "emailPlaceholder": "Email address",
+    "sendMagicLink": "Send sign-in link",
+    "checkEmail": "Check your email — we sent a sign-in link.",
+    "continueAsGuest": "Continue without signing in"
+  },
+  "notifications": {
+    "permissionTitle": "Stay in the loop",
+    "permissionBody": "Qflo will notify you when your turn is approaching so you don't have to wait in the room.",
+    "allow": "Allow notifications",
+    "skip": "Not now"
+  },
+  "biometric": {
+    "promptReason": "Confirm your identity to continue",
+    "notAvailable": "Biometric authentication is not available on this device.",
+    "notEnrolled": "No biometric credentials are enrolled. Please set up Face ID or fingerprint in device Settings."
+  },
+  "error": {
+    "network": "Network error — check your connection",
+    "generic": "Something went wrong. Please try again.",
+    "ticketNotFound": "Ticket not found or expired."
+  }
+}

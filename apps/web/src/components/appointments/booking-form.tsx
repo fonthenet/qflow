@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Calendar, CalendarPlus, Clock, MapPin, Check, User, Bell, Users } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import {
   clearBookingEmailOtpVerification,
   createAppointment,
@@ -126,7 +125,17 @@ export function BookingForm({
   const [emailOtpMessage, setEmailOtpMessage] = useState<string | null>(null);
   const [emailOtpResendRemainingSeconds, setEmailOtpResendRemainingSeconds] =
     useState(0);
-  const [supabase] = useState(() => createClient());
+  // Lazy-import the full Supabase browser client (includes realtime) only when
+  // first needed (post-paint interaction or subscription setup). This keeps the
+  // realtime chunk off the critical-path JS for /book/[officeSlug].
+  const supabaseRef = useRef<Awaited<ReturnType<typeof import('@/lib/supabase/client').createClient>> | null>(null);
+  const getClient = useCallback(async () => {
+    if (!supabaseRef.current) {
+      const { createClient } = await import('@/lib/supabase/client');
+      supabaseRef.current = createClient();
+    }
+    return supabaseRef.current;
+  }, []);
 
   // Same-day RESERVE is not allowed — customers wanting to be seen today must
   // use the live JOIN flow. Compute "tomorrow" in the office timezone so the
@@ -215,39 +224,49 @@ export function BookingForm({
     fetchSlots();
   }, [selectedDate, selectedService, fetchSlots]);
 
-  // Realtime: auto-refresh slots when appointments change for this office
-  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Realtime: auto-refresh slots when appointments change for this office.
+  // Channel type is opaque — use `any` to avoid importing the full client type at top level.
+  const realtimeChannelRef = useRef<any | null>(null);
 
   useEffect(() => {
     if (!selectedDate || !selectedService || sandboxMode) return;
 
-    // Subscribe to appointment changes on this office
-    const channel = supabase
-      .channel(`booking-slots-${office.id}-${selectedDate}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'appointments',
-          filter: `office_id=eq.${office.id}`,
-        },
-        () => {
-          // Re-fetch slots silently (no loading spinner)
-          fetchSlots();
-        }
-      )
-      .subscribe();
-
-    realtimeChannelRef.current = channel;
+    let active = true;
+    // Dynamically import the realtime-capable client — runs after paint,
+    // keeping the realtime JS chunk off the initial critical path.
+    getClient().then((client) => {
+      if (!active) return;
+      const channel = client
+        .channel(`booking-slots-${office.id}-${selectedDate}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'appointments',
+            filter: `office_id=eq.${office.id}`,
+          },
+          () => {
+            // Re-fetch slots silently (no loading spinner)
+            fetchSlots();
+          }
+        )
+        .subscribe();
+      realtimeChannelRef.current = channel;
+    });
 
     return () => {
+      active = false;
       if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current);
-        realtimeChannelRef.current = null;
+        getClient().then((client) => {
+          if (realtimeChannelRef.current) {
+            client.removeChannel(realtimeChannelRef.current);
+            realtimeChannelRef.current = null;
+          }
+        });
       }
     };
-  }, [supabase, office.id, selectedDate, selectedService, sandboxMode, fetchSlots]);
+  }, [getClient, office.id, selectedDate, selectedService, sandboxMode, fetchSlots]);
 
   useEffect(() => {
     setEmailOtpSent(false);
@@ -284,11 +303,11 @@ export function BookingForm({
     setSelectedStaffId(null);
     // Fetch staff for the selected service's office
     setLoadingStaff(true);
-    supabase.from('staff')
+    getClient().then((client) => client.from('staff')
       .select('id, full_name')
       .eq('office_id', office.id)
       .eq('is_active', true)
-      .order('full_name')
+      .order('full_name'))
       .then(({ data }) => {
         const members = data ?? [];
         setStaffMembers(members);
@@ -451,7 +470,8 @@ export function BookingForm({
       return;
     }
 
-    const { error: otpError } = await supabase.auth.signInWithOtp({
+    const client = await getClient();
+    const { error: otpError } = await client.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
@@ -502,7 +522,8 @@ export function BookingForm({
       return;
     }
 
-    const { error: verifyError } = await supabase.auth.verifyOtp({
+    const client = await getClient();
+    const { error: verifyError } = await client.auth.verifyOtp({
       email,
       token: emailOtpCode.trim(),
       type: 'email',
@@ -520,7 +541,7 @@ export function BookingForm({
       expiresInMinutes: bookingEmailOtpExpiryMinutes,
     });
 
-    await supabase.auth.signOut();
+    await (await getClient()).auth.signOut();
 
     setEmailOtpVerified(true);
     setEmailOtpMessage('Email verified. You can confirm the booking now.');

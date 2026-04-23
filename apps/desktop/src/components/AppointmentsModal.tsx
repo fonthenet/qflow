@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
+import { withOfflineFallback } from '../lib/offline-write';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { dateKeyInTz, formatTimeInTz, getStatusColor } from '@qflo/shared';
 import { normalizeWilayaDisplay } from '../lib/wilayas';
@@ -121,8 +122,13 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     try {
       await ensureAuth();
       const sb = await getSupabase();
-      const { error: dErr } = await sb.from('appointments').delete().eq('id', id);
-      if (dErr) throw dErr;
+      await withOfflineFallback(
+        { entityType: 'appointment', operation: 'delete', localId: id, remoteId: id, payload: { id } },
+        async () => {
+          const { error: dErr } = await sb.from('appointments').delete().eq('id', id);
+          if (dErr) throw dErr;
+        },
+      );
       setAppointments((prev) => prev.filter((a) => a.id !== id));
     } catch (e: any) {
       setError(e?.message || 'Delete failed');

@@ -114,6 +114,48 @@ export async function updateOrganizationSettings(data: {
 }
 
 /**
+ * Update the organization's country, vertical, primary locale, and timezone.
+ * These are the profile fields managed by the Organization Profile settings page.
+ */
+export async function updateOrganizationProfile(data: {
+  country?: string | null;
+  vertical?: string | null;
+  locale_primary?: string | null;
+  timezone?: string | null;
+}): Promise<{ success?: boolean; error?: string }> {
+  const context = await getStaffContext();
+  await requireOrganizationAdmin(context);
+
+  const { error } = await context.supabase
+    .from('organizations')
+    .update({
+      country: data.country,
+      vertical: data.vertical,
+      locale_primary: data.locale_primary,
+      timezone: data.timezone,
+    })
+    .eq('id', context.staff.organization_id);
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'organization_profile_updated',
+    entityType: 'organization',
+    entityId: context.staff.organization_id,
+    summary: 'Updated organization profile (country/vertical/locale/timezone)',
+    metadata: {
+      country: data.country,
+      vertical: data.vertical,
+      locale_primary: data.locale_primary,
+      timezone: data.timezone,
+    },
+  });
+
+  revalidatePath('/admin/settings');
+  return { success: true };
+}
+
+/**
  * Check if a WhatsApp business code is available (not used by another org).
  */
 export async function checkWhatsAppCodeAvailability(code: string): Promise<{ available: boolean }> {

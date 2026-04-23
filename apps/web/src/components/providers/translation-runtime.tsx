@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useI18n } from '@/components/providers/locale-provider';
 import { translate } from '@/lib/i18n/shared';
+import type { AppLocale } from '@/lib/i18n/messages';
 
 function preserveWhitespace(original: string, translated: string) {
   const leading = original.match(/^\s*/)?.[0] ?? '';
@@ -10,7 +11,7 @@ function preserveWhitespace(original: string, translated: string) {
   return `${leading}${translated}${trailing}`;
 }
 
-function translateTextValue(locale: 'en' | 'fr' | 'ar', value: string) {
+function translateTextValue(locale: AppLocale, value: string) {
   const trimmed = value.trim();
   if (!trimmed) return value;
   const translated = translate(locale, trimmed);
@@ -18,7 +19,7 @@ function translateTextValue(locale: 'en' | 'fr' | 'ar', value: string) {
   return preserveWhitespace(value, translated);
 }
 
-function translateNodeTree(root: Node, locale: 'en' | 'fr' | 'ar') {
+function translateNodeTree(root: Node, locale: AppLocale) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let current: Node | null = walker.nextNode();
 

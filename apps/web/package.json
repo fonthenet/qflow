@@ -28,7 +28,7 @@
   "dependencies": {
     "@qflo/shared": "file:../../packages/shared",
     "@qflo/ui": "file:../../packages/ui",
-    "@sentry/nextjs": "^10.48.0",
+    "@sentry/nextjs": "^10.50.0",
     "@supabase/ssr": "^0.6",
     "@supabase/supabase-js": "^2",
     "@upstash/ratelimit": "^2.0.8",
@@ -44,6 +44,7 @@
     "qrcode": "^1.5",
     "react": "^19",
     "react-dom": "^19",
+    "stripe": "^22.0.2",
     "tailwind-merge": "^2",
     "tailwindcss-animate": "^1",
     "web-push": "^3.6.7"

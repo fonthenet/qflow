@@ -1,0 +1,98 @@
+{
+  "common": {
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "save": "Enregistrer",
+    "close": "Fermer",
+    "back": "Retour",
+    "next": "Suivant",
+    "error": "Erreur",
+    "loading": "Chargement…",
+    "retry": "Réessayer",
+    "ok": "OK",
+    "copy": "Copier",
+    "copied": "Copié !",
+    "share": "Partager",
+    "refresh": "Actualiser",
+    "lastUpdated": "Mis à jour {{time}}"
+  },
+  "landing": {
+    "title": "Évitez l'attente.",
+    "subtitle": "Rejoignez des files, prenez des rendez-vous et suivez votre tour — tout depuis votre téléphone.",
+    "scanCta": "Scanner un QR code",
+    "offlineBanner": "Vous êtes hors ligne — affichage des données en cache"
+  },
+  "scan": {
+    "title": "Scanner le QR Code",
+    "subtitle": "Pointez votre caméra sur un QR code Qflo à l'accueil.",
+    "requestingCamera": "Demande d'accès à la caméra…",
+    "cameraNeeded": "Accès caméra requis",
+    "cameraNeededMsg": "Qflo a besoin de la caméra pour scanner les QR codes.",
+    "allowCamera": "Autoriser la caméra",
+    "enterManually": "Saisir le code manuellement",
+    "enterCode": "Saisir un code",
+    "enterCodePlaceholder": "Coller ou saisir un code",
+    "join": "Rejoindre",
+    "invalidQR": "QR code non reconnu",
+    "scanTip": "Restez stable — scan automatique"
+  },
+  "queue": {
+    "yourTicket": "Votre ticket",
+    "position": "Position {{pos}} dans la file",
+    "estimatedWait": "~{{min}} min d'attente",
+    "status_waiting": "En attente",
+    "status_called": "Vous êtes appelé !",
+    "status_serving": "En cours de service",
+    "status_done": "Terminé — merci de votre visite",
+    "status_cancelled": "Annulé",
+    "noTicket": "Aucun ticket actif",
+    "offlineCached": "Ticket en cache — mis à jour {{time}}"
+  },
+  "appointments": {
+    "title": "Mes rendez-vous",
+    "empty": "Aucun rendez-vous à venir",
+    "bookNew": "Prendre un rendez-vous",
+    "upcoming": "À venir",
+    "past": "Passés"
+  },
+  "profile": {
+    "title": "Profil",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "language": "Langue",
+    "theme": "Apparence",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "themeSystem": "Système",
+    "biometric": "Face ID / Empreinte",
+    "biometricEnable": "Activer le déverrouillage biométrique",
+    "notifications": "Notifications",
+    "privacy": "Politique de confidentialité",
+    "terms": "Conditions d'utilisation",
+    "version": "Version {{ver}}"
+  },
+  "auth": {
+    "signInTitle": "Bienvenue sur Qflo",
+    "signInSubtitle": "Connectez-vous pour enregistrer votre historique de réservations.",
+    "emailPlaceholder": "Adresse e-mail",
+    "sendMagicLink": "Envoyer le lien de connexion",
+    "checkEmail": "Vérifiez votre e-mail — nous vous avons envoyé un lien.",
+    "continueAsGuest": "Continuer sans se connecter"
+  },
+  "notifications": {
+    "permissionTitle": "Restez informé",
+    "permissionBody": "Qflo vous avertira quand votre tour approche pour que vous n'ayez pas à attendre en salle.",
+    "allow": "Autoriser les notifications",
+    "skip": "Pas maintenant"
+  },
+  "biometric": {
+    "promptReason": "Confirmez votre identité pour continuer",
+    "notAvailable": "L'authentification biométrique n'est pas disponible sur cet appareil.",
+    "notEnrolled": "Aucune donnée biométrique enregistrée. Configurez Face ID ou l'empreinte dans les réglages."
+  },
+  "error": {
+    "network": "Erreur réseau — vérifiez votre connexion",
+    "generic": "Une erreur est survenue. Veuillez réessayer.",
+    "ticketNotFound": "Ticket introuvable ou expiré."
+  }
+}

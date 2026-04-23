@@ -1,0 +1,69 @@
+{
+  "$schema": "https://raw.githubusercontent.com/expo/eas-cli/main/packages/eas-cli/schema/eas.schema.json",
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "FILL_FROM_EAS_SECRET",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "FILL_FROM_EAS_SECRET",
+        "EXPO_PUBLIC_APP_ENV": "development"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "FILL_FROM_EAS_SECRET",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "FILL_FROM_EAS_SECRET",
+        "EXPO_PUBLIC_APP_ENV": "preview"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium",
+        "credentialsSource": "remote"
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "credentialsSource": "remote"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "FILL_FROM_EAS_SECRET",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "FILL_FROM_EAS_SECRET",
+        "EXPO_PUBLIC_APP_ENV": "production"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "FILL_FROM_EAS_SECRET",
+        "ascAppId": "FILL_FROM_EAS_SECRET",
+        "appleTeamId": "{{APPLE_TEAM_ID}}"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-play-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}

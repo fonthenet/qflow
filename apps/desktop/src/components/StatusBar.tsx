@@ -3,6 +3,8 @@ import type { StaffSession, SyncStatus, UpdateStatus } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { useConfirmDialog } from './ConfirmDialog';
 import { QLogo } from './QLogo';
+import { PendingSignupBanner } from './PendingSignupBanner';
+import { PendingSyncBanner } from './PendingSyncBanner';
 
 /**
  * Humanize a raw role slug (e.g. "desk_operator" → "Desk Operator").
@@ -456,6 +458,10 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
               ⚠ {t('Sync error')}{syncStatus.lastError.ticketNumber ? `: ${syncStatus.lastError.ticketNumber}` : ''}
             </span>
           )}
+          {/* Offline signup queue indicator — shows when a business provisioning is pending */}
+          <PendingSignupBanner locale={locale} />
+          {/* Offline ops queue indicator — shows pending_sync_ops mutations queued during network outage */}
+          <PendingSyncBanner locale={locale} />
         </div>
 
         <div className="status-bar-right">

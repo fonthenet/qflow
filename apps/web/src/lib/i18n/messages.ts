@@ -11,6 +11,9 @@ export const localeHeaderName = 'x-qf-locale';
 
 export const messages: Record<AppLocale, Record<string, string>> = {
   en: {},
+  ja: {},
+  ko: {},
+  vi: {},
   fr: {
     'Solutions': 'Solutions',
     'Pricing': 'Tarifs',
@@ -2427,6 +2430,4 @@ Object.assign(messages.ar, {
 });
 
 // ── Japanese (ja), Korean (ko), Vietnamese (vi) — Customer-facing notification strings ──
-messages.ja = {};
-messages.ko = {};
-messages.vi = {};
+// These locales are initialized in the messages literal above; add entries via Object.assign as needed.

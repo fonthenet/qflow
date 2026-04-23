@@ -1,3 +1,10 @@
+// Client-side Sentry initialisation.
+// Next.js loads this file lazily after the page is interactive, so it does NOT
+// contribute to the critical First Load JS chunk — unlike sentry.client.config.ts
+// which is injected by withSentryConfig into every page bundle.
+//
+// See: https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client
+
 import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
@@ -10,9 +17,7 @@ Sentry.init({
   replaysSessionSampleRate: 0.01,
   replaysOnErrorSampleRate: 1.0,
 
-  integrations: [
-    Sentry.replayIntegration(),
-  ],
+  integrations: [Sentry.replayIntegration()],
 
   // Don't send errors in development
   enabled: process.env.NODE_ENV === 'production',
@@ -25,3 +30,6 @@ Sentry.init({
     'Load failed',
   ],
 });
+
+// Re-export onRouterTransitionStart so Next.js can wire up navigation tracing.
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
