@@ -1974,13 +1974,14 @@ export async function handleInboundMessage(
   {
     const greet = detectGreeting(cleaned);
     if (greet) {
-      // Locale priority: explicit Arabic greeting → ar (the customer just
-      // typed Arabic, respect it). Otherwise prefer saved session locale
-      // so a returning Arabic-speaking customer who types "Hi" out of
-      // habit still gets Arabic. Fallback: greeting-detected locale.
+      // Locale priority: a non-English greeting is an explicit language
+      // signal — the customer just typed in that language, so respect it
+      // (French "slt", Arabic "سلام"/"salem"). English is the default
+      // fallback token ("hi/hello") and carries no signal, so for English
+      // greetings prefer the saved session locale if we have one.
       const savedLocale = await getLastSessionLocale(identifier, channel, bsuid);
       const greetLocale: Locale =
-        greet.locale === 'ar' ? 'ar' : (savedLocale ?? greet.locale);
+        greet.locale === 'en' ? (savedLocale ?? 'en') : greet.locale;
 
       // If a business code was attached, resolve it so we can show the
       // business name on the empty-state welcome.

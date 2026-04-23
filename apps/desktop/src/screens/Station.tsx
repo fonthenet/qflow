@@ -5,6 +5,7 @@ import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale 
 import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
+import { QRHubModal } from '../components/QRHubModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { TableSuggestionBar } from '../components/TableSuggestionBar';
 import { FloorMap } from '../components/FloorMap';
@@ -1763,6 +1764,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
+  const [showQRHubModal, setShowQRHubModal] = useState(false);
   const [showMenuEditor, setShowMenuEditor] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
@@ -3757,6 +3759,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 + {t('New Ticket')} <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>F6</span>
               </button>
 
+              {/* QR Codes Hub — every public entry point for this business */}
+              <button
+                onClick={() => setShowQRHubModal(true)}
+                title={t('QR Codes')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '5px 12px', borderRadius: 20,
+                  border: '1.5px solid var(--border, #334155)',
+                  background: 'transparent',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: 'var(--text2)',
+                  transition: 'all 0.2s ease',
+                }}
+                aria-label={t('QR Codes')}
+              >
+                📱 {t('QR Codes')}
+              </button>
+
               {/* View-switcher capsule: Queue / Calendar / Customers */}
               <div style={{
                 display: 'flex', gap: 0, border: '1.5px solid var(--border, #334155)', borderRadius: 20, overflow: 'hidden',
@@ -4529,6 +4549,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             callerRole={session.role}
             initialSection={settingsInitialSection}
             onClose={() => { setShowSettingsModal(false); setSettingsInitialSection(undefined); setSettingsVersion(v => v + 1); }}
+          />
+        )}
+
+        {/* QR Codes Hub — all public entry points (WhatsApp / Messenger / web) */}
+        {showQRHubModal && (
+          <QRHubModal
+            locale={locale}
+            officeId={session.office_id}
+            officeName={session.office_name}
+            orgSettings={orgSettings}
+            whatsappPhone={whatsappPhone}
+            messengerPageId={messengerPageId}
+            onClose={() => setShowQRHubModal(false)}
           />
         )}
 
