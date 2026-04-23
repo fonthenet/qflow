@@ -84,9 +84,19 @@ export function QRHubModal({
 
     const list: QRCard[] = [];
 
+    // Locale-aware commands — the customer will send these via WhatsApp,
+    // so they need to be readable in the same language the Station is
+    // currently showing (otherwise we'd ship an Arabic card with an
+    // English command inside, which scans fine but reads wrong).
+    const cmds = {
+      greet: locale === 'ar' ? 'سلام' : locale === 'fr' ? 'Salut' : 'Hi',
+      book: locale === 'ar' ? 'موعد' : locale === 'fr' ? 'RDV' : 'BOOK',
+      myBookings: locale === 'ar' ? 'مواعيدي' : locale === 'fr' ? 'MES RDV' : 'MY BOOKINGS',
+    };
+
     // ── WhatsApp channel ────────────────────────────────────────
     if (waNum) {
-      const greet = waCode ? `Hi ${waCode}` : 'Hi';
+      const greet = waCode ? `${cmds.greet} ${waCode}` : cmds.greet;
       list.push({
         key: 'wa_activate',
         icon: '💬',
@@ -101,7 +111,7 @@ export function QRHubModal({
         accent: '#25d366',
         title: t('Book via WhatsApp'),
         subtitle: t('Starts the guided booking chat.'),
-        deeplink: buildWa(waCode ? `BOOK ${waCode}` : 'BOOK'),
+        deeplink: buildWa(waCode ? `${cmds.book} ${waCode}` : cmds.book),
       });
       list.push({
         key: 'wa_mybookings',
@@ -109,7 +119,7 @@ export function QRHubModal({
         accent: '#25d366',
         title: t('My Bookings (WhatsApp)'),
         subtitle: t('Customer sees their own upcoming reservations.'),
-        deeplink: buildWa(waCode ? `MY BOOKINGS ${waCode}` : 'MY BOOKINGS'),
+        deeplink: buildWa(waCode ? `${cmds.myBookings} ${waCode}` : cmds.myBookings),
       });
       if (arCode) {
         list.push({
@@ -135,6 +145,8 @@ export function QRHubModal({
     }
 
     // ── Messenger channel ──────────────────────────────────────
+    // Messenger webhook parses `JOIN_<CODE>` as the start-conversation
+    // ref. Matches apps/web/src/app/(public)/scan/[code]/page.tsx.
     if (messengerPageId) {
       list.push({
         key: 'msg_activate',
@@ -142,7 +154,7 @@ export function QRHubModal({
         accent: '#0084ff',
         title: t('Messenger (start chat)'),
         subtitle: t('Opens Messenger with a BOOK command pre-filled.'),
-        deeplink: buildMsg(waCode ? `BOOK_${waCode}` : 'BOOK'),
+        deeplink: buildMsg(waCode ? `JOIN_${waCode}` : 'JOIN'),
       });
     } else {
       list.push({
