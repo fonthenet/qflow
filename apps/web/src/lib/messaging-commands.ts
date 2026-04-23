@@ -121,7 +121,7 @@ interface OrgContext {
   settings: Record<string, any>;
 }
 
-export type Locale = 'fr' | 'ar' | 'en';
+export type Locale = 'fr' | 'ar' | 'en' | 'ja' | 'ko' | 'vi';
 
 // ── i18n translations ────────────────────────────────────────────────
 

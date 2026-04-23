@@ -12,6 +12,9 @@ const translationCache: Record<AppLocale, Map<string, string>> = {
   en: new Map(),
   fr: new Map(),
   ar: new Map(),
+  ja: new Map(),
+  ko: new Map(),
+  vi: new Map(),
 };
 
 const fragmentEntries = Object.fromEntries(
@@ -72,6 +75,9 @@ const dynamicTranslationRules: Record<
       replace: (_full, value) => `تمت إعادة النداء ${value} مرات`,
     },
   ],
+  ja: [],
+  ko: [],
+  vi: [],
 };
 
 function decodeHtmlEntities(value: string) {
@@ -135,8 +141,25 @@ export function resolvePreferredLocale(headerValue: string | null | undefined): 
 export function resolveRegionalDefaultLocale(countryCode: string | null | undefined): AppLocale | null {
   const normalized = countryCode?.trim().toUpperCase();
   if (!normalized) return null;
-  if (normalized === 'DZ') return 'fr';
-  return null;
+  const countryLocaleMap: Record<string, AppLocale> = {
+    DZ: 'fr',
+    MA: 'fr',
+    TN: 'fr',
+    SA: 'ar',
+    AE: 'ar',
+    EG: 'ar',
+    IQ: 'ar',
+    JO: 'ar',
+    KW: 'ar',
+    LB: 'ar',
+    QA: 'ar',
+    OM: 'ar',
+    BH: 'ar',
+    JP: 'ja',
+    KR: 'ko',
+    VN: 'vi',
+  };
+  return countryLocaleMap[normalized] ?? null;
 }
 
 export function normalizeCountryCode(countryCode: CountryCode) {
@@ -149,14 +172,16 @@ export function isAlgeriaCountryCode(countryCode: CountryCode) {
 }
 
 export function getFormattingLocale(locale: AppLocale, countryCode?: CountryCode) {
-  if (isAlgeriaCountryCode(countryCode)) {
-    if (locale === 'fr') return 'fr-DZ';
-    if (locale === 'ar') return 'ar-DZ';
-    return 'en-DZ';
+  const code = normalizeCountryCode(countryCode);
+  if (code) {
+    return `${locale}-${code}`;
   }
 
   if (locale === 'fr') return 'fr-FR';
   if (locale === 'ar') return 'ar';
+  if (locale === 'ja') return 'ja-JP';
+  if (locale === 'ko') return 'ko-KR';
+  if (locale === 'vi') return 'vi-VN';
   return 'en-US';
 }
 
@@ -165,7 +190,12 @@ function withRegionalDateTimeOptions(
   countryCode: CountryCode,
   options?: Intl.DateTimeFormatOptions
 ) {
-  if (!isAlgeriaCountryCode(countryCode)) {
+  const code = normalizeCountryCode(countryCode);
+  const isMena = Boolean(
+    code && ['DZ', 'MA', 'TN', 'EG', 'SA', 'AE', 'IQ', 'JO', 'KW', 'LB', 'QA', 'OM', 'BH'].includes(code)
+  );
+  const isEastAsia = locale === 'ja' || locale === 'ko' || locale === 'vi';
+  if (!isMena && !isEastAsia) {
     return options ?? {};
   }
 

@@ -1,6 +1,6 @@
 import { generatedMessages } from './messages.generated';
 
-export const supportedLocales = ['en', 'fr', 'ar'] as const;
+export const supportedLocales = ['en', 'fr', 'ar', 'ja', 'ko', 'vi'] as const;
 
 export type AppLocale = (typeof supportedLocales)[number];
 
@@ -2387,4 +2387,46 @@ Object.assign(messages.ar, {
   '{count} {label} booked': 'تم حجز {count} {label}',
   'Your recurring {booking} series has been created.': 'تم إنشاء سلسلة {booking} المتكررة الخاصة بك.',
   'Step {step} of {total}': 'الخطوة {step} من {total}',
+    // WhatsApp integration settings
+    'WhatsApp Integration': 'تكامل واتساب',
+    'Connect your Meta WhatsApp Business Account so Qflo can send queue notifications and accept inbound messages on your behalf.':
+      'اربط حساب Meta WhatsApp Business الخاص بك حتى يتمكن Qflo من إرسال إشعارات الطابور واستقبال الرسائل الواردة نيابةً عنك.',
+    'Phone Number ID': 'معرّف رقم الهاتف',
+    'From Meta App Dashboard → WhatsApp → API Setup': 'من لوحة تحكم Meta → واتساب → إعداد API',
+    'Access Token': 'رمز الوصول',
+    'Token saved — re-enter to update': 'تم حفظ الرمز — أعد إدخاله للتعديل',
+    'Enter new token to replace existing': 'أدخل رمزًا جديدًا لاستبدال الحالي',
+    'Permanent or system user token from Meta': 'رمز دائم أو رمز مستخدم النظام من Meta',
+    'Hide token': 'إخفاء الرمز',
+    'Show token': 'إظهار الرمز',
+    'Encrypted with AES-256-GCM before storage. Never logged.': 'مشفّر بـ AES-256-GCM قبل التخزين. لا يُسجَّل أبدًا.',
+    'WhatsApp Business Account ID': 'معرّف حساب واتساب للأعمال',
+    'From Meta Business Manager → WhatsApp Accounts': 'من Meta Business Manager → حسابات واتساب',
+    'Webhook Verify Token': 'رمز التحقق من الـ Webhook',
+    'Random secret — paste this into Meta App Dashboard': 'سرّ عشوائي — الصقه في لوحة تحكم Meta',
+    'Generate': 'توليد',
+    'Used by Meta to verify your webhook endpoint.': 'يستخدمه Meta للتحقق من نقطة نهاية الـ Webhook الخاصة بك.',
+    'Your Webhook URL': 'رابط الـ Webhook الخاص بك',
+    'Copy webhook URL': 'نسخ رابط الـ Webhook',
+    'Copied!': 'تم النسخ!',
+    'Copy': 'نسخ',
+    'Paste this URL in Meta App Dashboard → WhatsApp → Configuration → Webhook.':
+      'الصق هذا الرابط في لوحة تحكم Meta → واتساب → الإعدادات → Webhook.',
+    'Save Credentials': 'حفظ البيانات',
+    'Test Connection': 'اختبار الاتصال',
+    'Save credentials first before testing': 'احفظ البيانات أولاً قبل الاختبار',
+    'WhatsApp credentials saved successfully.': 'تم حفظ بيانات واتساب بنجاح.',
+    'Access token is required.': 'رمز الوصول مطلوب.',
+    'Re-enter the access token to save changes.': 'أعد إدخال رمز الوصول لحفظ التغييرات.',
+    'An error occurred. Please try again.': 'حدث خطأ. يرجى المحاولة مرة أخرى.',
+    'Testing…': 'جارٍ الاختبار…',
+    'Saving…': 'جارٍ الحفظ…',
+    'Connection successful': 'تم الاتصال بنجاح',
+    'Connection failed': 'فشل الاتصال',
+    'Network error — check your connection.': 'خطأ في الشبكة — تحقق من اتصالك.',
 });
+
+// ── Japanese (ja), Korean (ko), Vietnamese (vi) — Customer-facing notification strings ──
+messages.ja = {};
+messages.ko = {};
+messages.vi = {};
