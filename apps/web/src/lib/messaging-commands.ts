@@ -1567,6 +1567,29 @@ export async function handleInboundMessage(
           return;
         }
         answers[fieldKey] = String(ageNum);
+      } else if (fieldKey === 'party_size') {
+        // Party size: numeric, 1-50. Restaurants need this; other verticals
+        // (clinics for family, banks for group appointments) can opt in too.
+        const size = parseInt(cleaned, 10);
+        if (isNaN(size) || size < 1 || size > 50) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        }
+        answers[fieldKey] = String(size);
+      } else if (fieldKey === 'email') {
+        // Email: RFC-5322-ish regex + length guard. Keep permissive — the
+        // real validation happens server-side when email OTP is used; here
+        // we just catch obvious typos so the bot doesn't silently store
+        // garbage like "yes" or "idk".
+        const trimmed = cleaned.trim().toLowerCase();
+        const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) && trimmed.length <= 254;
+        if (!emailOk) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        }
+        answers[fieldKey] = trimmed;
       } else if (fieldKey === 'wilaya') {
         // Wilaya: use resolveWilaya + formatWilaya
         const resolved = resolveWilaya(messageBody);
@@ -5079,7 +5102,7 @@ async function getOrgName(orgId: string): Promise<string> {
 }
 
 /** Build the dynamic intake fields section for booking summary */
-const FIELD_EMOJI: Record<string, string> = { name: '👤', wilaya: '📍', reason: '📝', phone: '📞', email: '📧', age: '🎂' };
+const FIELD_EMOJI: Record<string, string> = { name: '👤', wilaya: '📍', reason: '📝', phone: '📞', email: '📧', age: '🎂', party_size: '👥' };
 function buildBookingFieldsSummary(
   answers: Record<string, string>,
   orgSettings: Record<string, any>,

@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PublicJoinProfile, TemplateVocabulary } from '@qflo/shared';
+import {
+  getEnabledIntakeFields,
+  getFieldLabel,
+  getFieldPlaceholder,
+  type IntakeField,
+  type PresetKey,
+  type PublicJoinProfile,
+  type TemplateVocabulary,
+} from '@qflo/shared';
+import { WILAYAS, formatWilaya } from '@/lib/wilayas';
 import { createClient } from '@/lib/supabase/client';
 import { useI18n } from '@/components/providers/locale-provider';
 import {
@@ -71,6 +80,10 @@ export function RemoteJoinForm({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  // Dynamic intake values (age, wilaya, reason, party_size, custom fields).
+  // Keyed by the intake field key; values stored as strings and merged into
+  // customer_data on submit.
+  const [intakeData, setIntakeData] = useState<Record<string, string>>({});
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentWait, setCurrentWait] = useState<number | null>(estimatedWait);
@@ -98,6 +111,28 @@ export function RemoteJoinForm({
   const emailOtpResendCooldownSeconds = Number(
     organization?.settings?.email_otp_resend_cooldown_seconds ?? 60
   );
+
+  // Intake fields configured by the admin for same-day queue joins. The form
+  // already hardcodes name/phone/email; everything else (age, wilaya, reason,
+  // party_size, custom fields) is rendered dynamically below so whatever the
+  // admin toggled on in Settings actually shows up here.
+  const orgSettings: Record<string, any> = (organization?.settings as Record<string, any> | undefined) ?? {};
+  const intakeFields: IntakeField[] = getEnabledIntakeFields(orgSettings, undefined, 'sameday');
+  const intakeLocale: 'en' | 'fr' | 'ar' = 'en';
+  // Keys rendered by the hardcoded blocks — exclude from the dynamic extras.
+  const HARDCODED_INTAKE_KEYS = new Set(['name', 'phone', 'email']);
+  const emailIntakeField = intakeFields.find((f) => f.key === 'email');
+  // Show email block when intake has it on OR email OTP is required (legacy
+  // behaviour). Admins who turn email OFF in intake AND have OTP disabled
+  // no longer see the block — matches what they configured.
+  const emailIntakeVisible = !!emailIntakeField || emailOtpRequired;
+  const emailIntakeRequired = Boolean(emailIntakeField?.required) || emailOtpRequired;
+  const phoneIntakeField = intakeFields.find((f) => f.key === 'phone');
+  const phoneIntakeVisible = !!phoneIntakeField || intakeFields.length === 0; // legacy fallback when no config
+  const phoneIntakeRequired = Boolean(phoneIntakeField?.required);
+  const nameIntakeField = intakeFields.find((f) => f.key === 'name');
+  const nameIntakeVisible = !!nameIntakeField || intakeFields.length === 0;
+  const extraIntakeFields = intakeFields.filter((f) => !HARDCODED_INTAKE_KEYS.has(f.key));
 
   const availableOffices = officeLocked
     ? offices.filter((item: any) => item.id === selectedOfficeId)
@@ -193,6 +228,14 @@ export function RemoteJoinForm({
       return;
     }
 
+    // Validate required extras (e.g. admin marked reason/party_size required)
+    for (const field of extraIntakeFields) {
+      if (field.required && !(intakeData[field.key] ?? '').trim()) {
+        setError(`Please fill in ${getFieldLabel(field, intakeLocale)}.`);
+        return;
+      }
+    }
+
     setJoining(true);
     setError(null);
 
@@ -202,6 +245,13 @@ export function RemoteJoinForm({
       if (customerName.trim()) customerData.name = customerName.trim();
       if (customerPhone.trim()) customerData.phone = customerPhone.trim();
       if (customerEmail.trim()) customerData.email = customerEmail.trim().toLowerCase();
+      // Merge dynamic intake values (age, wilaya, reason, party_size, custom).
+      // Values flow into ticket.customer_data so downstream consumers (desk
+      // panel, restaurant table-suggestion bar, receipts) see them.
+      for (const field of extraIntakeFields) {
+        const val = (intakeData[field.key] ?? '').trim();
+        if (val) customerData[field.key] = val;
+      }
 
       const result = await createPublicTicket({
         officeId: officeToUse,
@@ -603,69 +653,170 @@ export function RemoteJoinForm({
         </p>
 
         <form onSubmit={handleJoinQueue} className="space-y-5">
-          <div>
-            <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">
-              {namedPartyLabel}{' '}
-              <span className="text-muted-foreground font-normal">
-                {resolvedPublicJoin.requireCustomerName ? t('(required)') : t('(optional)')}
-              </span>
-            </label>
-            <input
-              id="name"
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder={t('Enter {label}', { label: namedPartyLabel.toLowerCase() })}
-              autoComplete="name"
-              required={resolvedPublicJoin.requireCustomerName}
-              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+          {nameIntakeVisible && (
+            <div>
+              <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">
+                {namedPartyLabel}{' '}
+                <span className="text-muted-foreground font-normal">
+                  {resolvedPublicJoin.requireCustomerName ? t('(required)') : t('(optional)')}
+                </span>
+              </label>
+              <input
+                id="name"
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder={t('Enter {label}', { label: namedPartyLabel.toLowerCase() })}
+                autoComplete="name"
+                required={resolvedPublicJoin.requireCustomerName}
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          )}
 
-          <div>
-            <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-foreground">
-              {t('Phone')} <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
-            </label>
-            <input
-              id="phone"
-              type="tel"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              placeholder={t('Enter your phone number')}
-              autoComplete="tel"
-              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-            {smsBackupEnabled && (
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {t('Add a mobile number if you want guaranteed text backup alerts for urgent queue updates.')}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">
-              {t('Email')}{' '}
-              {emailOtpRequired ? (
-                <span className="text-destructive">*</span>
-              ) : (
-                <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
+          {phoneIntakeVisible && (
+            <div>
+              <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-foreground">
+                {t('Phone')}{' '}
+                {phoneIntakeRequired ? (
+                  <span className="text-destructive">*</span>
+                ) : (
+                  <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
+                )}
+              </label>
+              <input
+                id="phone"
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder={t('Enter your phone number')}
+                autoComplete="tel"
+                required={phoneIntakeRequired}
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+              {smsBackupEnabled && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {t('Add a mobile number if you want guaranteed text backup alerts for urgent queue updates.')}
+                </p>
               )}
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={customerEmail}
-              onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder={t('Enter your email address')}
-              autoComplete="email"
-              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-            {emailOtpRequired ? (
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {t('This business requires email verification before customers can join the queue.')}
-              </p>
-            ) : null}
-          </div>
+            </div>
+          )}
+
+          {emailIntakeVisible && (
+            <div>
+              <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">
+                {t('Email')}{' '}
+                {emailIntakeRequired ? (
+                  <span className="text-destructive">*</span>
+                ) : (
+                  <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
+                )}
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder={t('Enter your email address')}
+                autoComplete="email"
+                required={emailIntakeRequired}
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+              {emailOtpRequired ? (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {t('This business requires email verification before customers can join the queue.')}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {/* Dynamic extras configured via Business Settings → Intake Fields
+              (age, wilaya, reason, party_size, custom fields). Keeps the form
+              aligned with whatever the admin toggled on. */}
+          {extraIntakeFields.map((field) => {
+            const label = getFieldLabel(field, intakeLocale);
+            const placeholder = getFieldPlaceholder(field, intakeLocale);
+            const value = intakeData[field.key] ?? '';
+            const presetKey = field.type === 'preset' ? (field.key as PresetKey) : null;
+            const onChange = (v: string) =>
+              setIntakeData((prev) => ({ ...prev, [field.key]: v }));
+            const req = field.required;
+            const labelNode = (
+              <label className="mb-1.5 block text-sm font-medium text-foreground">
+                {t(label)}{' '}
+                {req ? (
+                  <span className="text-destructive">*</span>
+                ) : (
+                  <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
+                )}
+              </label>
+            );
+            const baseInputClass =
+              'w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
+            if (presetKey === 'wilaya') {
+              return (
+                <div key={field.key}>
+                  {labelNode}
+                  <select
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className={baseInputClass}
+                    required={req}
+                  >
+                    <option value="">{t(placeholder) || t('Select wilaya')}</option>
+                    {WILAYAS.map((w) => (
+                      <option key={w.code} value={formatWilaya(w, 'fr')}>
+                        {formatWilaya(w, 'fr')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            if (presetKey === 'age' || presetKey === 'party_size') {
+              return (
+                <div key={field.key}>
+                  {labelNode}
+                  <input
+                    type="number"
+                    min={presetKey === 'party_size' ? '1' : '0'}
+                    max={presetKey === 'party_size' ? '50' : '150'}
+                    inputMode="numeric"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={t(placeholder)}
+                    required={req}
+                    className={baseInputClass}
+                  />
+                </div>
+              );
+            }
+            const isReason = presetKey === 'reason';
+            return (
+              <div key={field.key}>
+                {labelNode}
+                {isReason ? (
+                  <textarea
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={t(placeholder)}
+                    required={req}
+                    rows={3}
+                    className={baseInputClass}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={t(placeholder)}
+                    required={req}
+                    className={baseInputClass}
+                  />
+                )}
+              </div>
+            );
+          })}
 
           {emailOtpRequired ? (
             <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-4">

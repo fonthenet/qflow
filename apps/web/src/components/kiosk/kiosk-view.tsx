@@ -630,7 +630,7 @@ export function KioskView({
       );
     }
 
-    if (presetKey === 'age') {
+    if (presetKey === 'age' || presetKey === 'party_size') {
       return (
         <div key={field.key} className="text-center">
           <label className="mb-2 block text-[13px] font-bold text-slate-950">
@@ -638,8 +638,9 @@ export function KioskView({
           </label>
           <input
             type="number"
-            min="0"
-            max="150"
+            min={presetKey === 'party_size' ? '1' : '0'}
+            max={presetKey === 'party_size' ? '50' : '150'}
+            inputMode="numeric"
             value={value}
             onChange={(event) => {
               setIntakeValue(field, event.target.value);
@@ -654,20 +655,33 @@ export function KioskView({
       );
     }
 
+    // Email gets a dedicated input with email keyboard and inline validation.
+    // On kiosks this mostly affects mobile-kiosk tablets where the on-screen
+    // keyboard respects inputMode="email".
+    const inputType = presetKey === 'phone' ? 'tel' : presetKey === 'email' ? 'email' : 'text';
+    const inputMode: 'tel' | 'email' | 'text' | undefined =
+      presetKey === 'phone' ? 'tel' : presetKey === 'email' ? 'email' : undefined;
+    const autoCompleteAttr =
+      presetKey === 'name' ? 'name'
+      : presetKey === 'phone' ? 'tel'
+      : presetKey === 'email' ? 'email'
+      : 'off';
+
     return (
       <div key={field.key} className="text-center">
         <label className="mb-2 block text-[13px] font-bold text-slate-950">
           {t(label)} {isRequired ? <span className="font-normal text-rose-500">*</span> : <span className="font-normal text-slate-400">{t('(optional)')}</span>}
         </label>
         <input
-          type={presetKey === 'phone' ? 'tel' : 'text'}
+          type={inputType}
+          inputMode={inputMode}
           value={value}
           onChange={(event) => {
             setIntakeValue(field, event.target.value);
             if (customerInfoError) setCustomerInfoError(null);
           }}
           placeholder={presetKey === 'phone' && whatsappEnabled ? t('For WhatsApp alerts') : t(placeholder)}
-          autoComplete={presetKey === 'name' ? 'name' : presetKey === 'phone' ? 'tel' : 'off'}
+          autoComplete={autoCompleteAttr}
           className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
           style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
         />

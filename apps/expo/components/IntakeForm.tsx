@@ -71,10 +71,13 @@ export function IntakeForm({
         const label = getFieldLabel(field, locale);
         const placeholder = getFieldPlaceholder(field, locale) || label;
         const isPhone = field.key === 'phone';
+        const isEmail = field.key === 'email';
         const isAge = field.key === 'age';
+        const isPartySize = field.key === 'party_size';
         const isName = field.key === 'name';
         const isWilaya = field.key === 'wilaya';
         const isMultiline = field.key === 'reason' || field.key === 'notes';
+        const isNumeric = isAge || isPartySize;
 
         return (
           <View key={field.key}>
@@ -107,10 +110,16 @@ export function IntakeForm({
                 placeholder={placeholder}
                 placeholderTextColor={colors.textMuted}
                 keyboardType={
-                  isPhone ? 'phone-pad' : isAge ? 'number-pad' : 'default'
+                  isPhone ? 'phone-pad'
+                  : isEmail ? 'email-address'
+                  : isNumeric ? 'number-pad'
+                  : 'default'
                 }
                 autoCapitalize={
-                  isName ? 'words' : isMultiline ? 'sentences' : 'none'
+                  isName ? 'words'
+                  : isEmail ? 'none'
+                  : isMultiline ? 'sentences'
+                  : 'none'
                 }
                 autoCorrect={false}
                 multiline={isMultiline}
@@ -124,7 +133,9 @@ export function IntakeForm({
                 maxLength={
                   isName ? 100 :
                   isPhone ? 20 :
+                  isEmail ? 254 :
                   isAge ? 3 :
+                  isPartySize ? 2 :
                   isMultiline ? 200 : 200
                 }
               />

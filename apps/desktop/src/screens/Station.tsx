@@ -907,18 +907,33 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               </div>
             );
 
-            if (field.key === 'age') return (
-              <div key="fut-age">
+            if (field.key === 'age' || field.key === 'party_size') return (
+              <div key={`fut-${field.key}`}>
                 <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="number"
                   min={1}
-                  max={150}
+                  max={field.key === 'party_size' ? 50 : 150}
                   value={val}
-                  onChange={(e) => setField('age', e.target.value)}
+                  onChange={(e) => setField(field.key, e.target.value)}
                   onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
                   placeholder={fLabel}
                   style={inputStyle}
+                />
+              </div>
+            );
+
+            if (field.key === 'email') return (
+              <div key="fut-email">
+                <label style={labelStyle}>{fLabelReq}</label>
+                <input
+                  type="email"
+                  value={val}
+                  onChange={(e) => setField('email', e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                  placeholder={fLabel}
+                  style={inputStyle}
+                  autoComplete="off"
                 />
               </div>
             );
@@ -1189,19 +1204,35 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               </div>
             );
 
-            // Age field — numeric input
-            if (field.key === 'age') return (
-              <div key="age">
+            // Age / Party size — numeric input with appropriate range.
+            if (field.key === 'age' || field.key === 'party_size') return (
+              <div key={field.key}>
                 <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="number"
                   min={1}
-                  max={150}
+                  max={field.key === 'party_size' ? 50 : 150}
                   value={val}
-                  onChange={(e) => setField('age', e.target.value)}
+                  onChange={(e) => setField(field.key, e.target.value)}
                   onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
                   placeholder={fLabel}
                   style={inputStyle}
+                />
+              </div>
+            );
+
+            // Email — email input with validation hint.
+            if (field.key === 'email') return (
+              <div key="email">
+                <label style={labelStyle}>{fLabelReq}</label>
+                <input
+                  type="email"
+                  value={val}
+                  onChange={(e) => setField('email', e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                  placeholder={fLabel}
+                  style={inputStyle}
+                  autoComplete="off"
                 />
               </div>
             );

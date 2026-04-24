@@ -389,10 +389,13 @@ export function BookingForm({
       return;
     }
 
-    // Build extra notes from dynamic intake fields (age, reason, custom)
+    // Build extra notes from dynamic intake fields (age, reason, custom).
+    // Fields with dedicated columns (name/phone/email/wilaya/party_size) are
+    // sent separately and skipped here to avoid duplicating in notes.
+    const mappedKeys = new Set(['name', 'phone', 'email', 'wilaya', 'party_size']);
     const extraParts: string[] = [];
     for (const field of intakeFields) {
-      if (['name', 'phone', 'email'].includes(field.key)) continue; // mapped to dedicated columns
+      if (mappedKeys.has(field.key)) continue;
       const val = (intakeData[field.key] ?? '').trim();
       if (val) {
         const label = getFieldLabel(field, intakeLocale);
@@ -400,6 +403,18 @@ export function BookingForm({
       }
     }
     const notesFromIntake = extraParts.length > 0 ? extraParts.join(' | ') : undefined;
+
+    // Party size resolution: restaurants already collect it on the date step
+    // via the +/- widget (drives slot computation). For non-reservation orgs
+    // that enabled the preset (e.g. clinic asking family size), read from
+    // intakeData. Either source winds up in the appointment's `party_size`
+    // column so downstream (table suggestions, receipts) sees one value.
+    const intakePartySize = parseInt((intakeData['party_size'] ?? '').trim(), 10);
+    const resolvedPartySize = isReservationOrg
+      ? partySize
+      : Number.isFinite(intakePartySize) && intakePartySize > 0
+        ? intakePartySize
+        : undefined;
 
     const baseData = {
       officeId: office.id,
@@ -413,7 +428,7 @@ export function BookingForm({
       wilaya: (intakeData['wilaya'] ?? '').trim() || undefined,
       notes: notesFromIntake,
       ...(selectedStaffId ? { staffId: selectedStaffId } : {}),
-      ...(isReservationOrg ? { partySize } : {}),
+      ...(resolvedPartySize !== undefined ? { partySize: resolvedPartySize } : {}),
     };
 
     if (isRecurring) {
@@ -1110,8 +1125,14 @@ export function BookingForm({
             </div>
 
             <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
-              {/* Dynamic intake fields */}
-              {intakeFields.map((field) => {
+              {/* Dynamic intake fields.
+                  Restaurants collect party size on the date step via the +/-
+                  widget (used to compute slot availability), so we hide the
+                  intake field here to avoid asking twice — the value flows
+                  through to the appointment via the dedicated partySize
+                  column. Non-reservation orgs that enabled the party_size
+                  preset (e.g. a clinic asking family size) still see it. */}
+              {intakeFields.filter((field) => !(field.key === 'party_size' && isReservationOrg)).map((field) => {
                 const label = getFieldLabel(field, intakeLocale);
                 const placeholder = getFieldPlaceholder(field, intakeLocale);
                 const value = getIntakeValue(field);
@@ -1174,7 +1195,7 @@ export function BookingForm({
                   );
                 }
 
-                if (presetKey === 'age') {
+                if (presetKey === 'age' || presetKey === 'party_size') {
                   return (
                     <div key={field.key}>
                       <label className="mb-1.5 block text-sm font-medium text-foreground">
@@ -1187,8 +1208,9 @@ export function BookingForm({
                       </label>
                       <input
                         type="number"
-                        min="0"
-                        max="150"
+                        min={presetKey === 'party_size' ? '1' : '0'}
+                        max={presetKey === 'party_size' ? '50' : '150'}
+                        inputMode="numeric"
                         value={value}
                         onChange={(e) => setIntakeValue(field, e.target.value)}
                         placeholder={t(placeholder)}
