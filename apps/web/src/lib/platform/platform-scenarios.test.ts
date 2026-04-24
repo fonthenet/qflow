@@ -23,9 +23,7 @@ const VERTICAL_SCENARIOS = [
       numberingFormat: 'department_sequence',
       remoteJoin: 'enabled',
       privacySafeDisplay: false,
-      // public-service overlay supplies its own rolePolicy with empty roles;
-      // admins fall through to the default `/desk` entry.
-      requiredNav: '/desk',
+      requiredNav: '/admin/overview',
     },
   },
   {

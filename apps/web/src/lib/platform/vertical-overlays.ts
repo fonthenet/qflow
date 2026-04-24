@@ -176,9 +176,6 @@ export function getPublicServiceOverlay(): DeepPartial<IndustryTemplate> {
         queueLabel: 'Queue',
       },
     },
-    rolePolicy: {
-      roles: [],
-    },
     starterPriorities: [
       { name: 'Personne âgée', icon: '🧓', color: '#f97316', weight: 20 },
       { name: 'Accessible', icon: '♿', color: '#0ea5e9', weight: 25 },
@@ -374,7 +371,7 @@ export function getClinicOverlay(): DeepPartial<IndustryTemplate> {
     dashboardMode: 'light_service',
     defaultNavigation: [
       '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/services',
-      '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/calendar',
+      '/admin/staff', '/admin/analytics', '/admin/customers',
       '/admin/bookings', '/admin/settings', '/desk',
     ],
     enabledModules: ['appointments', 'virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
@@ -477,7 +474,7 @@ export function getRestaurantOverlay(): DeepPartial<IndustryTemplate> {
     dashboardMode: 'light_service',
     defaultNavigation: [
       '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/services',
-      '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/calendar',
+      '/admin/staff', '/admin/analytics', '/admin/customers',
       '/admin/bookings', '/admin/settings', '/desk',
     ],
     enabledModules: ['appointments', 'virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
@@ -579,7 +576,7 @@ export function getBarbershopOverlay(): DeepPartial<IndustryTemplate> {
     dashboardMode: 'light_service',
     defaultNavigation: [
       '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/services',
-      '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/calendar',
+      '/admin/staff', '/admin/analytics', '/admin/customers',
       '/admin/bookings', '/admin/settings', '/desk',
     ],
     enabledModules: ['virtual_join', 'customer_history', 'feedback', 'staff_assignment'],

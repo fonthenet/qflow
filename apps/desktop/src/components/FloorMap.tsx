@@ -143,6 +143,12 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
         console.error('[FloorMap] tickets load failed', wait.error);
       }
       const tableRows = (tr.data ?? []) as RestaurantTable[];
+      // Natural sort so T2 comes before T10 (server-side .order('code') is
+      // lexicographic — "T1, T10, T11, T2, T3..." — which misreads as random
+      // on the floor map). Intl.Collator with numeric:true handles T1/T10
+      // correctly and also works for mixed zones like "A1, A2, B1, B10".
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      tableRows.sort((a, b) => collator.compare(a.code ?? '', b.code ?? ''));
       const ticketRows = (wait.data ?? []) as SeatedTicket[];
       setTables(tableRows);
       const seatedIds = new Set(tableRows.filter((x) => x.current_ticket_id).map((x) => x.current_ticket_id!));

@@ -11,7 +11,7 @@
     {
       "name": "web",
       "runtimeExecutable": "C:\\nvm4w\\nodejs\\node.exe",
-      "runtimeArgs": ["../../node_modules/.pnpm/next@15.5.12_@playwright+test@1.58.2_babel-plugin-react-compiler@1.0.0_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/dist/bin/next", "dev", "--turbopack", "--hostname", "0.0.0.0"],
+      "runtimeArgs": ["../../node_modules/.pnpm/next@15.5.12_@opentelemetry+api@1.9.1_@playwright+test@1.58.2_babel-plugin-react-compiler@1.0_lpahol4n6udsfhul4avfvj657q/node_modules/next/dist/bin/next", "dev", "--turbopack", "--hostname", "0.0.0.0"],
       "cwd": "apps/web",
       "autoPort": true
     },

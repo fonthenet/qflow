@@ -11,9 +11,7 @@ import {
   QrCode,
   Contact,
   Tablet,
-  GitBranchPlus,
   CalendarDays,
-  CalendarRange,
   House,
   LayoutDashboard,
   Rocket,
@@ -33,6 +31,7 @@ interface SidebarProps {
   };
   allowedNavigation: string[];
   templateConfigured: boolean;
+  wizardCompleted: boolean;
   templateSummary: {
     id: string;
     title: string;
@@ -66,9 +65,8 @@ const adminNav: Array<{
   section: string;
   siblings?: string[];
 }> = [
-  { href: '/admin/overview', label: 'Business Map', icon: LayoutDashboard, section: 'Work' },
+  { href: '/admin/overview', label: 'Overview', icon: LayoutDashboard, section: 'Work' },
   { href: '/admin/setup-wizard', label: 'Setup Wizard', icon: Rocket, section: 'Work' },
-  { href: '/admin/template-governance', label: 'Template Updates', icon: GitBranchPlus, section: 'Setup' },
 
   // Business Structure — 6 related admin pages grouped behind one entry.
   // Clicking it lands on Locations; the in-page tab bar reveals the rest.
@@ -80,7 +78,6 @@ const adminNav: Array<{
     siblings: ['/admin/departments', '/admin/services', '/admin/desks', '/admin/staff', '/admin/priorities'],
   },
 
-  { href: '/admin/calendar', label: 'Calendar', icon: CalendarRange, section: 'Customers' },
   { href: '/admin/bookings', label: 'Bookings', icon: CalendarDays, section: 'Customers' },
   { href: '/admin/customers', label: 'Customers', icon: Contact, section: 'Customers' },
 
@@ -141,6 +138,7 @@ export function Sidebar({
   allowedNavigation,
   templateSummary,
   templateConfigured,
+  wizardCompleted,
 }: SidebarProps) {
   const { t } = useI18n();
   const pathname = usePathname();
@@ -159,6 +157,9 @@ export function Sidebar({
     })
     .filter((item) => {
       if (item.href === '/desk' && !templateConfigured) return false;
+      // Hide Setup Wizard once the admin has finished it — they can reach it
+      // again from Overview or Settings if they want to edit structure in bulk.
+      if (item.href === '/admin/setup-wizard' && wizardCompleted) return false;
       const anyItem = item as typeof item & { siblings?: string[] };
       const allHrefs = [item.href, ...(anyItem.siblings ?? [])];
       return allHrefs.some((h) => allowedNavigation.includes(h));
@@ -167,9 +168,7 @@ export function Sidebar({
       const desiredOrder = [
         '/admin/overview',
         '/admin/setup-wizard',
-        '/admin/template-governance',
         ...(templateSummary.defaultNavigation ?? []),
-        '/admin/calendar',
         '/admin/bookings',
         '/admin/audit',
         '/admin/analytics',

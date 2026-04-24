@@ -1,14 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { restoreSession } from '../lib/supabase';
 import type { StaffSession } from '../lib/types';
-import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { type DesktopLocale } from '../lib/i18n';
 import { QLogo } from '../components/QLogo';
 import {
-  STARTER_TEMPLATES,
-  getStarterTemplate,
-  getStarterSubtype,
-  getDefaultOptions,
+  BUSINESS_CATEGORIES,
+  COUNTRIES,
+  DEFAULT_SETUP_WIZARD_SPEC,
+  DEFAULT_TIMEZONE,
+  detectDefaultCountry,
+  getCountry,
+  resolveLocalized,
+  type BusinessCategory,
+  type CategoryLocale,
 } from '@qflo/shared';
+
+// ── Station Signup (new-signup) ───────────────────────────────────
+// Renders from the shared wizard spec (@qflo/shared/setup-wizard) so
+// the Portal's /admin/setup-wizard asks the same questions. Posts to
+// `/api/onboarding/create-business` on the web app, which creates the
+// auth user + org + first office/department/service/desk + channel
+// defaults atomically.
 
 interface Props {
   onSignedUp: (session: StaffSession) => void;
@@ -16,10 +28,6 @@ interface Props {
   locale: DesktopLocale;
 }
 
-type Step = 'category' | 'subtype' | 'customize' | 'details' | 'review';
-
-// ── Shared small components (module-scope so React doesn't remount
-// them on every parent render — that was stealing input focus)
 function CardShell({ title, subtitle, maxWidth, children }: { title: string; subtitle?: string; maxWidth?: number; children: React.ReactNode }) {
   return (
     <div className="login-container">
@@ -48,31 +56,29 @@ function Spinner() {
   );
 }
 
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-}
-
 export function Signup({ onSignedUp, onCancel, locale }: Props) {
-  const t = (key: string, values?: Record<string, string | number | null | undefined>) =>
-    translate(locale, key, values);
+  const wizardLocale: CategoryLocale = locale === 'ar' ? 'ar' : locale === 'en' ? 'en' : 'fr';
+  const spec = DEFAULT_SETUP_WIZARD_SPEC;
 
-  const [step, setStep] = useState<Step>('category');
-  const [templateId, setTemplateId] = useState<string>(STARTER_TEMPLATES[0]?.id ?? 'restaurant');
-  const [subtypeId, setSubtypeId] = useState<string>(STARTER_TEMPLATES[0]?.subtypes[0]?.id ?? '');
-  const [options, setOptions] = useState<Record<string, number>>({});
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [businessName, setBusinessName] = useState('');
+  const [stepIdx, setStepIdx] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const [cloudUrl, setCloudUrl] = useState('');
+
+  const [businessName, setBusinessName] = useState('');
+  const [category, setCategory] = useState<BusinessCategory | ''>('');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [officeName, setOfficeName] = useState('');
+  const [address, setAddress] = useState('');
+
+  // Country + city drive the timezone — operators never see a raw IANA string.
+  const detected = useMemo(() => detectDefaultCountry(), []);
+  const [countryCode, setCountryCode] = useState<string>(detected?.code ?? 'DZ');
+  const [cityName, setCityName] = useState<string>('');
+  const selectedCountry = useMemo(() => getCountry(countryCode), [countryCode]);
 
   useEffect(() => {
     (window as any).qf?.getConfig?.().then((cfg: any) => {
@@ -80,40 +86,54 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
     }).catch(() => {});
   }, []);
 
-  const template = getStarterTemplate(templateId) ?? STARTER_TEMPLATES[0];
-  const subtype = useMemo(
-    () => getStarterSubtype(templateId, subtypeId) ?? template.subtypes[0],
-    [templateId, subtypeId, template],
+  const selectedCategory = useMemo(
+    () => BUSINESS_CATEGORIES.find((c) => c.value === category) ?? null,
+    [category],
   );
 
-  // Reset options whenever the subtype changes so defaults apply.
+  const selectedCity = useMemo(
+    () => selectedCountry?.cities.find((c) => resolveLocalized(c.name, wizardLocale) === cityName) ?? null,
+    [selectedCountry, cityName, wizardLocale],
+  );
+  const timezone = selectedCity?.timezone ?? selectedCountry?.defaultTimezone ?? DEFAULT_TIMEZONE;
+
+  // Prefill office name from category default once a category is chosen.
   useEffect(() => {
-    setOptions(getDefaultOptions(subtype));
-  }, [subtype]);
+    if (selectedCategory && !officeName) {
+      setOfficeName(resolveLocalized(selectedCategory.defaultOfficeName, wizardLocale));
+    }
+  }, [selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canSubmit =
-    fullName.trim() && email.trim() && password.length >= 6 && businessName.trim() && cloudUrl;
+  // Reset the city whenever the country changes.
+  useEffect(() => { setCityName(''); }, [countryCode]);
 
-  const pickCategory = (id: string) => {
-    setTemplateId(id);
-    const firstSub = getStarterTemplate(id)?.subtypes[0];
-    if (firstSub) setSubtypeId(firstSub.id);
-    setStep('subtype');
-  };
+  const step = spec.steps[stepIdx];
+  const total = spec.steps.length;
 
-  const pickSubtype = (id: string) => {
-    setSubtypeId(id);
-    const s = getStarterSubtype(templateId, id);
-    if (s?.options?.length) setStep('customize');
-    else setStep('details');
-  };
+  function validateCurrent(): string {
+    if (step.id === 'business') {
+      if (businessName.trim().length < 2) return 'Business name is required.';
+      if (!category) return 'Please pick a category.';
+      if (fullName.trim().length < 2) return 'Full name is required.';
+      if (!email.trim()) return 'Email is required.';
+      if (password.length < 6) return 'Password must be at least 6 characters.';
+    }
+    if (step.id === 'location') {
+      if (officeName.trim().length < 2) return 'Office name is required.';
+      if (!countryCode) return 'Please pick a country.';
+    }
+    return '';
+  }
 
-  const handleSubmit = async () => {
-    if (!canSubmit || loading) return;
+  async function submit() {
+    if (!cloudUrl) {
+      setError('Cloud URL not configured.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      setProgress(t('Creating your business...'));
+      setProgress('Creating your business…');
       const res = await fetch(`${cloudUrl}/api/onboarding/create-business`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -122,19 +142,22 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
           password,
           fullName: fullName.trim(),
           businessName: businessName.trim(),
-          templateId,
-          subtypeId,
-          options,
+          category,
+          officeName: officeName.trim(),
+          address: address.trim() || undefined,
+          country: countryCode,
+          city: cityName || undefined,
+          timezone,
+          locale: wizardLocale,
         }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? t('Sign-up failed'));
+      if (!res.ok) throw new Error(body?.error ?? 'Sign-up failed');
 
       if (body.session?.access_token && body.session?.refresh_token) {
         try { await restoreSession(body.session.access_token, body.session.refresh_token); } catch {}
       }
 
-      setProgress(t('Finishing up...'));
       const session: StaffSession = {
         user_id: body.user_id ?? '',
         staff_id: body.staff_id ?? '',
@@ -153,227 +176,196 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
       };
 
       try { localStorage.setItem('qflo_saved_email', email); } catch {}
+
+      // Portal marks wizard completed server-side, so no extra step here.
+      setStepIdx(total - 1);
+      // Hand off the session to the shell (it will close this screen).
       onSignedUp(session);
     } catch (err: any) {
-      setError(err?.message ?? t('Sign-up failed'));
+      setError(err?.message ?? 'Sign-up failed');
     } finally {
       setLoading(false);
       setProgress('');
     }
-  };
-
-  // ── Step: category ──────────────────────────────────────────────
-  if (step === 'category') {
-    return (
-      <CardShell title={t('Pick your category')} subtitle={t('We will set up departments, services and desks to match — you can edit anything later.')}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {STARTER_TEMPLATES.map((tpl) => (
-            <button
-              key={tpl.id}
-              type="button"
-              onClick={() => pickCategory(tpl.id)}
-              style={{
-                textAlign: 'left', padding: 14, borderRadius: 10,
-                border: '1px solid var(--border, #475569)',
-                background: 'var(--surface, #1e293b)',
-                color: 'var(--text, #f1f5f9)',
-                cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4,
-              }}
-            >
-              <span style={{ fontSize: 26 }}>{tpl.icon}</span>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>{t(tpl.titleKey)}</span>
-              <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>
-                {tpl.subtypes.length} {tpl.subtypes.length === 1 ? t('option') : t('options')}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div style={{ textAlign: 'center', marginTop: 18 }}>
-          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--primary, #3b82f6)', cursor: 'pointer', fontSize: 13 }}>
-            ← {t('Back to sign in')}
-          </button>
-        </div>
-      </CardShell>
-    );
   }
 
-  // ── Step: subtype ───────────────────────────────────────────────
-  if (step === 'subtype') {
-    return (
-      <CardShell title={`${template.icon} ${t(template.titleKey)}`} subtitle={t('Pick the shape that fits best.')} maxWidth={560}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {template.subtypes.map((s) => {
-            const selected = subtypeId === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => { setSubtypeId(s.id); }}
-                onDoubleClick={() => pickSubtype(s.id)}
-                style={{
-                  textAlign: 'left', padding: 14, borderRadius: 10,
-                  border: selected ? '2px solid var(--primary, #3b82f6)' : '1px solid var(--border, #475569)',
-                  background: selected ? 'var(--surface2, #334155)' : 'var(--surface, #1e293b)',
-                  color: 'var(--text, #f1f5f9)',
-                  cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'flex-start',
-                }}
-              >
-                <span style={{ fontSize: 24 }}>{s.icon}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{t(s.titleKey)}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text3, #64748b)', marginBottom: 4 }}>{t(s.descKey)}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>
-                    {s.departments.length} {t('dept(s)')} · {s.departments.reduce((n, d) => n + d.services.length, 0)} {t('services')} · {s.desks.length}+ {t('desk(s)')}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-          <button onClick={() => setStep('category')} style={secondaryBtn}>← {t('Back')}</button>
-          <button onClick={() => pickSubtype(subtypeId)} style={primaryBtn}>{t('Continue')} →</button>
-        </div>
-      </CardShell>
-    );
+  function next() {
+    const v = validateCurrent();
+    if (v) { setError(v); return; }
+    setError('');
+    if (step.id === 'location') { void submit(); return; }
+    setStepIdx((i) => Math.min(i + 1, total - 1));
+  }
+  function back() {
+    setError('');
+    setStepIdx((i) => Math.max(i - 1, 0));
   }
 
-  // ── Step: customize ─────────────────────────────────────────────
-  if (step === 'customize') {
+  // ── Render ────────────────────────────────────────────────────────
+  if (step.id === 'business') {
     return (
-      <CardShell title={t('Customize')} subtitle={`${subtype.icon} ${t(subtype.titleKey)}`}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {(subtype.options ?? []).map((opt) => (
-            <div key={opt.key} className="form-field">
-              <label>{t(opt.labelKey)}</label>
-              <input
-                type="number"
-                min={opt.min ?? 0}
-                max={opt.max ?? 100}
-                value={options[opt.key] ?? opt.default}
-                onChange={(e) => {
-                  const n = parseInt(e.target.value, 10);
-                  setOptions((p) => ({ ...p, [opt.key]: Number.isFinite(n) ? n : opt.default }));
-                }}
-              />
-              {opt.helpKey && (
-                <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 4 }}>{t(opt.helpKey)}</div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-          <button onClick={() => setStep('subtype')} style={secondaryBtn}>← {t('Back')}</button>
-          <button onClick={() => setStep('details')} style={primaryBtn}>{t('Continue')} →</button>
-        </div>
-      </CardShell>
-    );
-  }
-
-  // ── Step: details ───────────────────────────────────────────────
-  if (step === 'details') {
-    return (
-      <CardShell title={t('Create your business')} subtitle={`${subtype.icon} ${t(subtype.titleKey)}`}>
-        <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) setStep('review'); }} className="login-form">
+      <CardShell
+        title={resolveLocalized(step.title, wizardLocale)}
+        subtitle={resolveLocalized(step.subtitle, wizardLocale)}
+      >
+        <div className="login-form">
           {error && <div className="login-error">{error}</div>}
 
           <div className="form-field">
-            <label>{t('Your full name')}</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={t('e.g. Ahmed Benali')} autoFocus />
+            <label>Business name</label>
+            <input
+              type="text"
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Clinique Saphir, Banque du Centre…"
+              autoFocus
+            />
           </div>
 
           <div className="form-field">
-            <label>{t('Business name')}</label>
-            <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder={t('e.g. Clinique Benali')} />
-            {businessName.trim() && (
-              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 4 }}>
-                qflo.app/{slugify(businessName) || 'your-business'}
-              </div>
-            )}
+            <label>Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as BusinessCategory)}
+              style={{ colorScheme: 'light dark' }}
+            >
+              <option value="">—</option>
+              {BUSINESS_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.emoji} {resolveLocalized(c.label, wizardLocale)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="form-field">
-            <label>{t('Email')}</label>
+            <label>Your full name</label>
+            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ahmed Benali" />
+          </div>
+
+          <div className="form-field">
+            <label>Email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@business.com" />
           </div>
 
           <div className="form-field">
-            <label>{t('Password')}</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('Minimum 6 characters')} />
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 6 characters" />
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={() => setStep(subtype.options?.length ? 'customize' : 'subtype')} style={secondaryBtn}>← {t('Back')}</button>
-            <button type="submit" className="btn-primary" disabled={!canSubmit} style={{ flex: 2 }}>{t('Review')} →</button>
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={onCancel} style={secondaryBtn}>← Back to sign in</button>
+            <button type="button" onClick={next} style={primaryBtn}>
+              {resolveLocalized(step.cta, wizardLocale)} →
+            </button>
           </div>
-        </form>
-
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
-          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--primary, #3b82f6)', cursor: 'pointer', fontSize: 13 }}>
-            {t('Back to sign in')}
-          </button>
         </div>
       </CardShell>
     );
   }
 
-  // ── Step: review ────────────────────────────────────────────────
-  const totalDesks = Object.entries(options).reduce((n, [k, v]) => {
-    if (['cashiers', 'tellers', 'advisors', 'chairs', 'counters', 'doctors'].includes(k)) return n + (v || 0);
-    return n;
-  }, 0);
-  const serviceCount = subtype.departments.reduce((n, d) => n + d.services.length, 0);
+  if (step.id === 'location') {
+    return (
+      <CardShell
+        title={resolveLocalized(step.title, wizardLocale)}
+        subtitle={resolveLocalized(step.subtitle, wizardLocale)}
+      >
+        <div className="login-form">
+          {error && <div className="login-error">{error}</div>}
 
+          <div className="form-field">
+            <label>Office name</label>
+            <input
+              type="text"
+              value={officeName}
+              onChange={(e) => setOfficeName(e.target.value)}
+              placeholder="Agence Principale"
+              autoFocus
+            />
+          </div>
+
+          <div className="form-field">
+            <label>Address (optional)</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="12 rue Didouche, Alger"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="form-field">
+              <label>Country</label>
+              <select
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value)}
+                style={{ colorScheme: 'light dark' }}
+              >
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {resolveLocalized(c.name, wizardLocale)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label>City</label>
+              <select
+                value={cityName}
+                onChange={(e) => setCityName(e.target.value)}
+                style={{ colorScheme: 'light dark' }}
+              >
+                <option value="">—</option>
+                {(selectedCountry?.cities ?? []).map((c) => {
+                  const name = resolveLocalized(c.name, wizardLocale);
+                  return <option key={name} value={name}>{name}</option>;
+                })}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: -4 }}>
+            Timezone: <code style={{ fontFamily: 'monospace' }}>{timezone}</code>
+          </div>
+
+          {loading && progress && (
+            <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', padding: '6px 0' }}>⏳ {progress}</div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={back} disabled={loading} style={secondaryBtn}>← Back</button>
+            <button
+              type="button"
+              onClick={next}
+              disabled={loading}
+              className="btn-primary"
+              style={{ flex: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              {loading && <Spinner />}
+              {loading ? 'Creating…' : resolveLocalized(step.cta, wizardLocale)}
+            </button>
+          </div>
+        </div>
+      </CardShell>
+    );
+  }
+
+  // step.id === 'ready'
   return (
-    <CardShell title={t('Review & create')} subtitle={t('Double-check before we set everything up.')} maxWidth={560}>
-      {error && <div className="login-error" style={{ marginBottom: 12 }}>{error}</div>}
-
-      <div style={{ background: 'var(--surface2)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <Row label={t('Category')} value={`${subtype.icon} ${t(subtype.titleKey)}`} />
-        <Row label={t('Business name')} value={businessName} mono={`qflo.app/${slugify(businessName) || 'your-business'}`} />
-        <Row label={t('Admin')} value={fullName} mono={email} />
-        <Row label={t('Office')} value={t(subtype.officeName)} mono={`${t('Mon–Sat 9:00–18:00')} · Africa/Algiers`} />
-        <Row
-          label={t('Departments')}
-          value={subtype.departments.map((d) => t(d.name)).join(', ')}
-          mono={`${serviceCount} ${t('services')}`}
-        />
-        <Row
-          label={t('Services')}
-          value={subtype.departments.flatMap((d) => d.services.map((s) => t(s.name))).join(', ')}
-        />
-        <Row label={t('Desks')} value={`${totalDesks || subtype.desks.length}`} />
-        {num(options, 'tables', 0) > 0 && (
-          <Row label={t('Tables')} value={`${options.tables}`} mono={`T1 … T${options.tables}`} />
-        )}
-        <Row label={t('Channels')} value="WhatsApp + Messenger + Web + Kiosk" />
-        <Row label={t('Booking')} value={t('Enabled · 90 days ahead · 30 min slots')} />
-      </div>
-
-      {loading && progress && (
-        <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', padding: '10px 0' }}>⏳ {progress}</div>
-      )}
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-        <button onClick={() => setStep('details')} disabled={loading} style={secondaryBtn}>← {t('Edit')}</button>
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !canSubmit}
-          className="btn-primary"
-          style={{ flex: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          {loading && <Spinner />}
-          {loading ? t('Creating business...') : t('Confirm & create')}
-        </button>
+    <CardShell
+      title={resolveLocalized(step.title, wizardLocale)}
+      subtitle={resolveLocalized(step.subtitle, wizardLocale)}
+    >
+      <div style={{ color: 'var(--text, #f1f5f9)', lineHeight: 1.7, fontSize: 14 }}>
+        <ul style={{ paddingLeft: 18, margin: 0 }}>
+          <li>Office {officeName ? `"${officeName}"` : ''} created</li>
+          <li>Starter department, service and counter ready</li>
+          <li>WhatsApp + Messenger channels pre-enabled</li>
+        </ul>
       </div>
     </CardShell>
   );
-}
-
-// ── helpers ───────────────────────────────────────────────────────
-function num(opts: Record<string, number>, key: string, fallback: number) {
-  const v = opts[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
 const primaryBtn: React.CSSProperties = {
@@ -396,15 +388,3 @@ const secondaryBtn: React.CSSProperties = {
   color: 'var(--text, #f1f5f9)',
   cursor: 'pointer',
 };
-
-function Row({ label, value, mono }: { label: string; value: string; mono?: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', flexShrink: 0, width: 110 }}>{label}</div>
-      <div style={{ flex: 1, textAlign: 'right' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>{value || '—'}</div>
-        {mono && <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', fontFamily: 'monospace', marginTop: 2 }}>{mono}</div>}
-      </div>
-    </div>
-  );
-}

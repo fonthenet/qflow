@@ -13,6 +13,7 @@ import { getChimePath, getChimeDurationMs, getSilenceWarmupPath, cleanupLegacyCh
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 
+
 // ── Auto-update state (module-level for access from menu/IPC/update handlers) ──
 let isManualCheck = false;
 let dismissedVersion: string | null = null;
@@ -3077,6 +3078,7 @@ function setupIPC() {
     }
     return { success: false, error: result.error };
   });
+
 }
 
 // ── Register Station IP in Supabase so web kiosk can discover it ─────

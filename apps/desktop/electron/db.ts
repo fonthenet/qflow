@@ -657,6 +657,9 @@ export function initDB() {
     created_at TEXT,
     updated_at TEXT
   )`);
+
+  // Drop legacy payment methods cache (org_payment_methods table was removed from Supabase).
+  db.exec(`DROP TABLE IF EXISTS org_payment_methods_cache`);
   try { db.exec(`ALTER TABLE tickets ADD COLUMN payment_status TEXT`); } catch { /* already exists */ }
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_ticket_payments_ticket ON ticket_payments(ticket_id)`); } catch { /* */ }
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_ticket_payments_org_date ON ticket_payments(organization_id, paid_at)`); } catch { /* */ }

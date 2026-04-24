@@ -647,7 +647,6 @@ export async function rescheduleAppointment(appointmentId: string, newScheduledA
     console.error('[reschedule] notification error:', err);
   });
 
-  revalidatePath('/admin/calendar');
   revalidatePath('/admin/bookings');
   return { data: { success: true } };
 }

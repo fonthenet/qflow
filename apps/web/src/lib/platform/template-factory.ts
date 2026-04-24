@@ -88,6 +88,12 @@ export function createTemplate(input: TemplateFactoryInput): IndustryTemplate {
   if (overlay.defaultNavigation) merged.defaultNavigation = overlay.defaultNavigation as any;
   if (overlay.enabledModules) merged.enabledModules = overlay.enabledModules as any;
   if (overlay.recommendedRoles) merged.recommendedRoles = overlay.recommendedRoles as any;
+  // deepMergeRecords treats arrays atomically: an overlay supplying rolePolicy.roles: []
+  // would silently wipe the tier's role list and collapse every admin sidebar to ['/desk'].
+  // If the overlay doesn't provide non-empty roles, keep the tier preset's rolePolicy intact.
+  if (!overlay.rolePolicy || !overlay.rolePolicy.roles || (overlay.rolePolicy.roles as any[]).length === 0) {
+    merged.rolePolicy = preset.rolePolicy;
+  }
   if (overlay.onboardingCopy?.reviewChecklist) {
     merged.onboardingCopy.reviewChecklist = overlay.onboardingCopy.reviewChecklist;
   }

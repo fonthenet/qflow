@@ -1,7 +1,12 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
-import { getPlatformLifecycleState, resolvePlatformConfig } from '@/lib/platform/config';
 import { SetupWizardClient } from './setup-wizard-client';
+
+// ── /admin/setup-wizard (post-register) ───────────────────────────
+// The signed-in admin finishes setting up their business here. The page
+// is a thin shell — the wizard client is spec-driven (see
+// `@qflo/shared/setup-wizard`) and posts to `/api/setup-wizard/seed`.
+// If the wizard has already run, we just send them to the dashboard.
 
 export default async function SetupWizardPage() {
   const context = await getStaffContext();
@@ -21,122 +26,15 @@ export default async function SetupWizardPage() {
 
   if (!organization) redirect('/admin/offices');
 
-  let settings = (organization.settings as Record<string, any>) ?? {};
-
-  // If wizard already completed, go to overview
+  const settings = (organization.settings as Record<string, any>) ?? {};
   if (settings.business_setup_wizard_completed_at) {
     redirect('/admin/overview');
   }
 
-  // Check if offices actually exist
-  const { count: officeCount } = await context.supabase
-    .from('offices')
-    .select('*', { count: 'exact', head: true })
-    .eq('organization_id', orgId);
-
-  const lifecycleState = getPlatformLifecycleState(settings, {
-    hasExistingData: (officeCount ?? 0) > 0,
-  });
-
-  // ── Broken state recovery ──────────────────────────────────────
-  // If settings say "confirmed" but no offices exist, the confirm
-  // action ran partially or records were deleted. Reset to trial
-  // state so the user can re-create their business.
-  if (lifecycleState === 'template_confirmed' && (officeCount ?? 0) === 0) {
-    const fixedSettings = { ...settings };
-    // Restore trial keys from permanent keys so the wizard can re-run
-    fixedSettings.platform_template_state = 'template_trial_state';
-    fixedSettings.platform_trial_template_id = settings.platform_template_id ?? settings.platform_trial_template_id;
-    fixedSettings.platform_trial_template_version = settings.platform_template_version ?? settings.platform_trial_template_version;
-    fixedSettings.platform_trial_vertical = settings.platform_vertical ?? settings.platform_trial_vertical;
-    fixedSettings.platform_trial_operating_model = settings.platform_operating_model ?? settings.platform_trial_operating_model;
-    fixedSettings.platform_trial_branch_type = settings.platform_branch_type ?? settings.platform_trial_branch_type;
-    fixedSettings.platform_trial_office_name = settings.platform_trial_office_name ?? organization.name;
-    fixedSettings.platform_trial_timezone = settings.platform_trial_timezone ?? 'Africa/Algiers';
-    fixedSettings.platform_trial_seed_priorities = true;
-    // Clear the confirmed markers
-    delete fixedSettings.platform_template_confirmed_at;
-
-    await context.supabase
-      .from('organizations')
-      .update({ settings: fixedSettings })
-      .eq('id', orgId);
-
-    settings = fixedSettings;
-  }
-
-  // Re-evaluate after potential fix
-  const finalLifecycleState = getPlatformLifecycleState(settings, {
-    hasExistingData: (officeCount ?? 0) > 0,
-  });
-  const confirmed = finalLifecycleState === 'template_confirmed' && (officeCount ?? 0) > 0;
-
-  // Resolve vocabulary for labels
-  const platformConfig = resolvePlatformConfig({ organizationSettings: settings });
-  const vocabulary = platformConfig.experienceProfile.vocabulary;
-
-  // If confirmed, fetch live data for team & launch steps
-  let offices: any[] = [];
-  let departments: any[] = [];
-  let services: any[] = [];
-  let desks: any[] = [];
-  let staffList: any[] = [];
-  let deskServices: any[] = [];
-
-  if (confirmed) {
-    const [officesRes, departmentsRes, servicesRes, desksRes, staffRes, deskServicesRes] =
-      await Promise.all([
-        context.supabase
-          .from('offices')
-          .select('id, name, address, settings, is_active')
-          .eq('organization_id', orgId)
-          .order('name'),
-        context.supabase
-          .from('departments')
-          .select('id, name, code, description, office_id, is_active, office:offices(id, name)')
-          .eq('is_active', true)
-          .order('sort_order'),
-        context.supabase
-          .from('services')
-          .select('id, name, code, description, estimated_service_time, department_id, is_active, department:departments(id, name, office_id)')
-          .eq('is_active', true)
-          .order('name'),
-        context.supabase
-          .from('desks')
-          .select('id, name, display_name, office_id, department_id, current_staff_id, status, is_active, department:departments(id, name), office:offices(id, name), current_staff:staff(id, full_name)')
-          .eq('is_active', true)
-          .order('name'),
-        context.supabase
-          .from('staff')
-          .select('id, full_name, email, role, office_id, department_id, is_active, office:offices(id, name), department:departments(id, name)')
-          .eq('organization_id', orgId)
-          .eq('is_active', true)
-          .order('full_name'),
-        context.supabase.from('desk_services').select('desk_id, service_id'),
-      ]);
-
-    offices = officesRes.data ?? [];
-    const orgOfficeIds = new Set(offices.map((o: any) => o.id));
-    departments = (departmentsRes.data ?? []).filter((d: any) => orgOfficeIds.has(d.office_id));
-    const orgDeptIds = new Set(departments.map((d: any) => d.id));
-    services = (servicesRes.data ?? []).filter((s: any) => orgDeptIds.has(s.department_id));
-    desks = (desksRes.data ?? []).filter((d: any) => orgOfficeIds.has(d.office_id));
-    staffList = staffRes.data ?? [];
-    deskServices = deskServicesRes.data ?? [];
-  }
-
   return (
     <SetupWizardClient
-      organization={{ id: organization.id, name: organization.name }}
-      confirmed={confirmed}
-      trialSettings={settings}
-      vocabulary={vocabulary}
-      offices={offices}
-      departments={departments}
-      services={services}
-      desks={desks}
-      staffList={staffList}
-      deskServices={deskServices}
+      organizationName={organization.name ?? ''}
+      initialCategory={settings.business_category ?? null}
     />
   );
 }

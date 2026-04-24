@@ -101,7 +101,7 @@ export async function register(formData: FormData) {
     }
   }
 
-  redirect('/admin/onboarding');
+  redirect('/admin/setup-wizard');
 }
 
 export async function logout() {

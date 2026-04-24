@@ -608,17 +608,14 @@ async function seedConfirmedTemplate(
     });
   }
 
-  revalidatePath('/admin/onboarding');
   revalidatePath('/admin/offices');
   revalidatePath('/admin/departments');
   revalidatePath('/admin/services');
   revalidatePath('/admin/priorities');
   revalidatePath('/admin/settings');
-  revalidatePath('/admin/template-governance');
   revalidatePath('/admin/setup-wizard');
   revalidatePath('/admin/desks');
   revalidatePath('/admin/overview');
-  revalidatePath('/admin/calendar');
   revalidatePath('/admin/bookings');
 
   return {
@@ -683,8 +680,6 @@ export async function saveIndustryTemplateTrial(input: TemplateSetupInput) {
 
   if (updateError) return { error: updateError.message };
 
-  revalidatePath('/admin/onboarding');
-  revalidatePath('/admin/template-governance');
 
   return {
     success: true,
@@ -721,8 +716,6 @@ export async function clearIndustryTemplateTrial() {
 
   if (updateError) return { error: updateError.message };
 
-  revalidatePath('/admin/onboarding');
-  revalidatePath('/admin/template-governance');
 
   return { success: true };
 }
@@ -916,8 +909,6 @@ export async function upgradeIndustryTemplateSettings(input: {
   });
 
   revalidatePath('/admin/settings');
-  revalidatePath('/admin/template-governance');
-  revalidatePath('/admin/onboarding');
 
   return {
     success: true,
@@ -1017,7 +1008,6 @@ export async function rolloutIndustryTemplateToOffices(input: {
     },
   });
 
-  revalidatePath('/admin/template-governance');
   revalidatePath('/admin/offices');
   return {
     success: true,
@@ -1074,7 +1064,6 @@ export async function saveTemplateCustomization(input: {
     },
   });
 
-  revalidatePath('/admin/settings/template-customization');
   revalidatePath('/admin/settings');
   return { success: true };
 }

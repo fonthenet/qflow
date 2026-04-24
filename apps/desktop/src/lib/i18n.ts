@@ -1546,6 +1546,13 @@ const FR: Messages = {
   'Hour': 'Heure',
   'Transactions ({count})': 'Transactions ({count})',
   'Time': 'Heure',
+  // ── Receipt: Payment options block ──
+  'Payment options': 'Modes de paiement',
+  'Cash accepted': 'Paiement en espèces accepté',
+  'Bank transfer': 'Virement bancaire',
+  'Mobile money': 'Paiement mobile',
+  'QR payment': 'Paiement QR',
+  'Scan to pay': 'Scannez pour payer',
 };
 
 const AR: Messages = {
@@ -3085,6 +3092,13 @@ const AR: Messages = {
   'Hour': 'الساعة',
   'Transactions ({count})': 'المعاملات ({count})',
   'Time': 'الوقت',
+  // ── Receipt: Payment options block ──
+  'Payment options': 'طرق الدفع',
+  'Cash accepted': 'يُقبل الدفع نقدًا',
+  'Bank transfer': 'تحويل بنكي',
+  'Mobile money': 'دفع عبر الهاتف',
+  'QR payment': 'دفع QR',
+  'Scan to pay': 'امسح للدفع',
 };
 
 const EN: Messages = {
@@ -3637,6 +3651,13 @@ const EN: Messages = {
   'By staff': 'By staff',
   'By hour': 'By hour',
   'Transactions ({count})': 'Transactions ({count})',
+  // ── Receipt: Payment options block ──
+  'Payment options': 'Payment options',
+  'Cash accepted': 'Cash accepted',
+  'Bank transfer': 'Bank transfer',
+  'Mobile money': 'Mobile money',
+  'QR payment': 'QR payment',
+  'Scan to pay': 'Scan to pay',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {

@@ -15,11 +15,29 @@ export async function updateSession(request: NextRequest, requestHeaders?: Heade
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
+          // Mutate the request cookie store so getAll() reflects the refreshed
+          // token for any subsequent reads in this same middleware execution.
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
+
+          // Rebuild the forwarded-request headers to include the refreshed
+          // cookie values. This ensures Next.js server actions and server
+          // components that run after the middleware receive a Cookie header
+          // that matches the newly-issued session token, preventing a
+          // getUser() mismatch that would cause a spurious 401 / redirect.
+          const forwardHeaders = requestHeaders
+            ? new Headers(requestHeaders)
+            : new Headers(request.headers);
+
+          // Re-serialise all cookies (original + refreshed) into Cookie header
+          const cookieHeader = request.cookies.getAll()
+            .map(({ name, value }) => `${name}=${value}`)
+            .join('; ');
+          forwardHeaders.set('cookie', cookieHeader);
+
           supabaseResponse = NextResponse.next({
-            request: requestHeaders ? { headers: requestHeaders } : request,
+            request: { headers: forwardHeaders },
           });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)

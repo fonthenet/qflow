@@ -275,10 +275,10 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
-          '/admin/overview', '/admin/setup-wizard', '/admin/template-governance',
+          '/admin/overview', '/admin/setup-wizard',
           '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks',
           '/admin/staff', '/admin/priorities', '/admin/virtual-codes', '/admin/audit',
-          '/admin/analytics', '/admin/customers', '/admin/calendar', '/admin/bookings',
+          '/admin/analytics', '/admin/customers', '/admin/bookings',
           '/admin/kiosk', '/admin/displays', '/admin/broadcast', '/admin/settings', '/desk',
         ],
         capabilities: ['template_apply', 'governance', 'configuration'],
@@ -289,9 +289,9 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
-          '/admin/overview', '/admin/setup-wizard', '/admin/template-governance',
+          '/admin/overview', '/admin/setup-wizard',
           '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks',
-          '/admin/staff', '/admin/audit', '/admin/analytics', '/admin/calendar',
+          '/admin/staff', '/admin/audit', '/admin/analytics',
           '/admin/bookings', '/admin/kiosk', '/admin/displays', '/admin/broadcast',
           '/admin/settings', '/desk',
         ],
@@ -304,7 +304,7 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
         adminAccess: true,
         allowedNavigation: [
           '/admin/overview', '/admin/offices', '/admin/departments', '/admin/services',
-          '/admin/desks', '/admin/audit', '/admin/analytics', '/admin/calendar',
+          '/admin/desks', '/admin/audit', '/admin/analytics',
           '/admin/bookings', '/admin/kiosk', '/admin/displays', '/admin/broadcast', '/desk',
         ],
         capabilities: ['branch_configuration', 'queue_supervision'],
@@ -338,7 +338,7 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
         label: 'Analyst',
         scope: 'organization',
         adminAccess: false,
-        allowedNavigation: ['/admin/audit', '/admin/analytics', '/admin/customers', '/admin/calendar', '/admin/bookings', '/desk'],
+        allowedNavigation: ['/admin/audit', '/admin/analytics', '/admin/customers', '/admin/bookings', '/desk'],
         capabilities: ['analytics', 'branch_comparison'],
       },
       {
@@ -357,20 +357,20 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
 
 const LIGHT_NAV = [
   '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/services',
-  '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/calendar',
+  '/admin/staff', '/admin/analytics', '/admin/customers',
   '/admin/bookings', '/admin/settings', '/desk',
 ];
 
 const STANDARD_NAV = [
   '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/departments',
   '/admin/services', '/admin/staff', '/admin/priorities', '/admin/analytics',
-  '/admin/calendar', '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk',
+  '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk',
 ];
 
 const ENTERPRISE_NAV = [
   '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/departments',
   '/admin/services', '/admin/desks', '/admin/priorities', '/admin/displays',
-  '/admin/kiosk', '/admin/calendar', '/admin/bookings', '/admin/analytics',
+  '/admin/kiosk', '/admin/bookings', '/admin/analytics',
   '/admin/settings', '/desk',
 ];
 

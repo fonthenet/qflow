@@ -31,7 +31,7 @@ const { mockConstructEvent, mockInsert, mockFrom, mockResolveCustomerOrg } = vi.
   mockResolveCustomerOrg: vi.fn<() => Promise<string | null>>(),
 }));
 
-// ── Stripe mock ───────────────────────────────────────────────────────────────
+// ── Stripe SDK mock ───────────────────────────────────────────────────────────
 
 vi.mock('stripe', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -39,6 +39,15 @@ vi.mock('stripe', () => ({
     refunds: { create: vi.fn() },
     webhooks: { constructEvent: mockConstructEvent },
   })),
+}));
+
+// ── billing/stripe mock — verifyStripeWebhook + resolveOrgFromStripeCustomer ──
+
+vi.mock('@/lib/billing/stripe', () => ({
+  verifyStripeWebhook: vi.fn(),
+  resolveOrgFromStripeCustomer: mockResolveCustomerOrg,
+  normaliseStripeEvent: vi.fn(),
+  getStripeClient: vi.fn(),
 }));
 
 // ── Supabase admin client mock ────────────────────────────────────────────────
@@ -64,9 +73,9 @@ vi.mock('@/lib/webhook-rate-limit', async (importOriginal) => {
 
 // ── Import the route after mocks ──────────────────────────────────────────────
 
-import '@/lib/payments'; // bootstrap provider registrations
 import { POST } from './route';
 import { webhookCheckRateLimit } from '@/lib/webhook-rate-limit';
+import { verifyStripeWebhook } from '@/lib/billing/stripe';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -114,11 +123,24 @@ function buildFromChain(existingEvent: unknown) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+// Normalised event returned by verifyStripeWebhook
+const NORMALISED_EVENT = {
+  type: 'payment.succeeded',
+  providerEventId: 'evt_unique_001',
+  reference: 'pi_abc',
+  amount: 2000,
+  currency: 'EUR',
+  metadata: { organization_id: 'org-test-1' },
+  raw: STRIPE_EVENT_BODY,
+};
+
 describe('POST /api/payments/webhooks/[provider]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_stub');
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test');
+    // Default: verify succeeds
+    vi.mocked(verifyStripeWebhook).mockResolvedValue(NORMALISED_EVENT);
     // Default: no existing event (not a duplicate), insert succeeds
     mockFrom.mockImplementation(buildFromChain(null));
     mockInsert.mockResolvedValue({ error: null });
@@ -143,9 +165,7 @@ describe('POST /api/payments/webhooks/[provider]', () => {
   });
 
   it('returns 400 when Stripe signature verification fails', async () => {
-    mockConstructEvent.mockImplementation(() => {
-      throw new Error('Signature mismatch');
-    });
+    vi.mocked(verifyStripeWebhook).mockResolvedValue(null);
 
     const req = makeStripeRequest(STRIPE_EVENT_BODY, 'bad-signature');
     const params = Promise.resolve({ provider: 'stripe' });
@@ -157,7 +177,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
   });
 
   it('returns 200 and inserts a payment_event row for a valid Stripe event', async () => {
-    mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
 
     const req = makeStripeRequest(STRIPE_EVENT_BODY);
     const params = Promise.resolve({ provider: 'stripe' });
@@ -179,7 +198,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
   });
 
   it('stores the raw body JSON (not the Event object) as raw_payload', async () => {
-    mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
 
     const req = makeStripeRequest(STRIPE_EVENT_BODY);
     const params = Promise.resolve({ provider: 'stripe' });
@@ -195,7 +213,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
   it('returns 200 with duplicate:true and does NOT insert again on replay', async () => {
     // Simulate: event already in the table
     mockFrom.mockImplementation(buildFromChain({ id: 'pe_existing', status: 'processed' }));
-    mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
 
     const req = makeStripeRequest(STRIPE_EVENT_BODY);
     const params = Promise.resolve({ provider: 'stripe' });
@@ -211,7 +228,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
   });
 
   it('idempotent: replaying the same event_id twice never creates a second row', async () => {
-    mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
 
     // First call — event does not exist yet
     mockFrom.mockImplementation(buildFromChain(null));
@@ -233,7 +249,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
   });
 
   it('handles unique constraint race condition (error code 23505) as safe no-op', async () => {
-    mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
 
     // First select says no duplicate, but insert races and hits the unique constraint
     mockFrom.mockImplementation(buildFromChain(null));
@@ -252,48 +267,20 @@ describe('POST /api/payments/webhooks/[provider]', () => {
 
   describe('Fix 1 — org_id cross-check against stripe_customer_id', () => {
     it('flags event and uses customer-derived org when metadata.organization_id disagrees', async () => {
-      // The event metadata claims org-from-metadata, but the customer cus_stripe_abc
-      // resolves to org-from-customer in the DB. They differ → must be flagged.
-      const eventBody = {
-        ...STRIPE_EVENT_BODY,
-        id: 'evt_mismatch_001',
-        data: {
-          object: {
-            ...STRIPE_EVENT_BODY.data.object,
-            customer: 'cus_stripe_abc',
-            metadata: { organization_id: 'org-from-metadata' },
-          },
-        },
-      };
-      mockConstructEvent.mockReturnValue(eventBody);
-
-      // Mock DB: organizations lookup for stripe_customer_id returns org-from-customer
-      mockFrom.mockImplementation((table: string) => {
-        if (table === 'organizations') {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: { id: 'org-from-customer' },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        // payment_events table
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }),
-          insert: mockInsert,
-          update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnThis() }),
-        };
+      // verifyStripeWebhook returns an event with metadata org-from-metadata
+      // but resolveOrgFromStripeCustomer returns org-from-customer → mismatch → flagged
+      vi.mocked(verifyStripeWebhook).mockResolvedValue({
+        ...NORMALISED_EVENT,
+        providerEventId: 'evt_mismatch_001',
+        metadata: { organization_id: 'org-from-metadata' },
       });
+      // resolveOrgFromStripeCustomer returns a different org
+      mockResolveCustomerOrg.mockResolvedValue('org-from-customer');
+
+      mockFrom.mockImplementation(buildFromChain(null));
       mockInsert.mockResolvedValue({ error: null });
 
-      const req = makeStripeRequest(eventBody);
+      const req = makeStripeRequest(STRIPE_EVENT_BODY);
       const params = Promise.resolve({ provider: 'stripe' });
       const res = await POST(req, { params });
 
@@ -311,44 +298,16 @@ describe('POST /api/payments/webhooks/[provider]', () => {
     });
 
     it('uses customer-derived org when metadata.organization_id is absent', async () => {
-      const eventBody = {
-        ...STRIPE_EVENT_BODY,
-        id: 'evt_no_meta_org_001',
-        data: {
-          object: {
-            ...STRIPE_EVENT_BODY.data.object,
-            customer: 'cus_stripe_abc',
-            metadata: {}, // no organization_id
-          },
-        },
-      };
-      mockConstructEvent.mockReturnValue(eventBody);
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === 'organizations') {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: { id: 'org-from-customer' },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }),
-          insert: mockInsert,
-          update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnThis() }),
-        };
+      vi.mocked(verifyStripeWebhook).mockResolvedValue({
+        ...NORMALISED_EVENT,
+        providerEventId: 'evt_no_meta_org_001',
+        metadata: {}, // no organization_id in metadata
       });
+      mockResolveCustomerOrg.mockResolvedValue('org-from-customer');
+      mockFrom.mockImplementation(buildFromChain(null));
       mockInsert.mockResolvedValue({ error: null });
 
-      const req = makeStripeRequest(eventBody);
+      const req = makeStripeRequest(STRIPE_EVENT_BODY);
       const params = Promise.resolve({ provider: 'stripe' });
       const res = await POST(req, { params });
 
@@ -363,42 +322,16 @@ describe('POST /api/payments/webhooks/[provider]', () => {
     });
 
     it('stores event with organization_id=NULL when neither metadata nor customer resolves', async () => {
-      const eventBody = {
-        ...STRIPE_EVENT_BODY,
-        id: 'evt_platform_001',
-        data: {
-          object: {
-            ...STRIPE_EVENT_BODY.data.object,
-            customer: null, // no customer
-            metadata: {},
-          },
-        },
-      };
-      mockConstructEvent.mockReturnValue(eventBody);
-
-      // organizations lookup returns null (no stripe_customer_id match)
-      mockFrom.mockImplementation((table: string) => {
-        if (table === 'organizations') {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-              }),
-            }),
-          };
-        }
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }),
-          insert: mockInsert,
-          update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnThis() }),
-        };
+      vi.mocked(verifyStripeWebhook).mockResolvedValue({
+        ...NORMALISED_EVENT,
+        providerEventId: 'evt_platform_001',
+        metadata: {},
       });
+      mockResolveCustomerOrg.mockResolvedValue(null); // no customer resolution
+      mockFrom.mockImplementation(buildFromChain(null));
       mockInsert.mockResolvedValue({ error: null });
 
-      const req = makeStripeRequest(eventBody);
+      const req = makeStripeRequest(STRIPE_EVENT_BODY);
       const params = Promise.resolve({ provider: 'stripe' });
       const res = await POST(req, { params });
 
@@ -412,33 +345,14 @@ describe('POST /api/payments/webhooks/[provider]', () => {
     });
   });
 
-  // ── Fix 2: getImplementedProviderForCountry ────────────────────────────────
+  // ── Fix 2: only 'stripe' provider accepted ───────────────────────────────────
 
-  describe('Fix 2 — getImplementedProviderForCountry', () => {
-    it('returns only stripe (isImplemented=true) for DZ', async () => {
-      // Dynamic import to avoid hoisting issues with the provider registry
-      const { getImplementedProviderForCountry, getImplementedProvidersForCountry } =
-        await import('@/lib/payments');
-
-      // DZ has cib, edahabia, satim (stubs) and stripe (implemented)
-      const implemented = getImplementedProvidersForCountry('DZ');
-      expect(implemented.length).toBeGreaterThan(0);
-      expect(implemented.every((p) => p.isImplemented)).toBe(true);
-
-      const first = getImplementedProviderForCountry('DZ');
-      expect(first).not.toBeNull();
-      expect(first!.id).toBe('stripe');
-    });
-
-    it('stub providers for DZ have isImplemented=false', async () => {
-      const { getProvidersForCountry } = await import('@/lib/payments');
-      const all = getProvidersForCountry('DZ');
-      const stubs = all.filter((p) => !p.isImplemented);
-      // cib, edahabia, satim are stubs
-      const stubIds = stubs.map((p) => p.id);
-      expect(stubIds).toContain('cib');
-      expect(stubIds).toContain('edahabia');
-      expect(stubIds).toContain('satim');
+  describe('Fix 2 — only stripe provider accepted', () => {
+    it('returns 400 for an unknown provider slug', async () => {
+      const req = makeStripeRequest(STRIPE_EVENT_BODY);
+      const params = Promise.resolve({ provider: 'fawry' });
+      const res = await POST(req, { params });
+      expect(res.status).toBe(400);
     });
   });
 
@@ -468,7 +382,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
         remaining: 50,
         retryAfterSeconds: 60,
       });
-      mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
 
       const req = makeStripeRequest(STRIPE_EVENT_BODY);
       const params = Promise.resolve({ provider: 'stripe' });
@@ -533,7 +446,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
 
   describe('Fix 4 — non-dup insert error returns 200 and writes failed row', () => {
     it('returns 200 (not 500) when insert fails with a non-23505 error', async () => {
-      mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
       mockFrom.mockImplementation(buildFromChain(null));
 
       // First insert fails with a non-dup error; second (dead-letter) succeeds
@@ -552,7 +464,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
     });
 
     it('attempts to write a dead-letter failed row on persistent insert error', async () => {
-      mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
       mockFrom.mockImplementation(buildFromChain(null));
 
       mockInsert
@@ -573,7 +484,6 @@ describe('POST /api/payments/webhooks/[provider]', () => {
     });
 
     it('still returns 200 even when the dead-letter insert also fails', async () => {
-      mockConstructEvent.mockReturnValue(STRIPE_EVENT_BODY);
       mockFrom.mockImplementation(buildFromChain(null));
 
       // Both inserts fail

@@ -1,18 +1,16 @@
 /**
- * Regression tests for lib/payments/providers/stripe.ts
+ * Regression tests for lib/billing/stripe.ts
  *
  * Covers:
- * - createCheckout throws for DZD currency (Stripe does not process DZD)
- * - verifyWebhook returns null on bad signature
- * - verifyWebhook returns normalised WebhookEvent on valid signature
+ * - verifyStripeWebhook returns null on bad signature
+ * - verifyStripeWebhook returns normalised BillingWebhookEvent on valid signature
  *
  * The Stripe SDK is mocked — no network calls.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import type { MockedFunction } from 'vitest';
 
-// ── Mock the Stripe SDK before importing provider ─────────────────────────────
+// ── Mock the Stripe SDK before importing ──────────────────────────────────────
 
 const mockConstructEvent = vi.fn();
 const mockPaymentIntentsCreate = vi.fn();
@@ -28,13 +26,10 @@ vi.mock('stripe', () => {
   };
 });
 
-// Now import the provider (after mock is set up)
-import stripeProvider from '@/lib/payments/providers/stripe';
+// Now import after mock is set up
+import { verifyStripeWebhook, normaliseStripeEvent } from '@/lib/billing/stripe';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-// verifyWebhook now takes (rawBody: string, signature: string | null) directly.
-// No Request object needed.
 
 const VALID_STRIPE_EVENT = {
   id: 'evt_test_123',
@@ -50,66 +45,9 @@ const VALID_STRIPE_EVENT = {
   },
 };
 
-// ── createCheckout ─────────────────────────────────────────────────────────────
+// ── verifyStripeWebhook ───────────────────────────────────────────────────────
 
-describe('stripeProvider.createCheckout', () => {
-  beforeEach(() => {
-    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_stub_key');
-    mockPaymentIntentsCreate.mockReset();
-    mockPaymentIntentsCreate.mockResolvedValue({
-      id: 'pi_test_new',
-      status: 'requires_payment_method',
-      client_secret: 'pi_test_new_secret_xyz',
-    });
-  });
-
-  it('throws when currency is DZD — Stripe does not process DZD', async () => {
-    await expect(
-      stripeProvider.createCheckout({
-        amount: 10000,
-        currency: 'DZD',
-        idempotencyKey: 'idem-001',
-      })
-    ).rejects.toThrow(/DZD/i);
-  });
-
-  it('throws when currency is dzd (lowercase) — case-insensitive guard', async () => {
-    await expect(
-      stripeProvider.createCheckout({
-        amount: 10000,
-        currency: 'dzd',
-        idempotencyKey: 'idem-002',
-      })
-    ).rejects.toThrow(/DZD/i);
-  });
-
-  it('creates a payment intent for EUR without error', async () => {
-    const result = await stripeProvider.createCheckout({
-      amount: 5000,
-      currency: 'EUR',
-      description: 'Appointment deposit',
-      idempotencyKey: 'idem-003',
-    });
-    expect(result.providerReference).toBe('pi_test_new');
-    expect(result.clientSecret).toBe('pi_test_new_secret_xyz');
-    expect(mockPaymentIntentsCreate).toHaveBeenCalledOnce();
-  });
-
-  it('passes idempotencyKey to the Stripe call', async () => {
-    await stripeProvider.createCheckout({
-      amount: 1000,
-      currency: 'USD',
-      idempotencyKey: 'idem-key-unique',
-    });
-    const call = (mockPaymentIntentsCreate as MockedFunction<typeof mockPaymentIntentsCreate>).mock.calls[0];
-    // Second arg to paymentIntents.create is the options object with idempotencyKey
-    expect(call[1]).toEqual(expect.objectContaining({ idempotencyKey: 'idem-key-unique' }));
-  });
-});
-
-// ── verifyWebhook ──────────────────────────────────────────────────────────────
-
-describe('stripeProvider.verifyWebhook', () => {
+describe('verifyStripeWebhook', () => {
   beforeEach(() => {
     vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_stub_key');
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test_secret');
@@ -121,23 +59,22 @@ describe('stripeProvider.verifyWebhook', () => {
       throw new Error('No signatures found matching the expected signature for payload.');
     });
 
-    const result = await stripeProvider.verifyWebhook('{"bad":"json"}', 'bad-signature');
+    const result = await verifyStripeWebhook('{"bad":"json"}', 'bad-signature');
     expect(result).toBeNull();
   });
 
   it('returns null when stripe-signature header is missing (null passed)', async () => {
-    const result = await stripeProvider.verifyWebhook('{}', null);
+    const result = await verifyStripeWebhook('{}', null);
     expect(result).toBeNull();
   });
 
-  it('returns normalised WebhookEvent on a valid payment_intent.succeeded event', async () => {
+  it('returns normalised BillingWebhookEvent on a valid payment_intent.succeeded event', async () => {
     mockConstructEvent.mockReturnValue(VALID_STRIPE_EVENT);
 
     const rawBody = JSON.stringify(VALID_STRIPE_EVENT);
-    const result = await stripeProvider.verifyWebhook(rawBody, 't=123,v1=valid');
+    const result = await verifyStripeWebhook(rawBody, 't=123,v1=valid');
 
     expect(result).not.toBeNull();
-    expect(result?.provider).toBe('stripe');
     expect(result?.type).toBe('payment.succeeded');
     expect(result?.providerEventId).toBe('evt_test_123');
     expect(result?.reference).toBe('pi_test_456');
@@ -148,7 +85,23 @@ describe('stripeProvider.verifyWebhook', () => {
 
   it('returns null when STRIPE_WEBHOOK_SECRET env var is not set', async () => {
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', '');
-    const result = await stripeProvider.verifyWebhook('{}', 't=123,v1=anything');
+    const result = await verifyStripeWebhook('{}', 't=123,v1=anything');
     expect(result).toBeNull();
+  });
+});
+
+// ── normaliseStripeEvent ──────────────────────────────────────────────────────
+
+describe('normaliseStripeEvent', () => {
+  it('maps payment_intent.succeeded to payment.succeeded', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const event = normaliseStripeEvent(VALID_STRIPE_EVENT as any);
+    expect(event.type).toBe('payment.succeeded');
+  });
+
+  it('normalises currency to uppercase', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const event = normaliseStripeEvent(VALID_STRIPE_EVENT as any);
+    expect(event.currency).toBe('EUR');
   });
 });

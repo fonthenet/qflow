@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { handleWhatsAppMessage } from '@/lib/whatsapp-commands';
+import { dedupChannelEvent } from '@/lib/channels/dedup';
 import crypto from 'crypto';
 import { checkRateLimit, webhookLimiter } from '@/lib/rate-limit';
 
@@ -60,6 +60,9 @@ export async function POST(request: NextRequest) {
     let messageBody: string;
     let profileName: string | undefined;
     let bsuid: string | undefined; // Business-Scoped User ID (Meta BSUID)
+    // Dedup key: Meta message.id (guaranteed unique per delivery); Twilio uses
+    // a composite derived from phone+timestamp as a best-effort fallback.
+    let messageId: string | null = null;
 
     // For Meta Cloud API (JSON), verify x-hub-signature-256 if app secret is set
     if (contentType.includes('application/json')) {
@@ -89,6 +92,8 @@ export async function POST(request: NextRequest) {
         messageBody = message.text?.body ?? '';
         profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
         bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
+        // Meta provides a stable per-delivery message ID — primary dedup key.
+        messageId = (message.id as string) || null;
       } else {
         // No app secret configured — fail closed (reject unverified payloads)
         console.error('[whatsapp-webhook] WHATSAPP_APP_SECRET/MESSENGER_APP_SECRET not set — rejecting unverified webhook. Set the env var to enable webhook processing.');
@@ -100,6 +105,9 @@ export async function POST(request: NextRequest) {
       fromPhone = (formData.get('From') as string) ?? '';
       toPhone = (formData.get('To') as string) ?? '';
       messageBody = (formData.get('Body') as string) ?? '';
+      // Twilio SID is a stable message identifier
+      const twilioSid = formData.get('MessageSid') as string | null;
+      messageId = twilioSid || null;
 
       // Validate Twilio signature if auth token is available
       const twilioSignature = request.headers.get('x-twilio-signature');
@@ -132,6 +140,25 @@ export async function POST(request: NextRequest) {
     if ((!fromPhone && !bsuid) || !messageBody) {
       return NextResponse.json({ ok: true });
     }
+
+    // ── Idempotency guard (Meta delivers webhooks multiple times) ──────
+    // Dedup by message_id. We derive a fallback key from phone + truncated body
+    // when no stable ID is available (shouldn't happen in production, but
+    // better than skipping dedup entirely).
+    const dedupKey =
+      messageId ||
+      `wa:${fromPhone || bsuid}:${Buffer.from(messageBody.slice(0, 64)).toString('base64')}`;
+
+    const dedupResult = await dedupChannelEvent('whatsapp', dedupKey, {
+      from: fromPhone || bsuid,
+      body: messageBody.slice(0, 64),
+    });
+
+    if (dedupResult === 'duplicate') {
+      console.log(`[whatsapp-webhook] Duplicate delivery suppressed (key=${dedupKey.slice(0, 30)}…)`);
+      return NextResponse.json({ ok: true });
+    }
+    // 'error' → dedup infra failed; process anyway (best-effort, avoids silent drops)
 
     // Log with PII redaction (show last 4 digits of phone, truncate message)
     const redactedPhone = fromPhone ? `***${fromPhone.slice(-4)}` : bsuid ? `bsuid:***${bsuid.slice(-4)}` : 'unknown';

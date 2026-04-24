@@ -65,6 +65,8 @@ export default async function DashboardLayout({
     getPlatformLifecycleState(organizationSettings, {
       hasExistingData: (officeCount ?? 0) > 0,
     }) === 'template_confirmed';
+  const wizardCompleted =
+    typeof organizationSettings.business_setup_wizard_completed_at === 'string';
 
   return (
     <div className="flex h-screen">
@@ -73,6 +75,7 @@ export default async function DashboardLayout({
         allowedNavigation={allowedNavigation}
         templateSummary={summarizeTemplate(platformConfig)}
         templateConfigured={templateConfigured}
+        wizardCompleted={wizardCompleted}
       />
       <main className="flex-1 overflow-y-auto bg-background p-6">
         {!templateConfigured ? (

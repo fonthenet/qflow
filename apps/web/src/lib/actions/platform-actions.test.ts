@@ -285,7 +285,7 @@ describe('platform actions', () => {
         officeIds: [expect.any(String)],
       })
     );
-    expect(revalidatePathMock).toHaveBeenCalledWith('/admin/onboarding');
+    expect(revalidatePathMock).toHaveBeenCalledWith('/admin/setup-wizard');
   });
 
   it('upgrades organization settings, stamps history, and backfills missing office versions', async () => {
@@ -426,6 +426,6 @@ describe('platform actions', () => {
         actionType: 'template_office_rollout',
       })
     );
-    expect(revalidatePathMock).toHaveBeenCalledWith('/admin/template-governance');
+    expect(revalidatePathMock).toHaveBeenCalledWith('/admin/offices');
   });
 });

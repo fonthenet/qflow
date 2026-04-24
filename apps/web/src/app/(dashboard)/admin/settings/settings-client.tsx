@@ -537,19 +537,7 @@ export function SettingsClient({
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/admin/settings/template-customization"
-              className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-            >
-              {t('Customize')}
-            </Link>
-            <Link
-              href="/admin/template-governance"
-              className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-            >
-              {t('Template Updates')}
-            </Link>
-            <Link
-              href="/admin/onboarding"
+              href="/admin/setup-wizard"
               className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
             >
               {t('Open Setup')}
@@ -1985,6 +1973,24 @@ export function SettingsClient({
               <span className="text-sm text-red-600">{passwordError}</span>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* ── Payment Methods ───────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">{t('Payment Methods')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('Configure how customers can pay you. Methods appear on their ticket page and in WhatsApp confirmations.')}
+            </p>
+          </div>
+          <Link
+            href="/admin/settings/payments"
+            className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors whitespace-nowrap"
+          >
+            {t('Payment options')}
+          </Link>
         </div>
       </section>
 

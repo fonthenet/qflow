@@ -47,7 +47,9 @@ function makeChain(resolved: unknown = { data: null, error: null }) {
 
 const mockSupabase = {
   from: vi.fn((table: string) => {
-    if (table === 'whatsapp_webhook_events') {
+    // Production code uses `channel_webhook_events` (generic multi-channel dedup table).
+    // The old table name `whatsapp_webhook_events` no longer exists — dedup.ts line 25.
+    if (table === 'channel_webhook_events') {
       return {
         insert: vi.fn(() => {
           const result = dedupInsertResults[dedupInsertCallCount] ?? { data: null, error: null };
@@ -228,14 +230,17 @@ describe('GET /api/whatsapp-webhook (hub.challenge verification)', () => {
 });
 
 describe('POST /api/whatsapp-webhook — signature verification', () => {
-  it('returns 500 when WHATSAPP_APP_SECRET is not configured', async () => {
+  it('returns 403 when WHATSAPP_APP_SECRET is not configured (fail-closed behaviour)', async () => {
+    // Production code intentionally returns 403 (forbidden/reject) rather than
+    // 500 when the app secret is absent — unverified payloads are rejected, not
+    // treated as a server error. Updated to match current production behaviour.
     delete process.env.WHATSAPP_APP_SECRET;
     const { body } = buildMetaPayload();
     const req = buildRequest(body, { 'content-type': 'application/json' });
     const res = await POST(req as any);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     const json = await res.json();
-    expect(json.error).toMatch(/not configured/i);
+    expect(json.error).toMatch(/not configured|verification/i);
   });
 
   it('returns 403 when X-Hub-Signature-256 header is absent', async () => {

@@ -86,14 +86,16 @@ export default async function TicketStatusPage({ params }: PageProps) {
   let organizationName = '';
   let priorityAlertConfig = null;
   let messengerPageId: string | null = null;
+  let acceptsCash = false;
   if (office?.organization_id) {
-    const { data: organization } = await supabase
+    const { data: organization } = await (supabase as any)
       .from('organizations')
-      .select('name, settings')
+      .select('name, settings, accepts_cash')
       .eq('id', office.organization_id)
-      .single();
+      .single() as { data: { name: string; settings: Record<string, any> | null; accepts_cash: boolean } | null };
 
     organizationName = organization?.name ?? '';
+    acceptsCash = organization?.accepts_cash ?? false;
     const orgSettings = (organization?.settings as Record<string, any> | null) ?? null;
     priorityAlertConfig = getPriorityAlertConfig(orgSettings, isSmsProviderConfigured());
     if (orgSettings?.messenger_enabled && orgSettings?.messenger_page_id) {
@@ -135,6 +137,8 @@ export default async function TicketStatusPage({ params }: PageProps) {
     serviceDescription: service?.description ?? '',
   };
 
+  const ticketLocale: string = ((ticket.customer_data as Record<string, unknown> | null)?.locale as string | undefined) ?? 'en';
+
   // Status: issued with no customer data -> show check-in form
   if (ticket.status === 'issued' && !ticket.customer_data) {
     return (
@@ -166,15 +170,22 @@ export default async function TicketStatusPage({ params }: PageProps) {
   if (ticket.status === 'serving' || ticket.status === 'served') {
     return (
       renderWithLanguageSwitcher(
-        <QueueStatus
-        ticket={ticket}
-        organizationName={contextInfo.organizationName}
-        officeName={contextInfo.officeName}
-        departmentName={contextInfo.departmentName}
-        serviceName={contextInfo.serviceName}
-        priorityAlertConfig={priorityAlertConfig}
-        messengerPageId={messengerPageId}
-        />
+        <>
+          <QueueStatus
+            ticket={ticket}
+            organizationName={contextInfo.organizationName}
+            officeName={contextInfo.officeName}
+            departmentName={contextInfo.departmentName}
+            serviceName={contextInfo.serviceName}
+            priorityAlertConfig={priorityAlertConfig}
+            messengerPageId={messengerPageId}
+          />
+          {acceptsCash && (
+            <div className="mx-auto mt-4 w-full max-w-sm px-4">
+              <CashBadge locale={ticketLocale} />
+            </div>
+          )}
+        </>
       )
     );
   }
@@ -232,6 +243,11 @@ export default async function TicketStatusPage({ params }: PageProps) {
             <p className="text-2xl font-bold text-foreground">{ticket.ticket_number}</p>
           </div>
         </div>
+        {acceptsCash && (
+          <div className="mt-4">
+            <CashBadge locale={ticketLocale} />
+          </div>
+        )}
         <p className="mt-4 text-xs text-muted-foreground">
           {contextInfo.officeName} &middot; {contextInfo.serviceName}
         </p>
@@ -239,6 +255,20 @@ export default async function TicketStatusPage({ params }: PageProps) {
     </div>
   );
 }
+function CashBadge({ locale }: { locale: string }) {
+  const labels: Record<string, string> = {
+    fr: 'Espèces acceptées',
+    ar: 'يُقبل النقد',
+    en: 'Cash accepted',
+  };
+  const label = labels[locale.slice(0, 2)] ?? labels.fr;
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3 text-center text-sm font-medium text-foreground">
+      💵 {label}
+    </div>
+  );
+}
+
   function renderWithLanguageSwitcher(content: ReactNode) {
     return (
       <div className="relative">

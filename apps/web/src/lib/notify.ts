@@ -5,7 +5,6 @@ import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { renderNotification, type Locale } from '@qflo/shared';
 import { APP_BASE_URL } from '@/lib/config';
-
 // ── Receipt block for 'served' ─────────────────────────────────────
 
 const RECEIPT_LABELS: Record<Locale, {
@@ -310,6 +309,28 @@ export async function notifyCustomer(
         if (block) messageBody += '\n\n' + block;
       } catch (e: any) {
         console.warn(`[notify] receipt block failed for ticket ${ticketId}:`, e?.message);
+      }
+
+      // If the org accepts cash, append a single locale-aware line so the
+      // customer knows before they arrive. Best-effort — never blocks.
+      if (session.organization_id) {
+        try {
+          const { data: orgRow } = await supabase
+            .from('organizations')
+            .select('accepts_cash')
+            .eq('id', session.organization_id)
+            .single();
+          if (orgRow?.accepts_cash) {
+            const cashLine: Record<string, string> = {
+              fr: '💵 *Espèces acceptées* sur place',
+              ar: '💵 *يُقبل الدفع نقداً* في المكان',
+              en: '💵 *Cash accepted* on-site',
+            };
+            messageBody += '\n\n' + (cashLine[locale] ?? cashLine.fr);
+          }
+        } catch (e: any) {
+          console.warn(`[notify] accepts_cash lookup failed for ticket ${ticketId}:`, e?.message);
+        }
       }
     }
 

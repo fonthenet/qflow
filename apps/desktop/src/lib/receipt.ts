@@ -33,7 +33,6 @@ export function buildReceiptHtml(args: ReceiptArgs): string {
   const cols = widthMm >= 80 ? 42 : 32;
 
   const pad = (s: string, n: number) => s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
-  const padLeft = (s: string, n: number) => s.length >= n ? s : ' '.repeat(n - s.length) + s;
   const dash = '-'.repeat(cols);
 
   const dateStr = paidAt.toLocaleString(
@@ -96,3 +95,4 @@ function centered(s: string, cols: number): string {
 function escape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+

@@ -616,6 +616,19 @@ const messages: Record<string, Partial<Record<Locale, string>> & Record<'en' | '
     ar: '👋 مرحبًا!\n\nليس لديك أي حجز قادم.\n\n*للبدء:*\n• *موعد <الرمز>* — حجز موعد (مثال: *موعد HADABI*)\n• *انضم <الرمز>* — الانضمام إلى طابور\n• *القائمة* — تصفح الأعمال',
     en: '👋 Hello!\n\nYou have no upcoming bookings.\n\n*To get started:*\n• *BOOK <code>* — book (e.g. *BOOK HADABI*)\n• *JOIN <code>* — join a queue\n• *LIST* — browse businesses',
   },
+  // ── QR keyword handler ──
+  // Sent when the customer sends "QR" but we have no ticket to resolve an org from.
+  qr_no_active_ticket: {
+    fr: '❌ Aucun ticket actif trouvé. Rejoignez d\'abord une file pour recevoir les QR codes de paiement.',
+    ar: '❌ لم يُعثر على تذكرة نشطة. انضم أولاً إلى طابور لاستلام رموز QR للدفع.',
+    en: '❌ No active ticket found. Please join a queue first to receive payment QR codes.',
+  },
+  // Sent when the org has no QR code payment methods configured.
+  qr_no_methods: {
+    fr: '❌ Aucun QR code de paiement disponible chez *{name}*.',
+    ar: '❌ لا توجد رموز QR للدفع متاحة في *{name}*.',
+    en: '❌ No payment QR codes available at *{name}*.',
+  },
 };
 
 // ── Template lookup with locale fallback ────────────────────────────

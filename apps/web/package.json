@@ -26,6 +26,9 @@
     "ios:clip-call-again": "node scripts/ios-clip-e2e.mjs --call-only"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@qflo/shared": "file:../../packages/shared",
     "@qflo/ui": "file:../../packages/ui",
     "@sentry/nextjs": "^10.50.0",
@@ -47,7 +50,8 @@
     "stripe": "^22.0.2",
     "tailwind-merge": "^2",
     "tailwindcss-animate": "^1",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

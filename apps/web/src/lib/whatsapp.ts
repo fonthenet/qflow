@@ -184,6 +184,72 @@ async function sendViaTwilio(
   return { ok: true, provider: 'twilio', to: toE164, sid: data?.sid };
 }
 
+// ── Send image via Meta Cloud API ───────────────────────────────
+/**
+ * Send a WhatsApp image message (link type) via the Meta Cloud API.
+ * Used to deliver QR code images stored in Supabase Storage (signed URL).
+ *
+ * Falls back gracefully — if Meta is not configured or the call fails,
+ * returns `{ ok: false }` without throwing. The caller should fall back to
+ * sending the caption as a text message.
+ */
+export async function sendWhatsAppImageMessage({
+  to,
+  imageUrl,
+  caption,
+  timezone,
+}: {
+  to: string;
+  imageUrl: string;
+  caption?: string;
+  timezone?: string;
+}): Promise<WhatsAppSendResult> {
+  const config = getMetaWhatsAppConfig();
+  if (!config) {
+    return { ok: false, provider: 'meta', error: 'Meta Cloud API not configured — image messages require Meta' };
+  }
+
+  const normalizedTo = normalizePhone(to, timezone);
+  if (!normalizedTo) {
+    return { ok: false, provider: 'meta', error: 'Phone number is not valid' };
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/v22.0/${config.phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: normalizedTo,
+        type: 'image',
+        image: {
+          link: imageUrl,
+          ...(caption ? { caption } : {}),
+        },
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const errorMsg =
+      data?.error?.message ??
+      `Meta WhatsApp image API failed with status ${response.status}`;
+    console.error('[whatsapp:meta:image] Send failed:', errorMsg, data);
+    return { ok: false, provider: 'meta', to: normalizedTo, error: errorMsg };
+  }
+
+  const messageId = data?.messages?.[0]?.id;
+  return { ok: true, provider: 'meta', to: normalizedTo, sid: messageId };
+}
+
 // ── Main send function (tries Meta first, falls back to Twilio) ─
 export async function sendWhatsAppMessage({
   to,
