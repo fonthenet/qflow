@@ -4004,7 +4004,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             </div>
           )}
 
-          {activeTicket && !(orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe') && (
+          {activeTicket && !effectiveRestaurantFloor && (
           <div className="active-ticket-panel" style={{ display: mainView === 'queue' ? undefined : 'none' }}>
             {activeTicket.status === 'called' ? (
               <>
