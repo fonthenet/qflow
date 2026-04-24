@@ -223,8 +223,24 @@ select option {
 .btn-logout:hover { background: rgba(239,68,68,0.15); color: var(--danger); }
 
 /* ── Login ────────────────────────────────────────────────────────── */
-.login-container { flex: 1; display: flex; align-items: center; justify-content: center; }
-.login-card { width: 420px; background: var(--surface); border-radius: var(--radius); padding: 48px 40px; }
+/* overflow-y:auto + flex-start keeps tall wizards (e.g. the editable
+   signup preview) scrollable instead of clipping at the top. */
+.login-container { flex: 1; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 16px; }
+.login-card { width: 420px; background: var(--surface); border-radius: var(--radius); padding: 48px 40px; margin: auto; }
+/* Wider card for the editable setup wizard so the live preview sits
+   beside the location form instead of below it. */
+.login-card.login-card-wide { width: 820px; max-width: 96vw; padding: 40px 40px; }
+.wizard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+@media (max-width: 760px) { .wizard-grid { grid-template-columns: 1fr; gap: 20px; } }
+.wizard-section-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2); margin: 0 0 12px; }
+
+/* Inputs inside the wizard preview panel follow the same theme rules as
+   .form-field input so we don't get white boxes in dark mode. */
+.wizard-preview input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 14px; outline: none; color-scheme: light dark; }
+.wizard-preview input:focus { border-color: var(--primary); }
+[data-theme="dark"] .wizard-preview input { background: #0f172a; border-color: #475569; color: #f1f5f9; }
+[data-theme="dark"] .wizard-preview input::placeholder { color: #64748b; }
+[data-theme="light"] .wizard-preview input { background: #f8fafc; }
 .login-header { text-align: center; margin-bottom: 32px; }
 .login-logo { width: 64px; height: 64px; background: var(--primary); color: white; font-weight: 800; font-size: 32px; display: flex; align-items: center; justify-content: center; border-radius: 16px; margin: 0 auto 16px; }
 .login-header h1 { font-size: 24px; font-weight: 700; }

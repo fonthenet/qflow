@@ -147,8 +147,13 @@ export function SetupWizardClient({ organizationName, initialCategory }: Props) 
   }
   function back() { setError(null); setStepIdx((i) => Math.max(i - 1, 0)); }
 
+  // Widen the card on the location step so the live preview can sit
+  // beside the form instead of stacking underneath.
+  const isLocation = step.id === 'location';
+  const maxWidth = isLocation ? 960 : 720;
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: 24 }}>
+    <div style={{ maxWidth, margin: '0 auto', padding: 24 }}>
       <div style={{ marginBottom: 16, color: 'var(--text-muted)', fontSize: 13 }}>
         Step {stepIdx + 1} of {total}
       </div>
@@ -158,7 +163,7 @@ export function SetupWizardClient({ organizationName, initialCategory }: Props) 
           background: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: 12,
-          padding: 24,
+          padding: 28,
           color: 'var(--text)',
         }}
       >
@@ -192,85 +197,95 @@ export function SetupWizardClient({ organizationName, initialCategory }: Props) 
         )}
 
         {step.id === 'location' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Field label="Office name">
-              <input
-                type="text"
-                value={officeName}
-                onChange={(e) => setOfficeName(e.target.value)}
-                placeholder="Agence Principale"
-                style={inputStyle}
-              />
-            </Field>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: selectedCategory ? '1fr 1fr' : '1fr',
+              gap: 28,
+              alignItems: 'start',
+            }}
+          >
+            {/* ── Left column: location ──────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <h2 style={sectionTitle}>Location</h2>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Country">
-                <select
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                  style={{ ...inputStyle, colorScheme: 'light dark' }}
-                >
-                  {COUNTRIES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {resolveLocalized(c.name, LOCALE)}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Office name">
+                <input
+                  type="text"
+                  value={officeName}
+                  onChange={(e) => setOfficeName(e.target.value)}
+                  placeholder="Agence Principale"
+                  style={inputStyle}
+                />
               </Field>
 
-              <Field label="City">
-                <select
-                  value={cityName}
-                  onChange={(e) => setCityName(e.target.value)}
-                  style={{ ...inputStyle, colorScheme: 'light dark' }}
-                >
-                  <option value="">—</option>
-                  {(selectedCountry?.cities ?? []).map((c) => {
-                    const name = resolveLocalized(c.name, LOCALE);
-                    return <option key={name} value={name}>{name}</option>;
-                  })}
-                </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Country">
+                  <select
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    style={{ ...inputStyle, colorScheme: 'light dark' }}
+                  >
+                    {COUNTRIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {resolveLocalized(c.name, LOCALE)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="City">
+                  <select
+                    value={cityName}
+                    onChange={(e) => setCityName(e.target.value)}
+                    style={{ ...inputStyle, colorScheme: 'light dark' }}
+                  >
+                    <option value="">—</option>
+                    {(selectedCountry?.cities ?? []).map((c) => {
+                      const name = resolveLocalized(c.name, LOCALE);
+                      return <option key={name} value={name}>{name}</option>;
+                    })}
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Address (optional)">
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="12 rue Didouche"
+                  style={inputStyle}
+                />
               </Field>
+
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Timezone: <code style={{ fontFamily: 'monospace' }}>{timezone}</code>
+              </div>
             </div>
 
-            <Field label="Address (optional)">
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="12 rue Didouche"
-                style={inputStyle}
-              />
-            </Field>
-
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              Timezone: <code style={{ fontFamily: 'monospace' }}>{timezone}</code>
-            </div>
-
+            {/* ── Right column: live preview ─────────────────── */}
             {selectedCategory && (
               <div
                 style={{
-                  marginTop: 8,
                   border: '1px solid var(--border)',
-                  borderRadius: 10,
+                  borderRadius: 12,
                   background: 'var(--bg)',
-                  padding: 16,
+                  padding: 18,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <strong style={{ fontSize: 14, color: 'var(--text)' }}>
-                    What we&apos;ll set up for {businessName}
-                  </strong>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Edit anything — you can add more later
-                  </span>
-                </div>
+                <h2 style={{ ...sectionTitle, marginBottom: 8 }}>What we&apos;ll set up</h2>
 
-                {/* Summary line — read-only */}
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14, lineHeight: 1.6 }}>
-                  {selectedCategory.emoji} {resolveLocalized(selectedCategory.label, LOCALE)}
+                {/* Context line — what's being seeded, read-only summary */}
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
+                  <span style={{ marginRight: 6 }}>{selectedCategory.emoji}</span>
+                  {resolveLocalized(selectedCategory.label, LOCALE)}
                   {selectedCountry ? ` · ${selectedCountry.flag} ${cityName || resolveLocalized(selectedCountry.name, LOCALE)}` : ''}
                   {' · '}Mon–Sat 9:00–18:00
+                  <br />
+                  <span style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
+                    Edit any field below — add, rename, or remove rows.
+                  </span>
                 </div>
 
                 {/* Department */}
@@ -437,6 +452,15 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--text)',
   fontSize: 14,
   colorScheme: 'light dark',
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--text-muted)',
+  margin: 0,
 };
 
 const primaryBtn: React.CSSProperties = {

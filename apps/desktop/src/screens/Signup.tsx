@@ -28,10 +28,10 @@ interface Props {
   locale: DesktopLocale;
 }
 
-function CardShell({ title, subtitle, maxWidth, children }: { title: string; subtitle?: string; maxWidth?: number; children: React.ReactNode }) {
+function CardShell({ title, subtitle, wide, children }: { title: string; subtitle?: string; wide?: boolean; children: React.ReactNode }) {
   return (
     <div className="login-container">
-      <div className="login-card" style={{ maxWidth: maxWidth ?? 520 }}>
+      <div className={wide ? 'login-card login-card-wide' : 'login-card'}>
         <div className="login-header">
           <QLogo size={72} style={{ margin: '0 auto 16px' }} />
           <h1>{title}</h1>
@@ -297,169 +297,196 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
       <CardShell
         title={resolveLocalized(step.title, wizardLocale)}
         subtitle={resolveLocalized(step.subtitle, wizardLocale)}
+        wide
       >
         <div className="login-form">
           {error && <div className="login-error">{error}</div>}
 
-          <div className="form-field">
-            <label>Office name</label>
-            <input
-              type="text"
-              value={officeName}
-              onChange={(e) => setOfficeName(e.target.value)}
-              placeholder="Agence Principale"
-              autoFocus
-            />
-          </div>
+          <div className="wizard-grid">
+            {/* ── Left column: location ─────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h2 className="wizard-section-title">Location</h2>
 
-          <div className="form-field">
-            <label>Address (optional)</label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="12 rue Didouche, Alger"
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div className="form-field">
-              <label>Country</label>
-              <select
-                value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value)}
-                style={{ colorScheme: 'light dark' }}
-              >
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.flag} {resolveLocalized(c.name, wizardLocale)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-field">
-              <label>City</label>
-              <select
-                value={cityName}
-                onChange={(e) => setCityName(e.target.value)}
-                style={{ colorScheme: 'light dark' }}
-              >
-                <option value="">—</option>
-                {(selectedCountry?.cities ?? []).map((c) => {
-                  const name = resolveLocalized(c.name, wizardLocale);
-                  return <option key={name} value={name}>{name}</option>;
-                })}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: -4 }}>
-            Timezone: <code style={{ fontFamily: 'monospace' }}>{timezone}</code>
-          </div>
-
-          {selectedCategory && (
-            <div
-              style={{
-                marginTop: 10,
-                padding: 14,
-                border: '1px solid var(--border, #475569)',
-                borderRadius: 10,
-                background: 'var(--surface2, rgba(255,255,255,0.04))',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-                <strong style={{ fontSize: 13, color: 'var(--text, #f1f5f9)' }}>
-                  What we&apos;ll set up for {businessName || 'your business'}
-                </strong>
-                <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>Edit anything before finishing</span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 10 }}>
-                {selectedCategory.emoji} {resolveLocalized(selectedCategory.label, wizardLocale)} · Mon–Sat 9:00–18:00
-              </div>
-
-              {/* Department */}
               <div className="form-field">
-                <label>Department</label>
-                <input type="text" value={deptName} onChange={(e) => setDeptName(e.target.value)} />
+                <label>Office name</label>
+                <input
+                  type="text"
+                  value={officeName}
+                  onChange={(e) => setOfficeName(e.target.value)}
+                  placeholder="Agence Principale"
+                  autoFocus
+                />
               </div>
 
-              {/* Services */}
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', marginTop: 6, marginBottom: 6 }}>Services</div>
-              {services.map((s, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 34px', gap: 6, marginBottom: 6 }}>
-                  <input
-                    type="text"
-                    value={s.name}
-                    onChange={(e) => setServices((arr) => arr.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))}
-                    placeholder="Service name"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={480}
-                    value={s.minutes}
-                    onChange={(e) => setServices((arr) => arr.map((x, idx) => idx === i ? { ...x, minutes: Math.max(1, Number(e.target.value) || 1) } : x))}
-                    title="Estimated minutes"
-                    style={{ textAlign: 'center' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setServices((arr) => arr.filter((_, idx) => idx !== i))}
-                    disabled={services.length <= 1}
-                    style={{ ...secondaryBtn, flex: 'none', padding: '6px 10px', opacity: services.length <= 1 ? 0.4 : 1 }}
-                    title="Remove"
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-field">
+                  <label>Country</label>
+                  <select
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    style={{ colorScheme: 'light dark' }}
                   >
-                    ✕
-                  </button>
+                    {COUNTRIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {resolveLocalized(c.name, wizardLocale)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setServices((arr) => [...arr, { name: '', minutes: 15 }])}
-                style={{ ...secondaryBtn, flex: 'none', padding: '6px 12px', marginTop: 2 }}
-              >
-                + Add service
-              </button>
-              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 6 }}>
-                Minutes on the right drive wait-time forecasts.
+                <div className="form-field">
+                  <label>City</label>
+                  <select
+                    value={cityName}
+                    onChange={(e) => setCityName(e.target.value)}
+                    style={{ colorScheme: 'light dark' }}
+                  >
+                    <option value="">—</option>
+                    {(selectedCountry?.cities ?? []).map((c) => {
+                      const name = resolveLocalized(c.name, wizardLocale);
+                      return <option key={name} value={name}>{name}</option>;
+                    })}
+                  </select>
+                </div>
               </div>
 
-              {/* Desks */}
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', marginTop: 14, marginBottom: 6 }}>Counters / Desks</div>
-              {desks.map((d, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 34px', gap: 6, marginBottom: 6 }}>
-                  <input
-                    type="text"
-                    value={d}
-                    onChange={(e) => setDesks((arr) => arr.map((x, idx) => idx === i ? e.target.value : x))}
-                    placeholder="Counter name"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setDesks((arr) => arr.filter((_, idx) => idx !== i))}
-                    disabled={desks.length <= 1}
-                    style={{ ...secondaryBtn, flex: 'none', padding: '6px 10px', opacity: desks.length <= 1 ? 0.4 : 1 }}
-                    title="Remove"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setDesks((arr) => [...arr, `Counter ${arr.length + 1}`])}
-                style={{ ...secondaryBtn, flex: 'none', padding: '6px 12px', marginTop: 2 }}
-              >
-                + Add counter
-              </button>
+              <div className="form-field">
+                <label>Address (optional)</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="12 rue Didouche, Alger"
+                />
+              </div>
+
+              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: -4 }}>
+                Timezone: <code style={{ fontFamily: 'monospace' }}>{timezone}</code>
+              </div>
             </div>
-          )}
+
+            {/* ── Right column: live preview ────────────────────── */}
+            {selectedCategory && (
+              <div
+                className="wizard-preview"
+                style={{
+                  padding: 18,
+                  border: '1px solid var(--border, #475569)',
+                  borderRadius: 12,
+                  background: 'var(--surface2, rgba(255,255,255,0.04))',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 14,
+                }}
+              >
+                <div>
+                  <h2 className="wizard-section-title" style={{ margin: 0 }}>
+                    What we&apos;ll set up
+                  </h2>
+                  <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', marginTop: 6, lineHeight: 1.5 }}>
+                    <span style={{ marginRight: 6 }}>{selectedCategory.emoji}</span>
+                    {resolveLocalized(selectedCategory.label, wizardLocale)}
+                    {' · '}Mon–Sat 9:00–18:00
+                    <br />
+                    <span style={{ color: 'var(--text3, #64748b)' }}>Edit any field before finishing.</span>
+                  </div>
+                </div>
+
+                {/* Department */}
+                <div className="form-field">
+                  <label>Department</label>
+                  <input type="text" value={deptName} onChange={(e) => setDeptName(e.target.value)} />
+                </div>
+
+                {/* Services */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>Services</div>
+                    <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      Name · Minutes
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {services.map((s, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 72px 30px', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={s.name}
+                          onChange={(e) => setServices((arr) => arr.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))}
+                          placeholder="Service"
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={480}
+                          value={s.minutes}
+                          onChange={(e) => setServices((arr) => arr.map((x, idx) => idx === i ? { ...x, minutes: Math.max(1, Number(e.target.value) || 1) } : x))}
+                          title="Estimated minutes"
+                          style={{ textAlign: 'center' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setServices((arr) => arr.filter((_, idx) => idx !== i))}
+                          disabled={services.length <= 1}
+                          style={{ ...iconBtn, opacity: services.length <= 1 ? 0.3 : 1 }}
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setServices((arr) => [...arr, { name: '', minutes: 15 }])}
+                    style={ghostBtn}
+                  >
+                    + Add service
+                  </button>
+                </div>
+
+                {/* Desks */}
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', marginBottom: 6 }}>
+                    Counters / Desks
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {desks.map((d, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 30px', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={d}
+                          onChange={(e) => setDesks((arr) => arr.map((x, idx) => idx === i ? e.target.value : x))}
+                          placeholder="Counter name"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setDesks((arr) => arr.filter((_, idx) => idx !== i))}
+                          disabled={desks.length <= 1}
+                          style={{ ...iconBtn, opacity: desks.length <= 1 ? 0.3 : 1 }}
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDesks((arr) => [...arr, `Counter ${arr.length + 1}`])}
+                    style={ghostBtn}
+                  >
+                    + Add counter
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {loading && progress && (
             <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', padding: '6px 0' }}>⏳ {progress}</div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button type="button" onClick={back} disabled={loading} style={secondaryBtn}>← Back</button>
             <button
               type="button"
@@ -513,4 +540,33 @@ const secondaryBtn: React.CSSProperties = {
   background: 'transparent',
   color: 'var(--text, #f1f5f9)',
   cursor: 'pointer',
+};
+
+// Inline ± row controls for the preview panel — smaller than the main
+// action buttons so the grid doesn't visually compete with the CTA.
+const ghostBtn: React.CSSProperties = {
+  marginTop: 8,
+  padding: '6px 12px',
+  borderRadius: 8,
+  border: '1px dashed var(--border, #475569)',
+  background: 'transparent',
+  color: 'var(--text2, #94a3b8)',
+  fontSize: 12,
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
+};
+
+const iconBtn: React.CSSProperties = {
+  padding: 0,
+  width: 30,
+  height: 30,
+  borderRadius: 6,
+  border: '1px solid var(--border, #475569)',
+  background: 'transparent',
+  color: 'var(--text2, #94a3b8)',
+  cursor: 'pointer',
+  fontSize: 12,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
