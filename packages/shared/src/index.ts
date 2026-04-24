@@ -10,4 +10,3 @@ export * from './voices';
 export * from './arabic-numbers';
 export * from './restaurant-tables';
 export * from './setup-wizard';
-export * from './whatsapp';

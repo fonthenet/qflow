@@ -2,8 +2,6 @@ import 'server-only';
 
 // Re-export normalizePhone from shared package (single source of truth)
 import { normalizePhone } from '@qflo/shared';
-import { decrypt } from '@/lib/crypto';
-import { createClient as createServerSupabase } from '@/lib/supabase/server';
 export { normalizePhone };
 
 export interface WhatsAppSendResult {
@@ -30,38 +28,6 @@ function getMetaWhatsAppConfig(): MetaWhatsAppConfig | null {
   const phoneNumberId = getTrimmedEnv('WHATSAPP_META_PHONE_NUMBER_ID');
   if (!accessToken || !phoneNumberId) return null;
   return { accessToken, phoneNumberId };
-}
-
-/**
- * Load per-organization Meta credentials from the `organizations` row.
- * Returns null when the org hasn't connected their own number — the caller
- * then falls back to the platform-shared `getMetaWhatsAppConfig()` env vars.
- *
- * This is what powers the "use your own number" Embedded Signup path. The
- * shared Qflo number remains the default; per-org creds only override when
- * they exist for a given organizationId.
- */
-async function getOrgMetaWhatsAppConfig(
-  organizationId: string,
-): Promise<MetaWhatsAppConfig | null> {
-  try {
-    const sb = await createServerSupabase();
-    const { data, error } = await sb
-      .from('organizations')
-      .select('whatsapp_phone_number_id, whatsapp_access_token_encrypted')
-      .eq('id', organizationId)
-      .single();
-    if (error || !data) return null;
-    const phoneNumberId = (data as any).whatsapp_phone_number_id?.toString().trim();
-    const encrypted = (data as any).whatsapp_access_token_encrypted?.toString();
-    if (!phoneNumberId || !encrypted) return null;
-    const accessToken = await decrypt(encrypted);
-    if (!accessToken) return null;
-    return { accessToken, phoneNumberId };
-  } catch (err) {
-    console.error('[whatsapp] getOrgMetaWhatsAppConfig failed:', err);
-    return null;
-  }
 }
 
 // ── Twilio (fallback) ───────────────────────────────────────────
@@ -289,29 +255,12 @@ export async function sendWhatsAppMessage({
   to,
   body,
   timezone,
-  organizationId,
 }: {
   to: string;
   body: string;
   timezone?: string;
-  /**
-   * When provided, Qflo first tries this org's own WhatsApp credentials
-   * (set via Embedded Signup). Falls back to the platform-shared number
-   * from env when absent. Pass this on every call-site that has an org in
-   * context so tenants who brought their own number are billed on their
-   * WABA, not on Qflo's.
-   */
-  organizationId?: string;
 }): Promise<WhatsAppSendResult> {
-  // Try per-org Meta credentials first (Embedded Signup path)
-  if (organizationId) {
-    const orgConfig = await getOrgMetaWhatsAppConfig(organizationId);
-    if (orgConfig) {
-      return sendViaMeta(orgConfig, to, body, timezone);
-    }
-  }
-
-  // Fall back to platform-shared Meta number
+  // Try Meta Cloud API first
   const metaConfig = getMetaWhatsAppConfig();
   if (metaConfig) {
     return sendViaMeta(metaConfig, to, body, timezone);

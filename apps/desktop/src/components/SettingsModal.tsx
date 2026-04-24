@@ -2127,50 +2127,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                 </div>
               );
             })()}
-            {/* ── Use your own WhatsApp number (optional) ────────────────── */}
-            {values.whatsapp_enabled && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  border: '1px dashed var(--border, #475569)',
-                  background: 'var(--surface2, rgba(255,255,255,0.03))',
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Use your own WhatsApp number (optional)
-                </div>
-                <div style={{ color: 'var(--text2, #94a3b8)', marginBottom: 8 }}>
-                  By default, customers receive messages from the shared Qflo WhatsApp number. Connect your own number to send as your business brand. Opens the portal in your browser.
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Portal hosts the Meta Embedded Signup flow (requires a
-                    // real browser for the Facebook login popup). Station
-                    // just launches the page externally.
-                    window.open(
-                      'https://qflo.net/admin/settings/integrations/whatsapp',
-                      '_blank',
-                    );
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: '#1877F2',
-                    color: '#fff',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Open WhatsApp setup in browser
-                </button>
-              </div>
-            )}
           </div>
 
           {/* ── Messenger ────────────────── */}
