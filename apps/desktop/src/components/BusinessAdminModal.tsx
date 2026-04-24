@@ -51,6 +51,13 @@ type Tab = 'departments' | 'services' | 'desks' | 'tables' | 'team';
 
 interface Props {
   organizationId: string;
+  /**
+   * The office the Station operator is currently signed in to. Used to
+   * default new departments/desks and to scope the Tables panel so the
+   * data matches what the FloorMap on the same session reads. If omitted,
+   * we fall back to the first office the user has access to.
+   */
+  activeOfficeId?: string | null;
   callerUserId: string;
   callerRole: string;
   locale: DesktopLocale;
@@ -77,7 +84,15 @@ function roleLabel(role: string, t: (k: string) => string): string {
   return map[role] ?? role;
 }
 
-export function BusinessAdminModal({ organizationId, callerUserId, callerRole, locale, onClose, embedded = false }: Props) {
+export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserId, callerRole, locale, onClose, embedded = false }: Props) {
+  // Default to the Station's active office; fall back to the first office
+  // the admin has access to if the session didn't provide one. This keeps
+  // the Tables panel aligned with the FloorMap so tables created here
+  // actually show up on the queue screen.
+  const resolveDefaultOfficeId = (list: { id: string }[]): string | null => {
+    if (activeOfficeId && list.some((o) => o.id === activeOfficeId)) return activeOfficeId;
+    return list[0]?.id ?? null;
+  };
   const t = useCallback((k: string, vars?: Record<string, any>) => translate(locale, k, vars), [locale]);
   const isAllowed = canManage(callerRole);
 
@@ -564,7 +579,7 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
                     <>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
                         <button style={btnPrimary} onClick={() => setDeptForm({
-                          name: '', code: '', description: '', office_id: offices[0]?.id, is_active: true, sort_order: null,
+                          name: '', code: '', description: '', office_id: resolveDefaultOfficeId(offices) ?? undefined, is_active: true, sort_order: null,
                         })}>
                           + {t('New department')}
                         </button>
@@ -660,7 +675,7 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
                         <button style={btnPrimary} onClick={() => setDeskForm({
                           name: '', display_name: '',
-                          office_id: offices[0]?.id,
+                          office_id: resolveDefaultOfficeId(offices) ?? undefined,
                           department_id: undefined,
                           current_staff_id: null, status: 'closed', is_active: true,
                         })}>
@@ -712,7 +727,7 @@ export function BusinessAdminModal({ organizationId, callerUserId, callerRole, l
                   {/* ── Tables (restaurants only) ─────────── */}
                   {tab === 'tables' && (
                     <TablesPanel
-                      officeId={offices[0]?.id ?? null}
+                      officeId={resolveDefaultOfficeId(offices)}
                       locale={locale}
                       canManage={isAllowed}
                     />

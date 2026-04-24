@@ -3110,6 +3110,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                     <BusinessAdminModal
                       embedded
                       organizationId={organizationId}
+                      activeOfficeId={officeId ?? null}
                       callerUserId={callerUserId}
                       callerRole={callerRole ?? ''}
                       locale={locale}
