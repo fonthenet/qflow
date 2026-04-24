@@ -6,6 +6,13 @@ import { STAFF_ROLES } from '@qflo/shared';
 import { assignStaffToDesk, createDesk, updateDesk, deleteDesk } from '@/lib/actions/admin-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type Desk = {
   id: string;
@@ -132,6 +139,11 @@ export function DesksClient({
   }
 
   function handleSubmit(formData: FormData) {
+    // Radix Select uses a sentinel for "None" since it can't accept an empty
+    // string as an item value. Normalize back to empty before the action runs.
+    if (formData.get('current_staff_id') === '__none__') {
+      formData.set('current_staff_id', '');
+    }
     startTransition(async () => {
       const result = editing
         ? await updateDesk(editing.id, formData)
@@ -191,30 +203,38 @@ export function DesksClient({
 
       {/* Filters + view toggle */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <select
-          value={currentOfficeFilter}
-          onChange={(e) => handleFilterChange('office', e.target.value)}
-          className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+        <Select
+          value={currentOfficeFilter || '__all__'}
+          onValueChange={(v) => handleFilterChange('office', v === '__all__' ? '' : v)}
         >
-          <option value="">{t('All Locations')}</option>
-          {offices.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={currentDepartmentFilter}
-          onChange={(e) => handleFilterChange('department', e.target.value)}
-          className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder={t('All Locations')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t('All Locations')}</SelectItem>
+            {offices.map((o) => (
+              <SelectItem key={o.id} value={o.id}>
+                {o.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={currentDepartmentFilter || '__all__'}
+          onValueChange={(v) => handleFilterChange('department', v === '__all__' ? '' : v)}
         >
-          <option value="">{t('All Departments')}</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} {d.office ? `(${Array.isArray(d.office) ? d.office[0]?.name : d.office.name})` : ''}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder={t('All Departments')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t('All Departments')}</SelectItem>
+            {departments.map((d) => (
+              <SelectItem key={d.id} value={d.id}>
+                {d.name} {d.office ? `(${Array.isArray(d.office) ? d.office[0]?.name : d.office.name})` : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         <div className="ml-auto inline-flex rounded-lg border border-border bg-background p-0.5">
           <button
@@ -301,31 +321,37 @@ export function DesksClient({
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <select
-                    value={desk.current_staff_id ?? ''}
+                  <Select
+                    value={desk.current_staff_id ?? '__unassigned__'}
                     disabled={isAssignPending}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value) runAssign(value, desk.id);
-                      else if (desk.current_staff_id) runAssign(desk.current_staff_id, null);
+                    onValueChange={(value) => {
+                      if (value === '__unassigned__') {
+                        if (desk.current_staff_id) runAssign(desk.current_staff_id, null);
+                      } else {
+                        runAssign(value, desk.id);
+                      }
                     }}
-                    className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                   >
-                    <option value="">{t('Unassigned')}</option>
-                    {staffPickerFor(desk).map((s) => {
-                      const onDesk = deskByStaffId.get(s.id);
-                      const onOther = onDesk && onDesk.id !== desk.id;
-                      return (
-                        <option key={s.id} value={s.id}>
-                          {s.full_name}
-                          {onOther ? ` · ${t('on')} ${onDesk?.name}` : ''}
-                          {s.office_id !== desk.office_id && s.office?.name
-                            ? ` (${s.office.name})`
-                            : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder={t('Unassigned')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__unassigned__">{t('Unassigned')}</SelectItem>
+                      {staffPickerFor(desk).map((s) => {
+                        const onDesk = deskByStaffId.get(s.id);
+                        const onOther = onDesk && onDesk.id !== desk.id;
+                        return (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.full_name}
+                            {onOther ? ` · ${t('on')} ${onDesk?.name}` : ''}
+                            {s.office_id !== desk.office_id && s.office?.name
+                              ? ` (${s.office.name})`
+                              : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
@@ -395,83 +421,94 @@ export function DesksClient({
                 <label className="mb-1 block text-sm font-medium text-foreground">
                   {t('Office')} <span className="text-destructive">*</span>
                 </label>
-                <select
+                <Select
                   name="office_id"
                   required
                   defaultValue={editing?.office_id ?? currentOfficeFilter ?? ''}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">{t('Select location...')}</option>
-                  {offices.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('Select location...')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {offices.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
                   {t('Department')} <span className="text-destructive">*</span>
                 </label>
-                <select
+                <Select
                   name="department_id"
                   required
                   defaultValue={editing?.department_id ?? currentDepartmentFilter ?? ''}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">{t('Select department...')}</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} {d.office ? `(${Array.isArray(d.office) ? d.office[0]?.name : d.office.name})` : ''}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('Select department...')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.name} {d.office ? `(${Array.isArray(d.office) ? d.office[0]?.name : d.office.name})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
                   {t('Status')}
                 </label>
-                <select
-                  name="status"
-                  defaultValue={editing?.status ?? 'closed'}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="closed">{t('Closed')}</option>
-                  <option value="open">{t('Open')}</option>
-                  <option value="on_break">{t('On Break')}</option>
-                </select>
+                <Select name="status" defaultValue={editing?.status ?? 'closed'}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="closed">{t('Closed')}</SelectItem>
+                    <SelectItem value="open">{t('Open')}</SelectItem>
+                    <SelectItem value="on_break">{t('On Break')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
                   {t('Assigned team member')}
                 </label>
-                <select
+                <Select
                   name="current_staff_id"
-                  defaultValue={editing?.current_staff_id ?? ''}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  defaultValue={editing?.current_staff_id ?? '__none__'}
                 >
-                  <option value="">{t('None')}</option>
-                  {staffList
-                    .filter((s) => {
-                      // In the edit modal, scope to staff in the desk's own office.
-                      // Cross-office moves must use the inline assign (which also
-                      // updates staff.office_id). This keeps createDesk/updateDesk
-                      // consistent with assertStaffAssignment's same-office rule.
-                      const officeId = editing?.office_id ?? currentOfficeFilter;
-                      if (!officeId) return true;
-                      return !s.office_id || s.office_id === officeId;
-                    })
-                    .map((s) => {
-                      const onDesk = deskByStaffId.get(s.id);
-                      const onOther = onDesk && onDesk.id !== editing?.id;
-                      return (
-                        <option key={s.id} value={s.id}>
-                          {s.full_name}
-                          {onOther ? ` · ${t('on')} ${onDesk?.name}` : ''}
-                        </option>
-                      );
-                    })}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('None')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t('None')}</SelectItem>
+                    {staffList
+                      .filter((s) => {
+                        // In the edit modal, scope to staff in the desk's own office.
+                        // Cross-office moves must use the inline assign (which also
+                        // updates staff.office_id). This keeps createDesk/updateDesk
+                        // consistent with assertStaffAssignment's same-office rule.
+                        const officeId = editing?.office_id ?? currentOfficeFilter;
+                        if (!officeId) return true;
+                        return !s.office_id || s.office_id === officeId;
+                      })
+                      .map((s) => {
+                        const onDesk = deskByStaffId.get(s.id);
+                        const onOther = onDesk && onDesk.id !== editing?.id;
+                        return (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.full_name}
+                            {onOther ? ` · ${t('on')} ${onDesk?.name}` : ''}
+                          </SelectItem>
+                        );
+                      })}
+                  </SelectContent>
+                </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {t('To move someone across locations, close this and use the Assigned Staff dropdown in the row.')}
                 </p>

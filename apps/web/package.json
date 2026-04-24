@@ -31,6 +31,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@qflo/shared": "file:../../packages/shared",
     "@qflo/ui": "file:../../packages/ui",
+    "@radix-ui/react-select": "^2.2.6",
     "@sentry/nextjs": "^10.50.0",
     "@supabase/ssr": "^0.6",
     "@supabase/supabase-js": "^2",
