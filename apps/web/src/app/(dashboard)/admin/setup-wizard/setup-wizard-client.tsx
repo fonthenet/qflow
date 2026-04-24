@@ -843,6 +843,9 @@ function SetupOverviewStep({
   const [linkingDeskId, setLinkingDeskId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Per-row deletion state — lets us show a spinner on the exact row
+  // being deleted instead of dimming the whole page. Keyed by the row id.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Services grouped by department
   const servicesByDept = useMemo(() => {
@@ -910,30 +913,42 @@ function SetupOverviewStep({
     });
   }
 
-  function handleDeleteService(id: string) {
+  // Destructive actions ask for confirmation first (instant feedback that
+  // the click registered) and then show a per-row spinner while the
+  // server round-trips — so users never wonder whether anything happened.
+  function handleDeleteService(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    setDeletingId(id);
     startTransition(async () => {
       setError(null);
       const result = await deleteService(id);
       if (result?.error) setError(result.error);
       else router.refresh();
+      setDeletingId(null);
     });
   }
 
-  function handleDeleteDepartment(id: string) {
+  function handleDeleteDepartment(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}" and all its services? This cannot be undone.`)) return;
+    setDeletingId(id);
     startTransition(async () => {
       setError(null);
       const result = await deleteDepartment(id);
       if (result?.error) setError(result.error);
       else router.refresh();
+      setDeletingId(null);
     });
   }
 
-  function handleDeleteDesk(id: string) {
+  function handleDeleteDesk(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    setDeletingId(id);
     startTransition(async () => {
       setError(null);
       const result = await deleteDesk(id);
       if (result?.error) setError(result.error);
       else router.refresh();
+      setDeletingId(null);
     });
   }
 
@@ -1027,12 +1042,16 @@ function SetupOverviewStep({
                         <Plus className="h-3 w-3" /> {t('Add {label}', { label: vocab.serviceLabel })}
                       </button>
                       <button
-                        onClick={() => handleDeleteDepartment(dept.id)}
+                        onClick={() => handleDeleteDepartment(dept.id, dept.name)}
                         disabled={isPending}
                         className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
                         title={t('Delete {label}', { label: vocab.departmentLabel.toLowerCase() })}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingId === dept.id ? (
+                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-destructive/30 border-t-destructive" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -1051,12 +1070,16 @@ function SetupOverviewStep({
                               </span>
                             ) : null}
                             <button
-                              onClick={() => handleDeleteService(svc.id)}
+                              onClick={() => handleDeleteService(svc.id, svc.name)}
                               disabled={isPending}
-                              className="rounded-lg p-1 text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-destructive transition-colors disabled:opacity-50"
+                              className="rounded-lg p-1 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
                               title={t('Delete {label}', { label: vocab.serviceLabel.toLowerCase() })}
                             >
-                              <Trash2 className="h-3 w-3" />
+                              {deletingId === svc.id ? (
+                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-destructive/30 border-t-destructive" />
+                              ) : (
+                                <Trash2 className="h-3 w-3" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -1185,12 +1208,16 @@ function SetupOverviewStep({
                         <Link2 className="h-3 w-3" /> {isLinking ? t('Cancel') : t('Edit {label}s', { label: vocab.serviceLabel })}
                       </button>
                       <button
-                        onClick={() => handleDeleteDesk(desk.id)}
+                        onClick={() => handleDeleteDesk(desk.id, desk.name)}
                         disabled={isPending}
                         className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
                         title={t('Delete {label}', { label: vocab.deskLabel.toLowerCase() })}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingId === desk.id ? (
+                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-destructive/30 border-t-destructive" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </div>
                   </div>
