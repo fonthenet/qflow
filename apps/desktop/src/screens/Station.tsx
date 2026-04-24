@@ -3709,7 +3709,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           : showBookingModal && mainView === 'queue'
             ? { paddingRight: 0 }
             : (orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe')
-              ? { paddingLeft: 8, paddingRight: 8, alignItems: 'stretch', justifyContent: 'flex-start' }
+              ? (effectiveRestaurantFloor
+                  ? { paddingLeft: 8, paddingRight: 8, alignItems: 'stretch', justifyContent: 'flex-start' }
+                  // Restaurant + Queue view: keep the panel centered but allow
+                  // vertical scroll so a tall active-ticket panel (number +
+                  // notes + seat chip + actions + toggle) isn't clipped when
+                  // the viewport is short.
+                  : { paddingTop: 64, paddingBottom: 24, overflowY: 'auto', justifyContent: 'flex-start' })
               : undefined
       }>
         {/* Timeline strip removed — Queue/Calendar tab toggle is sufficient */}
