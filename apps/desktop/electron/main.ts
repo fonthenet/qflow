@@ -82,6 +82,36 @@ function setMiniQueueEnabled(enabled: boolean) {
     getDB().prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('mini_queue_enabled', ?)").run(enabled ? 'true' : 'false');
   } catch {}
 }
+
+// Touch mode — per-device flag persisted in SQLite session table so
+// main process can apply window-level effects (hide native menu bar)
+// at startup, before the renderer even mounts. Renderer also tracks
+// it in localStorage for synchronous CSS class application.
+function getTouchModeEnabled(): boolean {
+  try {
+    const row = getDB().prepare("SELECT value FROM session WHERE key = 'touch_mode'").get() as { value?: string } | undefined;
+    return row?.value === 'true';
+  } catch { return false; }
+}
+function setTouchModeEnabled(enabled: boolean) {
+  try {
+    getDB().prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('touch_mode', ?)").run(enabled ? 'true' : 'false');
+  } catch {}
+  applyTouchModeToWindows(enabled);
+}
+function applyTouchModeToWindows(enabled: boolean) {
+  // Hide the native File/Edit/View/Window/Language/Help bar in touch
+  // mode — operators on a touch screen don't need it and the small
+  // top-left text targets aren't reachable. Alt key still reveals it
+  // when toggled off via setMenuBarVisibility(false) since
+  // setAutoHideMenuBar(true) lets it pop with Alt for power users.
+  for (const w of BrowserWindow.getAllWindows()) {
+    try {
+      w.setAutoHideMenuBar(enabled);
+      w.setMenuBarVisibility(!enabled);
+    } catch {}
+  }
+}
 function loadCurrentSessionRaw(): any | null {
   try {
     const row = getDB().prepare("SELECT value FROM session WHERE key = 'current'").get() as { value?: string } | undefined;
@@ -371,7 +401,13 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#0f172a',
+    // Hide menu bar at construction if touch mode is on so the window
+    // doesn't flash with the menu before applyTouchModeToWindows runs.
+    autoHideMenuBar: getTouchModeEnabled(),
   });
+  if (getTouchModeEnabled()) {
+    try { mainWindow.setMenuBarVisibility(false); } catch {}
+  }
 
   // Grant microphone access so the Audio output dropdown can enumerate
   // real devices with labels. Chromium hides audiooutput labels unless
@@ -555,6 +591,12 @@ ipcMain.handle('mini:get-enabled', () => getMiniQueueEnabled());
 ipcMain.handle('mini:set-enabled', (_e, enabled: boolean) => {
   setMiniQueueEnabled(!!enabled);
   if (!enabled) closeMiniWindow();
+  return true;
+});
+
+ipcMain.handle('touch-mode:get-enabled', () => getTouchModeEnabled());
+ipcMain.handle('touch-mode:set-enabled', (_e, enabled: boolean) => {
+  setTouchModeEnabled(!!enabled);
   return true;
 });
 

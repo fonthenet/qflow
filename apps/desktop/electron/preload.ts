@@ -248,6 +248,11 @@ contextBridge.exposeInMainWorld('qf', {
     show: (title: string, body: string) => ipcRenderer.invoke('notifications:show', title, body),
   },
 
+  touchMode: {
+    getEnabled: () => ipcRenderer.invoke('touch-mode:get-enabled'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('touch-mode:set-enabled', enabled),
+  },
+
   tickets: {
     onChange: (callback: () => void) => {
       const handler = () => callback();

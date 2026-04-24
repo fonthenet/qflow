@@ -48,6 +48,12 @@ export function App() {
       if (saved === 'dark' || saved === 'light') {
         document.documentElement.setAttribute('data-theme', saved);
       }
+      // Mini lives in its own BrowserWindow with its own document —
+      // mirror the touch-mode body class here so the same touch CSS
+      // rules apply (44px tap targets etc.).
+      if (localStorage.getItem('qflo_touch_mode') === 'true') {
+        document.body.classList.add('touch-mode');
+      }
     } catch {}
     return <MiniQueue />;
   }

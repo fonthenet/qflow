@@ -1162,3 +1162,132 @@ body.touch-mode .active-ticket-panel.compact .btn-lg {
 }
 body.touch-mode .active-ticket-panel.compact .active-number { font-size: 64px; }
 
+/* ── Catch-all for buttons not covered by specific rules above ────────
+   Most modal close X / dropdown nav / inline action buttons across the
+   app are inline-styled with no className — Settings / Customers /
+   Booking / Calendar / Team / BusinessAdmin / ZReport / Payment etc.
+   This baseline pushes any <button> to a 44×44 minimum hit target so
+   they're reachable without surgical rewrites of every modal.
+
+   Opt-out: add `data-touch-skip="true"` to a button (e.g. for status
+   dots that should stay tiny). None in the codebase use it today.
+
+   Padding only applies when the button has none of its own — using
+   :not([style*="padding"]) is too brittle, so we leave padding alone
+   and rely on min-height to expand. Buttons with very tight padding
+   already look fine once min-height kicks in. */
+body.touch-mode button:not([data-touch-skip="true"]) {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Modal close X buttons (width:32; height:32 inline style) — broad rule
+   above already promotes them. Add a touch-friendly font bump too so
+   the × glyph stays visually centered at the bigger size. */
+body.touch-mode [aria-label*="close" i],
+body.touch-mode [aria-label*="Close" i] {
+  font-size: 22px;
+}
+
+/* Dropdown menu items (status menu, language menu, etc.) — these are
+   inline-styled <button>s with display:flex, padding:10px 16px. Bump
+   so each menu row is comfortably tappable without overflow. */
+body.touch-mode [role="menu"] button,
+body.touch-mode [role="menuitem"] {
+  padding: 14px 20px !important;
+  font-size: 15px !important;
+}
+
+/* Sidebar resizer — default 10px hit area / 4px visible bar is too
+   thin for touch. Triple it. */
+body.touch-mode .station-sidebar-resizer {
+  width: 24px;
+  left: -12px;
+}
+body.touch-mode .station-sidebar-resizer::after {
+  width: 6px;
+  height: 80px;
+}
+
+/* Scrollbars — Chromium default is ~12-15px. Bump to 18px so vertical
+   queue lists, modal content, and FloorMap can be swipe-scrolled
+   without precision tapping the bar. */
+body.touch-mode ::-webkit-scrollbar {
+  width: 18px;
+  height: 18px;
+}
+body.touch-mode ::-webkit-scrollbar-thumb {
+  border: 4px solid transparent;
+  background-clip: padding-box;
+  border-radius: 12px;
+  background-color: rgba(148,163,184,0.55);
+}
+body.touch-mode ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148,163,184,0.75);
+}
+body.touch-mode ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* FloorMap table tiles — already large, but the small chair count /
+   party-size badges inside grow too. Just bump font-size of the label. */
+body.touch-mode .floor-map-table {
+  font-size: 18px;
+}
+
+/* Modal headers (h2/h3 inside fixed overlays) — inline-styled at
+   16-18px. Bumped slightly so they read at arm's length on a tablet. */
+body.touch-mode div[style*="position: fixed"] h2,
+body.touch-mode div[style*="position:fixed"] h2 {
+  font-size: 20px !important;
+}
+
+/* The Pause toggle's switch knob (decorative span, not a button) —
+   bump so the visual matches the new 44px button height. */
+body.touch-mode .pause-toggle > span:first-of-type {
+  width: 48px !important;
+  height: 26px !important;
+  border-radius: 13px !important;
+}
+body.touch-mode .pause-toggle > span:first-of-type > span {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+/* Top app header (Connected pill, Version, Check for Updates) — these
+   are small chrome buttons. Broad button rule already promotes them,
+   but boost the padding so the labels don't crowd. */
+body.touch-mode header button,
+body.touch-mode .app-header button {
+  padding: 8px 14px !important;
+}
+
+/* Make sure inline action buttons in active ticket secondary actions
+   (Park / No Show / Cancel / Ban) don't look stretched — explicit
+   minimum padding on top of broad min-height. */
+body.touch-mode .secondary-actions button {
+  padding: 10px 20px !important;
+}
+
+/* Notes textarea inside active ticket — relax min-height so it stays
+   the same proportion (3 rows tall). */
+body.touch-mode .active-ticket-panel textarea {
+  min-height: 80px;
+}
+
+/* DatePicker / numeric stepper buttons (24×24 inline) — broad rule
+   bumps to 44×44, but they sit in tight grids; cap min-width slightly
+   smaller so the row doesn't wrap. */
+body.touch-mode [data-stepper="true"] button {
+  min-width: 36px !important;
+}
+
+/* Settings sidebar nav items — these are inline-styled padded buttons
+   with text labels. Broad button rule + a touch of vertical breathing
+   room. */
+body.touch-mode [data-settings-nav="true"] button {
+  padding-block: 12px !important;
+  font-size: 14px !important;
+}
+
+

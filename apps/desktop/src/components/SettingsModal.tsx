@@ -130,6 +130,10 @@ function TouchModeToggleCard({ t }: { t: (k: string, v?: any) => string }) {
         try {
           localStorage.setItem('qflo_touch_mode', v ? 'true' : 'false');
           window.dispatchEvent(new CustomEvent('qflo:touch-mode-changed'));
+          // Mirror to main process so it can hide the native menu bar
+          // and persist across restarts independently of the renderer's
+          // localStorage. Fire-and-forget — CSS class already applied.
+          (window as any).qf?.touchMode?.setEnabled?.(v);
         } catch {}
       }}
       defaultEnabled={false}
