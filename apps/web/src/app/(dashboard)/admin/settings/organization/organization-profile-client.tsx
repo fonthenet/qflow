@@ -92,7 +92,7 @@ function buildTimezoneGroups(countryConfig: CountryConfig | null, allZones: stri
 }
 
 const SELECT_STYLE: React.CSSProperties = {
-  colorScheme: 'light dark',
+  colorScheme: 'light',
   background: 'var(--color-background, #f4f6f9)',
   color: 'var(--color-foreground, #0a0a0a)',
   borderColor: 'var(--color-border, #e2e5eb)',

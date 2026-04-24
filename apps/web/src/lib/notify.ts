@@ -5,6 +5,7 @@ import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { renderNotification, type Locale } from '@qflo/shared';
 import { APP_BASE_URL } from '@/lib/config';
+import { getCountryConfig, resolveLocale } from '@/lib/country';
 // ── Receipt block for 'served' ─────────────────────────────────────
 
 const RECEIPT_LABELS: Record<Locale, {
@@ -219,6 +220,12 @@ export async function notifyCustomer(
     // Stage 5: i18n default ("our service" / "notre service" / "خدمتنا")
     //
     // Any fallback beyond Stage 1 is logged so ops can spot stale data.
+    // Also collect org.locale_primary + country for the locale cascade below —
+    // piggyback on the lookups we were doing anyway for orgName so we don't
+    // hit the DB twice.
+    let orgLocalePrimary: string | null = null;
+    let orgCountry: string | null = null;
+
     let orgName = (opts.orgName ?? '').trim();
     let orgNameSource: 'opts' | 'session-org' | 'office-org' | 'office-name' | 'default' = 'opts';
     if (!orgName) {
@@ -226,13 +233,15 @@ export async function notifyCustomer(
       try {
         const { data: org, error } = await supabase
           .from('organizations')
-          .select('name')
+          .select('name, locale_primary, country')
           .eq('id', session.organization_id)
           .single();
         if (error) {
           console.warn(`[notify] org lookup by session.organization_id=${session.organization_id} failed:`, error.message);
         }
         orgName = (org?.name ?? '').trim();
+        orgLocalePrimary = (org?.locale_primary as string | null) ?? null;
+        orgCountry = (org?.country as string | null) ?? null;
       } catch (e: any) {
         console.warn(`[notify] org lookup by session.organization_id threw:`, e?.message);
       }
@@ -242,11 +251,14 @@ export async function notifyCustomer(
       try {
         const { data: office } = await supabase
           .from('offices')
-          .select('name, organization_id, organizations:organization_id(name)')
+          .select('name, organization_id, organizations:organization_id(name, locale_primary, country)')
           .eq('id', ticket.office_id)
           .single();
-        const officeOrgName = (office?.organizations as any)?.name;
+        const officeOrg = (office?.organizations as any);
+        const officeOrgName = officeOrg?.name;
         orgName = (officeOrgName ?? '').trim();
+        orgLocalePrimary = orgLocalePrimary ?? (officeOrg?.locale_primary ?? null);
+        orgCountry = orgCountry ?? (officeOrg?.country ?? null);
         if (!orgName && office?.name) {
           orgNameSource = 'office-name';
           orgName = office.name.trim();
@@ -255,6 +267,20 @@ export async function notifyCustomer(
         console.warn(`[notify] office→org lookup threw:`, e?.message);
       }
     }
+    // Resolve locale — full cascade:
+    //   ticket.locale > session.locale > org.locale_primary > country default > 'en'
+    // The ticket wins when the customer already picked a language (kiosk tap,
+    // WhatsApp greeting detection). When nothing is known about the customer
+    // we respect the business's Primary Locale setting instead of hardcoding.
+    const countryConfig = orgCountry
+      ? await getCountryConfig(supabase, orgCountry).catch(() => null)
+      : null;
+    const locale: Locale = resolveLocale(
+      (ticket.locale as string | null) ?? (session.locale as string | null),
+      orgLocalePrimary,
+      countryConfig,
+    ).slice(0, 2) as Locale;
+
     if (!orgName) {
       // Localized default — never leave WhatsApp template with empty `{name}`.
       const defaults: Record<string, string> = {
@@ -262,8 +288,7 @@ export async function notifyCustomer(
         ar: 'خدمتنا',
         en: 'our service',
       };
-      const lang = ((ticket.locale as string) || (session.locale as string) || 'fr').slice(0, 2);
-      orgName = defaults[lang] ?? defaults.fr;
+      orgName = defaults[locale] ?? defaults.fr;
       orgNameSource = 'default';
       console.warn(
         `[notify] orgName fell back to default for ticket ${ticketId} ` +
@@ -274,9 +299,6 @@ export async function notifyCustomer(
       // Lower-priority diagnostic so we can surface drift without alerting
       console.info(`[notify] orgName resolved via ${orgNameSource} for ticket ${ticketId}`);
     }
-
-    // Resolve locale
-    const locale: Locale = (ticket.locale as Locale) || (session.locale as Locale) || 'fr';
 
     // Build tracking URL
     const trackUrl = opts.trackUrl || `${APP_BASE_URL}/q/${ticket.qr_token}`;

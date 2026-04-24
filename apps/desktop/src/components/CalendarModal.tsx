@@ -141,7 +141,7 @@ const APPT_SELECT = `
 
 export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, onAppointmentChange, initialViewMode, initialAppointmentId, embedded, refreshKey }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
-  const tz = officeTimezone || 'Africa/Algiers';
+  const tz = officeTimezone || 'UTC';
   const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
   const { confirm } = useConfirmDialog();
 
@@ -154,7 +154,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [selectedAppt, setSelectedAppt] = useState<CalendarAppointment | null>(null);
   const [selectedSlotIdx, setSelectedSlotIdx] = useState<number | null>(null);
   const [bookingSlot, setBookingSlot] = useState<{ date: string; time: string } | null>(null);
-  const [listDateFilter, setListDateFilter] = useState<string | null>(initialViewMode === 'list' ? dateKeyInTz(new Date(), officeTimezone || 'Africa/Algiers') : null);
+  const [listDateFilter, setListDateFilter] = useState<string | null>(initialViewMode === 'list' ? dateKeyInTz(new Date(), officeTimezone || 'UTC') : null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [dropFeedback, setDropFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);

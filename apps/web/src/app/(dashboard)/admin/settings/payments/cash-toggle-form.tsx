@@ -26,7 +26,7 @@ export function CashToggleForm({ orgId, acceptsCash, setAcceptsCash }: CashToggl
         onChange={handleChange}
         disabled={isPending}
         className="mt-0.5 h-4 w-4 accent-primary cursor-pointer"
-        style={{ colorScheme: 'light dark' }}
+        style={{ colorScheme: 'light' }}
       />
       <span>
         <span className="block text-sm font-medium text-foreground">We accept cash</span>

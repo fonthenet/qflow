@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
-/* Enable Tailwind v4 `dark:` variants via the user's system preference.
-   Pages opt in per-component by writing `dark:` classes; everything without
-   them stays on the light palette defined below. */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* Dark mode is not supported yet — the app forces `color-scheme: light`
+   below. Scope the `dark:` variant to a class that is never added to the
+   tree so `dark:` utilities become no-ops; otherwise OS dark mode bleeds
+   dark-palette styles (pale icons on white cards, invisible borders, etc.)
+   into a light-only UI. Flip this to `@media (prefers-color-scheme: dark)`
+   the day real dark-mode styling lands. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-background: #f4f6f9;
@@ -64,10 +67,26 @@
     user-select: none;
     touch-action: manipulation;
   }
-  /* Native dropdowns follow the page color-scheme (light) — do NOT
-     hardcode dark option backgrounds here; it breaks every <select>
-     in the admin portal. Individual queue pages that want dark styling
-     should scope it locally. */
+  /* Native <select> + <option>: paint explicitly light so Chromium does
+     NOT flash a dark panel on dark-OS machines before applying the
+     page's color-scheme. `color-scheme: light` on <html> alone is not
+     enough — Chromium still paints one frame of the OS default before
+     honoring it. Forcing solid white on the element + every option
+     eliminates the black flash we kept seeing on open. */
+  select {
+    background-color: #ffffff;
+    color: #0a0a0a;
+    color-scheme: light;
+  }
+  select option,
+  select optgroup {
+    background-color: #ffffff;
+    color: #0a0a0a;
+  }
+  select option:checked {
+    background-color: #e2e8f0;
+    color: #0a0a0a;
+  }
 }
 
 /* ── Kiosk success checkmark animation ── */

@@ -1,5 +1,6 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { resolveStaffProfile } from '@/lib/authz';
@@ -34,72 +35,62 @@ export async function login(formData: FormData) {
 }
 
 export async function register(formData: FormData) {
-  const supabase = await createClient();
+  const email = (formData.get('email') as string | null)?.trim() ?? '';
+  const password = (formData.get('password') as string | null) ?? '';
+  const fullName = (formData.get('fullName') as string | null)?.trim() ?? '';
+  const organizationName = (formData.get('organizationName') as string | null)?.trim() ?? '';
+  const countryCode = (formData.get('country') as string | null)?.trim() || null;
+  const cityName = (formData.get('city') as string | null)?.trim() || null;
+  const locale = (formData.get('locale') as string | null)?.trim() || 'fr';
 
-  const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
-  const fullName = formData.get('fullName') as string;
-  const organizationName = formData.get('organizationName') as string;
-  // Business category is no longer collected at signup — the setup wizard
-  // captures the template (which supersedes category) as the first step.
-
-  // Create the auth user
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        organization_name: organizationName,
-      },
-    },
-  });
-
-  if (authError) {
-    return { error: authError.message };
+  if (!email || !password || !fullName || !organizationName) {
+    return { error: 'Please fill in all required fields.' };
   }
 
-  if (!authData.user) {
-    return { error: 'Registration failed. Please try again.' };
-  }
+  // Route through the same /api/onboarding/create-business endpoint the
+  // Station signup uses, so both paths land on identical org wiring:
+  // country/timezone/locale on the first-class columns, business_country
+  // / business_city / directory listing in settings. The endpoint
+  // gracefully skips office/dept/service/desk when category+officeName
+  // aren't provided — the setup wizard will handle those.
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
+  const proto =
+    h.get('x-forwarded-proto') ??
+    (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
+  const origin = `${proto}://${host}`;
 
-  // Create organization and staff record via RPC
-  const slug = organizationName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  const { error: orgError } = await supabase.rpc('create_organization_with_admin', {
-    p_org_name: organizationName,
-    p_org_slug: slug,
-    p_admin_name: fullName,
-    p_admin_email: email,
-    p_auth_user_id: authData.user.id,
-  });
-
-  if (orgError) {
-    return { error: orgError.message };
-  }
-
-  // Enable directory listing by default; business_category is derived from
-  // the template the admin selects in the setup wizard.
-  {
-    const { data: staffRow } = await supabase
-      .from('staff')
-      .select('organization_id')
-      .eq('auth_user_id', authData.user.id)
-      .single();
-
-    if (staffRow?.organization_id) {
-      await supabase
-        .from('organizations')
-        .update({
-          settings: {
-            listed_in_directory: true,
-          },
-        })
-        .eq('id', staffRow.organization_id);
+  let json: any = null;
+  try {
+    const res = await fetch(`${origin}/api/onboarding/create-business`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password,
+        fullName,
+        businessName: organizationName,
+        country: countryCode,
+        city: cityName,
+        locale,
+      }),
+    });
+    json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { error: json?.error ?? 'Registration failed. Please try again.' };
     }
+  } catch (err: any) {
+    return { error: err?.message ?? 'Network error. Please try again.' };
+  }
+
+  // Exchange the returned tokens for a Supabase session cookie so the
+  // admin lands on /admin/setup-wizard already signed in.
+  if (json?.session?.access_token && json?.session?.refresh_token) {
+    const supabase = await createClient();
+    await supabase.auth.setSession({
+      access_token: json.session.access_token,
+      refresh_token: json.session.refresh_token,
+    });
   }
 
   redirect('/admin/setup-wizard');

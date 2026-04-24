@@ -13,7 +13,7 @@ interface Props {
 }
 
 const INPUT_STYLE: React.CSSProperties = {
-  colorScheme: 'light dark',
+  colorScheme: 'light',
   background: 'var(--bg)',
   color: 'var(--text)',
   borderColor: 'var(--border)',

@@ -145,13 +145,6 @@ contextBridge.exposeInMainWorld('qf', {
   settings: {
     getLocale: () => ipcRenderer.invoke('settings:get-locale'),
     setLocale: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
-    getPosCurrencyUnit: () => ipcRenderer.invoke('settings:get-pos-currency-unit'),
-    setPosCurrencyUnit: (unit: string) => ipcRenderer.invoke('settings:set-pos-currency-unit', unit),
-    onPosCurrencyUnitChange: (callback: (unit: string) => void) => {
-      const handler = (_: any, unit: string) => callback(unit);
-      ipcRenderer.on('settings:pos-currency-unit-changed', handler);
-      return () => ipcRenderer.removeListener('settings:pos-currency-unit-changed', handler);
-    },
     onLocaleChange: (callback: (locale: string) => void) => {
       const handler = (_: any, locale: string) => callback(locale);
       ipcRenderer.on('settings:locale-changed', handler);

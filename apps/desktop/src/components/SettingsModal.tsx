@@ -6,7 +6,6 @@ import { TeamModal } from './TeamModal';
 import { BusinessAdminModal } from './BusinessAdminModal';
 import { MenuEditor } from './MenuEditor';
 import { PrintersSection } from './PrintersSection';
-import { POSSection } from './POSSection';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { speak, buildSample, parseVoiceSettings } from '../lib/voice';
 import {
@@ -14,8 +13,13 @@ import {
   PRESET_KEYS,
   getFieldLabel,
   migrateToIntakeFields,
+  BUSINESS_CATEGORIES,
+  COUNTRIES,
+  getBusinessCategoryByVertical,
+  resolveLocalized,
   type IntakeField,
   type IntakeFieldScope,
+  type CategoryLocale,
 } from '@qflo/shared';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
@@ -281,8 +285,51 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Office-level: timezone + operating hours
-  const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
-  const [originalTimezone, setOriginalTimezone] = useState<string>('Africa/Algiers');
+  // Initial placeholder only — real org timezone loads from
+  // organizations.timezone below. UTC is neutral so US/FR/etc orgs
+  // never briefly render Algerian times.
+  const [officeTimezone, setOfficeTimezone] = useState<string>('UTC');
+  const [originalTimezone, setOriginalTimezone] = useState<string>('UTC');
+  // Org country (ISO alpha-2, e.g. 'DZ', 'US', 'FR'). Drives which
+  // country-specific UI to render — wilaya picker + Arabic-name field
+  // are Algeria-only and must never render for US/FR/etc orgs.
+  const [orgCountry, setOrgCountry] = useState<string>('');
+  const [originalOrgCountry, setOriginalOrgCountry] = useState<string>('');
+  const isAlgeria = orgCountry === 'DZ';
+  // Countries whose operators typically want an Arabic display name
+  // alongside the Latin one. Gating the Arabic-name field on the full
+  // Arabic-speaking country set (not just DZ) keeps the UI clean for
+  // US/FR/IN/etc. orgs while still surfacing it for MA/TN/EG/AE/SA where
+  // it's genuinely useful.
+  const ARABIC_COUNTRIES = new Set([
+    'DZ', 'MA', 'TN', 'EG', 'AE', 'SA', 'OM', 'QA', 'KW', 'JO',
+    'LB', 'BH', 'YE', 'LY', 'IQ', 'SY', 'PS', 'SD',
+  ]);
+  const showArabicName = ARABIC_COUNTRIES.has(orgCountry);
+  // Org's business category (from settings.business_category) — decides
+  // whether the catalog section renders as "Menu" (restaurant/cafe),
+  // "Products" (telecom/automotive/beauty/other retail-adjacent) or is
+  // hidden entirely (pure-service categories: gov, bank, healthcare,
+  // legal, insurance, real_estate, education — those already manage their
+  // offering via Business Administration → Services).
+  const [businessCategory, setBusinessCategory] = useState<string>('');
+  const catalogSection = (() => {
+    if (businessCategory === 'restaurant' || businessCategory === 'cafe') {
+      return { id: 'menu', icon: '🍽️', title: t('Menu') };
+    }
+    // Retail-adjacent: these categories typically sell physical inventory
+    // alongside services, so expose the same editor but label it Products.
+    if (
+      businessCategory === 'telecom' ||
+      businessCategory === 'automotive' ||
+      businessCategory === 'beauty' ||
+      businessCategory === 'other'
+    ) {
+      return { id: 'menu', icon: '📦', title: t('Products') };
+    }
+    // Pure-service categories (or category not yet set) — no catalog tab.
+    return null;
+  })();
   // Office-level: wilaya + city (Algerian province + commune)
   const [officeWilaya, setOfficeWilaya] = useState<string>('');
   const [originalWilaya, setOriginalWilaya] = useState<string>('');
@@ -408,20 +455,18 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       title: t('sm.section.business'),
       fields: [
         // Org name handled separately (not in settings jsonb)
-        { key: 'business_category', label: t('sm.field.business_category'), type: 'enum', default: 'other', options: [
-          { value: 'clinic', label: t('sm.cat.clinic') },
-          { value: 'dentist', label: t('sm.cat.dentist') },
-          { value: 'pharmacy', label: t('sm.cat.pharmacy') },
-          { value: 'salon', label: t('sm.cat.salon') },
-          { value: 'barber', label: t('sm.cat.barber') },
-          { value: 'restaurant', label: t('sm.cat.restaurant') },
-          { value: 'cafe', label: t('sm.cat.cafe') },
-          { value: 'retail', label: t('sm.cat.retail') },
-          { value: 'office', label: t('sm.cat.office') },
-          { value: 'government', label: t('sm.cat.government') },
-          { value: 'bank', label: t('sm.cat.bank') },
-          { value: 'other', label: t('sm.cat.other') },
-        ]},
+        // Category list is the single source of truth from @qflo/shared.
+        // Portal, Station and Expo all share the same enum so wizard →
+        // DB → Station round-trips never lose fidelity (previously this
+        // was a local enum of {clinic|dentist|pharmacy|…} that didn't
+        // overlap with wizard's {healthcare|banking|government|…},
+        // causing orgs to render as "Other").
+        { key: 'business_category', label: t('sm.field.business_category'), type: 'enum', default: 'other', options:
+          BUSINESS_CATEGORIES.map((c) => ({
+            value: c.value,
+            label: `${c.emoji} ${resolveLocalized(c.label, (locale === 'ar' ? 'ar' : locale === 'en' ? 'en' : 'fr') as CategoryLocale)}`,
+          })),
+        },
         { key: 'business_description', label: t('sm.field.description'), type: 'textarea', default: '' },
         { key: 'business_website', label: t('sm.field.website'), type: 'text', default: '', placeholder: 'https://example.com' },
         { key: 'business_phone', label: t('sm.field.business_phone'), type: 'text', default: '' },
@@ -572,12 +617,19 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       title: t('Business Administration'),
       fields: [], // Custom-rendered: opens BusinessAdminModal
     },
-    {
-      id: 'menu',
-      icon: '🍽️',
-      title: t('Menu'),
-      fields: [], // Custom-rendered: embeds MenuEditor
-    },
+    // Catalog tab — only shown for categories that actually sell items.
+    // Restaurant/cafe → "Menu"; telecom/automotive/beauty/other → "Products";
+    // pure-service categories (gov/bank/healthcare/legal/insurance/real_estate/
+    // education/services) → hidden (they manage their offering via
+    // Business Administration → Services instead).
+    ...(catalogSection
+      ? [{
+          id: catalogSection.id,
+          icon: catalogSection.icon,
+          title: catalogSection.title,
+          fields: [] as any[], // Custom-rendered: embeds MenuEditor
+        }]
+      : []),
     {
       id: 'printers',
       icon: '🖨️',
@@ -585,18 +637,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       fields: [], // Custom-rendered: PrintersSection
     },
     {
-      id: 'pos',
-      icon: '💵',
-      title: t('POS'),
-      fields: [], // Custom-rendered: POSSection
-    },
-    {
       id: 'diagnostics',
       icon: '🩺',
       title: t('Sync Diagnostics'),
       fields: [], // Custom-rendered
     },
-  ], [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [locale, catalogSection?.id, catalogSection?.title, catalogSection?.icon]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Account section state ──
   const [acctEmail, setAcctEmail] = useState('');
@@ -724,7 +770,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
       const [{ data, error: err }, officeResult, holidayResult] = await Promise.all([
-        sb.from('organizations').select('name, name_ar, settings, timezone, logo_url').eq('id', orgId).single(),
+        sb.from('organizations').select('name, name_ar, settings, timezone, logo_url, country, vertical').eq('id', orgId).single(),
         officeId
           ? sb.from('offices').select('operating_hours, settings, wilaya, city').eq('id', officeId).single()
           : Promise.resolve({ data: null, error: null }),
@@ -734,6 +780,20 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       ]);
       if (err) { setError(err.message); return; }
       const s: SettingsShape = ((data as any)?.settings ?? {}) as SettingsShape;
+      // Portal's platform-template wizard writes `platform_vertical` +
+      // top-level `vertical` but not `business_category`. Station's
+      // dropdown + catalog-tab gating both key off `business_category`,
+      // so derive it from the vertical when absent. This keeps older
+      // orgs (and orgs provisioned via the portal wizard) rendering the
+      // right category + catalog tab instead of falling back to "Other".
+      const rawCategory = (s as any)?.business_category as string | null | undefined;
+      if (!rawCategory) {
+        const vert =
+          ((data as any)?.vertical as string | null | undefined) ??
+          ((s as any)?.platform_vertical as string | null | undefined);
+        const derived = getBusinessCategoryByVertical(vert ?? undefined);
+        if (derived) (s as any).business_category = derived;
+      }
       originalRef.current = { ...s };
       const name = ((data as any)?.name ?? '') as string;
       setOrgName(name);
@@ -742,9 +802,18 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       setOrgNameAr(nameAr);
       setOriginalOrgNameAr(nameAr);
       setLogoUrl(((data as any)?.logo_url ?? null) as string | null);
+      {
+        const c = String(((data as any)?.country ?? '')).toUpperCase();
+        setOrgCountry(c);
+        setOriginalOrgCountry(c);
+      }
+      // Use the possibly-derived value written into `s` above, so
+      // the catalog-tab gating sees the real category even for orgs
+      // provisioned by the platform wizard.
+      setBusinessCategory(String(((s as any)?.business_category ?? '')).toLowerCase());
 
       // Load org-level timezone (single source of truth for the business)
-      const orgTz = (data as any)?.timezone || 'Africa/Algiers';
+      const orgTz = (data as any)?.timezone || 'UTC';
       setOfficeTimezone(orgTz);
       setOriginalTimezone(orgTz);
 
@@ -752,7 +821,13 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       if (officeResult?.data) {
         const ofc = officeResult.data as any;
         const wilaya = typeof ofc.wilaya === 'string' ? ofc.wilaya : '';
-        const city = typeof ofc.city === 'string' ? ofc.city : '';
+        const officeCityRaw = typeof ofc.city === 'string' ? ofc.city : '';
+        // Fall back to settings.business_city when the office row hasn't
+        // captured it yet — shell-signup flows write city to settings
+        // before any office exists, and the wizard may create the office
+        // later without copying the selected city across.
+        const settingsCity = String((s as any)?.business_city ?? '');
+        const city = officeCityRaw || settingsCity;
         setOfficeWilaya(wilaya);
         setOriginalWilaya(wilaya);
         setOfficeCity(city);
@@ -769,6 +844,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         }
         setSchedule(sched);
         setOriginalSchedule(JSON.parse(JSON.stringify(sched)));
+      } else {
+        // No office yet — still surface the city chosen during signup so
+        // the operator sees what was selected and can edit it.
+        const settingsCity = String((s as any)?.business_city ?? '');
+        setOfficeCity(settingsCity);
+        setOriginalCity(settingsCity);
       }
 
       // Load holidays
@@ -852,6 +933,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     if (officeTimezone !== originalTimezone) return true;
     if (officeWilaya !== originalWilaya) return true;
     if (officeCity !== originalCity) return true;
+    if (orgCountry !== originalOrgCountry) return true;
     if (JSON.stringify(schedule) !== JSON.stringify(originalSchedule)) return true;
     if (JSON.stringify(holidays) !== JSON.stringify(originalHolidays)) return true;
     const o = originalRef.current;
@@ -875,7 +957,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       if (cur !== orig) return true;
     }
     return false;
-  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr, officeTimezone, originalTimezone, officeWilaya, originalWilaya, officeCity, originalCity, schedule, originalSchedule, holidays, originalHolidays]);
+  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr, officeTimezone, originalTimezone, officeWilaya, originalWilaya, officeCity, originalCity, schedule, originalSchedule, holidays, originalHolidays, orgCountry, originalOrgCountry]);
 
   // ─── Validation ───────────────────────────────────────────────────
   const errors = useMemo(() => {
@@ -1036,9 +1118,16 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       }
 
       const merged = { ...current, ...partial };
+      // Mirror city to settings.business_city so shell-signup orgs (which
+      // may not have an office row yet) still round-trip the selected city.
+      // Keeps the two locations in sync even when the office does exist.
+      if (officeCity !== originalCity) {
+        (merged as any).business_city = officeCity || null;
+      }
       const updatePayload: any = { settings: merged };
       if (orgName !== originalOrgName) updatePayload.name = orgName;
       if (orgNameAr !== originalOrgNameAr) updatePayload.name_ar = orgNameAr || null;
+      if (orgCountry !== originalOrgCountry) updatePayload.country = orgCountry || null;
       const { error: updErr } = await sb
         .from('organizations')
         .update(updatePayload)
@@ -2038,6 +2127,50 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                 </div>
               );
             })()}
+            {/* ── Use your own WhatsApp number (optional) ────────────────── */}
+            {values.whatsapp_enabled && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: '1px dashed var(--border, #475569)',
+                  background: 'var(--surface2, rgba(255,255,255,0.03))',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Use your own WhatsApp number (optional)
+                </div>
+                <div style={{ color: 'var(--text2, #94a3b8)', marginBottom: 8 }}>
+                  By default, customers receive messages from the shared Qflo WhatsApp number. Connect your own number to send as your business brand. Opens the portal in your browser.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Portal hosts the Meta Embedded Signup flow (requires a
+                    // real browser for the Facebook login popup). Station
+                    // just launches the page externally.
+                    window.open(
+                      'https://qflo.net/admin/settings/integrations/whatsapp',
+                      '_blank',
+                    );
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: '#1877F2',
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Open WhatsApp setup in browser
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Messenger ────────────────── */}
@@ -2723,19 +2856,24 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               />
               {errors['__org_name'] && <div style={errStyle}>{errors['__org_name']}</div>}
             </div>
-            <div style={{ padding: '5px 0' }}>
-              <label style={labelStyle}>{t('sm.field.org_name_ar')}</label>
-              <input
-                type="text"
-                value={orgNameAr}
-                onChange={(e) => setOrgNameAr(e.target.value)}
-                style={{ ...inputStyle, direction: 'rtl', textAlign: 'right' }}
-                placeholder="الاسم بالعربية"
-              />
-            </div>
+            {/* Arabic name field — surfaced for any Arabic-speaking
+                country (MENA + Gulf). Latin-only markets like US/FR/IN
+                don't get the clutter. */}
+            {showArabicName && (
+              <div style={{ padding: '5px 0' }}>
+                <label style={labelStyle}>{t('sm.field.org_name_ar')}</label>
+                <input
+                  type="text"
+                  value={orgNameAr}
+                  onChange={(e) => setOrgNameAr(e.target.value)}
+                  style={{ ...inputStyle, direction: 'rtl', textAlign: 'right' }}
+                  placeholder="الاسم بالعربية"
+                />
+              </div>
+            )}
           </div>
         )}
-        {sec.id === 'business' && (
+        {sec.id === 'business' && isAlgeria && (
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
@@ -2774,6 +2912,47 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+            </div>
+          </div>
+        )}
+        {/* Universal Country + City block for non-Algeria orgs. Always
+            rendered on the business section (even when orgCountry is
+            empty — older shell orgs may not have it set yet, so we
+            surface the editable dropdown here). Country is an editable
+            select backed by @qflo/shared/COUNTRIES; city is a plain text
+            field pre-filled from offices.city when set at signup. */}
+        {sec.id === 'business' && !isAlgeria && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            columnGap: 20,
+            rowGap: 0,
+            marginBottom: 4,
+          }}>
+            <div style={{ padding: '5px 0' }}>
+              <label style={labelStyle}>{t('Country')}</label>
+              <select
+                value={orgCountry}
+                onChange={(e) => setOrgCountry(e.target.value.toUpperCase())}
+                style={inputStyle}
+              >
+                <option value="">—</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {resolveLocalized(c.name, (locale === 'ar' ? 'ar' : locale === 'en' ? 'en' : 'fr') as CategoryLocale)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ padding: '5px 0' }}>
+              <label style={labelStyle}>{t('City')}</label>
+              <input
+                type="text"
+                value={officeCity}
+                onChange={(e) => setOfficeCity(e.target.value)}
+                style={inputStyle}
+                placeholder={t('City')}
+              />
             </div>
           </div>
         )}
@@ -2993,8 +3172,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   )
                 ) : activeSection === 'printers' ? (
                   <PrintersSection t={t} locale={locale} />
-                ) : activeSection === 'pos' ? (
-                  <POSSection t={t} locale={locale} />
                 ) : activeSection === 'account' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>
@@ -3012,7 +3189,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                             type="email"
                             value={acctEmail}
                             onChange={(e) => setAcctEmail(e.target.value)}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)', fontSize: 13 }}
+                            style={inputStyle}
                           />
                         </div>
                         <button
@@ -3037,7 +3214,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                             value={acctNewPassword}
                             onChange={(e) => setAcctNewPassword(e.target.value)}
                             placeholder={t('Minimum 6 characters')}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)', fontSize: 13 }}
+                            style={inputStyle}
                           />
                         </div>
                         <div>
@@ -3047,7 +3224,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                             value={acctConfirmPassword}
                             onChange={(e) => setAcctConfirmPassword(e.target.value)}
                             placeholder={t('Repeat new password')}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)', fontSize: 13 }}
+                            style={inputStyle}
                           />
                         </div>
                         <button

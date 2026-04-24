@@ -8,7 +8,6 @@ import { OrderPad, type TicketItem } from './OrderPad';
 import { PaymentModal } from './PaymentModal';
 import { ZReportModal } from './ZReportModal';
 import { formatMoney } from '../lib/money';
-import { usePosCurrencyUnit } from '../lib/use-pos-currency-unit';
 
 const CLOUD_URL = 'https://qflo.net';
 import {
@@ -36,6 +35,7 @@ interface Props {
   locale: DesktopLocale;
   orgId: string | null;
   currency?: string;
+  decimals?: number;
   onOpenMenu?: () => void;
 }
 
@@ -62,10 +62,9 @@ const STATUS_COLORS: Record<TableStatus, { border: string; bg: string; label: st
 // state. Mapped on the fly from the ticket's status.
 const CALLING_COLORS = { border: '#eab308', bg: 'rgba(234,179,8,0.14)', label: '#fde047' };
 
-export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 'DA', onOpenMenu }: Props) {
+export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = '', decimals = 2, onOpenMenu }: Props) {
   const t = useCallback((k: string, v?: Record<string, any>) => translate(locale, k, v), [locale]);
-  const currencyUnit = usePosCurrencyUnit();
-  const fmtMoney = useCallback((n: number) => formatMoney(n, currencyUnit, currency), [currencyUnit, currency]);
+  const fmtMoney = useCallback((n: number) => formatMoney(n, currency, decimals), [currency, decimals]);
   const { confirm: dialogConfirm, alert: dialogAlert } = useConfirmDialog();
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [tickets, setTickets] = useState<SeatedTicket[]>([]);
@@ -1078,6 +1077,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
           tableCode={orderPadFor.table.code}
           locale={locale}
           currency={currency}
+          decimals={decimals}
           onClose={() => setOrderPadFor(null)}
           onChanged={loadTicketItems}
         />
@@ -1095,6 +1095,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
           items={payingFor.items}
           locale={locale}
           currency={currency}
+          decimals={decimals}
           onClose={() => setPayingFor(null)}
           onPaid={async (payment) => {
             const snap = payingFor;
@@ -1109,6 +1110,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
           orgId={orgId}
           locale={locale}
           currency={currency}
+          decimals={decimals}
           onClose={() => setShowZReport(false)}
         />
       )}

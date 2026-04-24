@@ -35,7 +35,6 @@ import {
   deleteDesk,
 } from '@/lib/actions/admin-actions';
 import {
-  saveIndustryTemplateTrial,
   confirmIndustryTemplateSetup,
   resetBusinessTypeSelection,
 } from '@/lib/actions/platform-actions';
@@ -123,7 +122,14 @@ interface WizardVocabulary {
 }
 
 interface SetupWizardClientProps {
-  organization: { id: string; name: string };
+  organization: {
+    id: string;
+    name: string;
+    /** ISO-3166 alpha-2 — drives country-gated profile filtering. */
+    country?: string | null;
+    /** IANA TZ from signup — seeds the first office. */
+    timezone?: string | null;
+  };
   confirmed: boolean;
   trialSettings: Record<string, any>;
   vocabulary?: WizardVocabulary;
@@ -585,7 +591,12 @@ function BusinessStep({
   onNext,
   onConfirmed,
 }: {
-  organization: { id: string; name: string };
+  organization: {
+    id: string;
+    name: string;
+    country?: string | null;
+    timezone?: string | null;
+  };
   confirmed: boolean;
   trialSettings: Record<string, any>;
   onNext: () => void;
@@ -604,8 +615,13 @@ function BusinessStep({
 
   // Profile selection
   const baseTemplate = industryTemplates.find((tmpl) => tmpl.id === selectedTemplateId) ?? industryTemplates[0];
-  const profiles = getProfilesForVertical(baseTemplate.vertical);
-  const defaultProfileId = getDefaultProfileId(baseTemplate.vertical);
+  // Filter profile list by the org's country so e.g. a US admin never sees
+  // "APC / Mairie" and a DZ admin never sees "DMV". Rule of thumb: only DZ
+  // and US currently have specialized sub-profiles; every other country
+  // inherits the generic baseline.
+  const orgCountry = organization.country ?? null;
+  const profiles = getProfilesForVertical(baseTemplate.vertical, orgCountry);
+  const defaultProfileId = getDefaultProfileId(baseTemplate.vertical, orgCountry);
   const currentProfileId = trialSettings.platform_trial_profile_id;
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     currentProfileId ?? defaultProfileId ?? null
@@ -687,20 +703,16 @@ function BusinessStep({
           operatingModel: defaultOperatingModel(selectedTemplate.vertical),
           branchType: starterOffice?.branchType as BranchType,
           officeName: organization.name,
-          timezone: 'Africa/Algiers',
-          createStarterDisplay: false,
+          // Use the timezone captured at signup — it comes from the
+          // country/city selector and will fall back to Africa/Algiers
+          // only for pre-migration orgs that don't have it set yet.
+          timezone: organization.timezone || 'Africa/Algiers',
+          createStarterDisplay: true,
           seedPriorities: true,
           trialStructure: structure ?? undefined,
         };
 
-        // 1. Save trial settings
-        const saveResult = await saveIndustryTemplateTrial(payload);
-        if (saveResult && 'error' in saveResult) {
-          setError(saveResult.error as string);
-          return;
-        }
-
-        // 2. Confirm and create all DB records
+        // Sandbox trial flow was removed — confirm directly writes live tables.
         const confirmResult = await confirmIndustryTemplateSetup(payload);
         if (confirmResult && 'error' in confirmResult) {
           setError(confirmResult.error as string);
@@ -736,7 +748,7 @@ function BusinessStep({
               key={tmpl.id}
               onClick={() => {
                 setSelectedTemplateId(tmpl.id);
-                const defProfile = getDefaultProfileId(tmpl.vertical);
+                const defProfile = getDefaultProfileId(tmpl.vertical, orgCountry);
                 setSelectedProfileId(defProfile ?? null);
               }}
               className={`group rounded-xl border-2 p-4 text-left transition-all ${
@@ -1543,9 +1555,18 @@ function TeamStep({
                     <span className="text-sm font-medium text-foreground">{desk.name}</span>
                     <span className="ml-2 text-xs text-muted-foreground">{desk.department?.name}</span>
                   </div>
-                  <span className="flex items-center gap-1 text-xs font-medium text-success">
-                    <CheckCircle2 className="h-3 w-3" /> {desk.current_staff?.full_name}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1 text-xs font-medium text-success">
+                      <CheckCircle2 className="h-3 w-3" /> {desk.current_staff?.full_name}
+                    </span>
+                    <button
+                      onClick={() => handleAssignStaff(desk.id, '')}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      title={t('Unassign')}
+                    >
+                      {t('Unassign')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

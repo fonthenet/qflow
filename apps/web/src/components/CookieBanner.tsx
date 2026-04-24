@@ -167,7 +167,7 @@ export function CookieBanner({ locale, onConsentChange }: CookieBannerProps) {
       aria-label={t.title}
       dir={isRTL ? 'rtl' : 'ltr'}
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background shadow-lg"
-      style={{ colorScheme: 'light dark' }}
+      style={{ colorScheme: 'light' }}
     >
       <div className="mx-auto max-w-5xl px-6 py-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

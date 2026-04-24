@@ -79,7 +79,8 @@ function startOfDayInTz(d: Date, tz: string): Date {
 }
 
 export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate }: Props) {
-  const tz = (officeTimezone && officeTimezone.trim()) || 'Africa/Algiers';
+  // Neutral UTC fallback — real timezone loads from organizations.timezone.
+  const tz = (officeTimezone && officeTimezone.trim()) || 'UTC';
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const { confirm: styledConfirm } = useConfirmDialog();
   const [appointments, setAppointments] = useState<Appointment[]>([]);

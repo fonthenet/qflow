@@ -37,35 +37,36 @@ function starterDisplay(
 }
 
 // ── Operating hours presets ─────────────────────────────────────────────────
+// Universal defaults: Mon–Fri. Operators adjust per region after setup
+// (MENA/Gulf orgs typically flip to Sun–Thu; retail often adds Saturday).
 
-// Algeria schedule: Sun–Thu workdays, Fri & Sat weekend
 const WEEKDAY_SERVICE_HOURS: OperatingHoursPreset = {
-  sunday: { open: '08:00', close: '17:00' },
-  monday: { open: '08:00', close: '17:00' },
-  tuesday: { open: '08:00', close: '17:00' },
-  wednesday: { open: '08:00', close: '17:00' },
-  thursday: { open: '08:00', close: '17:00' },
-  friday: { open: '00:00', close: '00:00' },
+  sunday: { open: '00:00', close: '00:00' },
+  monday: { open: '09:00', close: '17:00' },
+  tuesday: { open: '09:00', close: '17:00' },
+  wednesday: { open: '09:00', close: '17:00' },
+  thursday: { open: '09:00', close: '17:00' },
+  friday: { open: '09:00', close: '17:00' },
   saturday: { open: '00:00', close: '00:00' },
 };
 
 const EXTENDED_BRANCH_HOURS: OperatingHoursPreset = {
-  sunday: { open: '09:00', close: '18:00' },
+  sunday: { open: '00:00', close: '00:00' },
   monday: { open: '09:00', close: '18:00' },
   tuesday: { open: '09:00', close: '18:00' },
   wednesday: { open: '09:00', close: '18:00' },
   thursday: { open: '09:00', close: '18:00' },
-  friday: { open: '00:00', close: '00:00' },
+  friday: { open: '09:00', close: '18:00' },
   saturday: { open: '00:00', close: '00:00' },
 };
 
 const CLINIC_HOURS: OperatingHoursPreset = {
-  sunday: { open: '08:30', close: '17:30' },
+  sunday: { open: '00:00', close: '00:00' },
   monday: { open: '08:30', close: '17:30' },
   tuesday: { open: '08:30', close: '17:30' },
   wednesday: { open: '08:30', close: '17:30' },
   thursday: { open: '08:30', close: '17:30' },
-  friday: { open: '00:00', close: '00:00' },
+  friday: { open: '08:30', close: '17:30' },
   saturday: { open: '00:00', close: '00:00' },
 };
 
@@ -75,18 +76,18 @@ const HOSPITALITY_HOURS: OperatingHoursPreset = {
   tuesday: { open: '11:00', close: '22:00' },
   wednesday: { open: '11:00', close: '22:00' },
   thursday: { open: '11:00', close: '23:00' },
-  friday: { open: '00:00', close: '00:00' },
-  saturday: { open: '00:00', close: '00:00' },
+  friday: { open: '11:00', close: '23:00' },
+  saturday: { open: '11:00', close: '23:00' },
 };
 
 const SHOP_HOURS: OperatingHoursPreset = {
-  sunday: { open: '09:00', close: '19:00' },
+  sunday: { open: '00:00', close: '00:00' },
   monday: { open: '09:00', close: '19:00' },
   tuesday: { open: '09:00', close: '19:00' },
   wednesday: { open: '09:00', close: '19:00' },
   thursday: { open: '09:00', close: '19:00' },
-  friday: { open: '00:00', close: '00:00' },
-  saturday: { open: '00:00', close: '00:00' },
+  friday: { open: '09:00', close: '19:00' },
+  saturday: { open: '10:00', close: '18:00' },
 };
 
 // ── Restaurant intake helper ────────────────────────────────────────────────
@@ -125,14 +126,14 @@ export function getPublicServiceOverlay(): DeepPartial<IndustryTemplate> {
     ],
     enabledModules: ['kiosk', 'display_board', 'priority_categories', 'branch_comparison'],
     onboardingCopy: {
-      headline: 'Configurez votre administration',
-      description: 'File d\'attente par ticket avec guichets, écrans d\'appel et gestion des priorités.',
-      reviewChecklist: ['Vérifier les services proposés', 'Configurer les guichets', 'Activer les écrans d\'appel'],
+      headline: 'Set up your public service office',
+      description: 'Ticketed queue with counters, call screens and priority handling.',
+      reviewChecklist: ['Review your service list', 'Configure your counters', 'Enable call displays'],
     },
     recommendedRoles: [...ADMIN_LIKE_ROLES, STAFF_ROLES.RECEPTIONIST, STAFF_ROLES.DESK_OPERATOR, STAFF_ROLES.FLOOR_MANAGER, STAFF_ROLES.ANALYST],
     defaultSlas: [
-      { metric: 'first_call', label: 'Appel citoyen en moins de', targetMinutes: 20 },
-      { metric: 'average_wait', label: 'Attente moyenne sous', targetMinutes: 25 },
+      { metric: 'first_call', label: 'First call under', targetMinutes: 20 },
+      { metric: 'average_wait', label: 'Average wait under', targetMinutes: 25 },
     ],
     capabilityFlags: { privacySafeDisplay: false, appointments: false },
     workflowProfile: {
@@ -143,23 +144,23 @@ export function getPublicServiceOverlay(): DeepPartial<IndustryTemplate> {
       numberingFormat: 'department_sequence',
       routingMode: 'department_first',
       capacityLimit: 150,
-      remoteJoinNotice: 'Prenez votre ticket à distance et venez quand votre numéro approche.',
+      remoteJoinNotice: 'Take a remote ticket and come in when your number is close.',
     },
     experienceProfile: {
       dashboardMode: 'public_service',
       kiosk: {
-        welcomeMessage: 'Choisissez votre service',
-        headerText: 'Prenez votre ticket',
+        welcomeMessage: 'Choose a service',
+        headerText: 'Take a ticket',
         themeColor: '#1d4ed8',
-        buttonLabel: 'Prendre un ticket',
+        buttonLabel: 'Take a ticket',
         showPriorities: true,
         idleTimeoutSeconds: 75,
       },
       publicJoin: {
-        headline: 'Suivez votre ticket',
-        subheadline: 'Suivez votre position dans la file depuis votre téléphone.',
+        headline: 'Track your ticket',
+        subheadline: 'Follow your position in line from your phone.',
         requireCustomerName: false,
-        namedPartyLabel: 'Nom',
+        namedPartyLabel: 'Name',
       },
       display: { defaultLayout: 'department_split', showNextUp: true, showDepartmentBreakdown: true, announcementSound: true },
       messagingTone: 'institutional',
@@ -177,62 +178,62 @@ export function getPublicServiceOverlay(): DeepPartial<IndustryTemplate> {
       },
     },
     starterPriorities: [
-      { name: 'Personne âgée', icon: '🧓', color: '#f97316', weight: 20 },
-      { name: 'Accessible', icon: '♿', color: '#0ea5e9', weight: 25 },
-      { name: 'Femme enceinte', icon: '🤰', color: '#e11d48', weight: 20 },
-      { name: 'Ancien Combattant', icon: '🎖️', color: '#22c55e', weight: 15 },
+      { name: 'Senior', icon: '🧓', color: '#f97316', weight: 20 },
+      { name: 'Accessibility', icon: '♿', color: '#0ea5e9', weight: 25 },
+      { name: 'Pregnancy', icon: '🤰', color: '#e11d48', weight: 20 },
+      { name: 'Veteran', icon: '🎖️', color: '#22c55e', weight: 15 },
     ],
     starterOffices: [
       {
         branchType: 'service_center',
-        name: 'Administration',
+        name: 'Main Office',
         timezone: 'Africa/Algiers',
         operatingHours: WEEKDAY_SERVICE_HOURS,
         departments: [
           {
-            name: 'État Civil', code: 'EC', sortOrder: 1,
+            name: 'Vital Records', code: 'EC', sortOrder: 1,
             services: [
-              { name: 'Extrait de Naissance', code: 'NAISSANCE', estimatedServiceTime: 5, sortOrder: 1 },
-              { name: 'Acte de Mariage', code: 'MARIAGE', estimatedServiceTime: 8, sortOrder: 2 },
-              { name: 'Légalisation', code: 'LEGAL', estimatedServiceTime: 3, sortOrder: 3 },
-              { name: 'Certificat de Résidence', code: 'RESIDENCE', estimatedServiceTime: 5, sortOrder: 4 },
+              { name: 'Birth Certificate', code: 'BIRTH', estimatedServiceTime: 5, sortOrder: 1 },
+              { name: 'Marriage Certificate', code: 'MARRIAGE', estimatedServiceTime: 8, sortOrder: 2 },
+              { name: 'Document Legalization', code: 'LEGAL', estimatedServiceTime: 3, sortOrder: 3 },
+              { name: 'Residence Certificate', code: 'RESIDENCE', estimatedServiceTime: 5, sortOrder: 4 },
             ],
           },
           {
-            name: 'Documents', code: 'D', sortOrder: 2,
+            name: 'ID Documents', code: 'D', sortOrder: 2,
             services: [
-              { name: 'Passeport', code: 'PASSEPORT', estimatedServiceTime: 15, sortOrder: 1 },
-              { name: 'Carte Nationale', code: 'CNI', estimatedServiceTime: 12, sortOrder: 2 },
-              { name: 'Permis de Conduire', code: 'PERMIS', estimatedServiceTime: 10, sortOrder: 3 },
+              { name: 'Passport', code: 'PASSPORT', estimatedServiceTime: 15, sortOrder: 1 },
+              { name: 'National ID Card', code: 'ID', estimatedServiceTime: 12, sortOrder: 2 },
+              { name: 'Driver\u2019s License', code: 'LICENSE', estimatedServiceTime: 10, sortOrder: 3 },
             ],
           },
           {
-            name: 'Guichet Unique', code: 'GU', sortOrder: 3,
+            name: 'Front Desk', code: 'GU', sortOrder: 3,
             services: [
-              { name: 'Renseignement', code: 'INFO', estimatedServiceTime: 5, sortOrder: 1 },
-              { name: 'Dépôt Dossier', code: 'DEPOT', estimatedServiceTime: 8, sortOrder: 2 },
-              { name: 'Retrait Document', code: 'RETRAIT', estimatedServiceTime: 3, sortOrder: 3 },
+              { name: 'Information', code: 'INFO', estimatedServiceTime: 5, sortOrder: 1 },
+              { name: 'Submit Application', code: 'SUBMIT', estimatedServiceTime: 8, sortOrder: 2 },
+              { name: 'Document Pickup', code: 'PICKUP', estimatedServiceTime: 3, sortOrder: 3 },
             ],
           },
         ],
         desks: [
-          starterDesk('guichet-1', 'EC', ['NAISSANCE', 'MARIAGE', 'LEGAL', 'RESIDENCE'], 'Guichet 1'),
-          starterDesk('guichet-2', 'EC', ['NAISSANCE', 'LEGAL', 'RESIDENCE'], 'Guichet 2'),
-          starterDesk('guichet-3', 'D', ['PASSEPORT', 'CNI', 'PERMIS'], 'Guichet 3'),
-          starterDesk('guichet-4', 'D', ['PASSEPORT', 'CNI', 'PERMIS'], 'Guichet 4'),
-          starterDesk('guichet-5', 'GU', ['INFO', 'DEPOT', 'RETRAIT'], 'Guichet 5'),
-          starterDesk('accueil', 'GU', ['INFO', 'DEPOT'], 'Accueil'),
+          starterDesk('counter-1', 'EC', ['BIRTH', 'MARRIAGE', 'LEGAL', 'RESIDENCE'], 'Counter 1'),
+          starterDesk('counter-2', 'EC', ['BIRTH', 'LEGAL', 'RESIDENCE'], 'Counter 2'),
+          starterDesk('counter-3', 'D', ['PASSPORT', 'ID', 'LICENSE'], 'Counter 3'),
+          starterDesk('counter-4', 'D', ['PASSPORT', 'ID', 'LICENSE'], 'Counter 4'),
+          starterDesk('counter-5', 'GU', ['INFO', 'SUBMIT', 'PICKUP'], 'Counter 5'),
+          starterDesk('reception', 'GU', ['INFO', 'SUBMIT'], 'Reception'),
         ],
         displayScreens: [
-          starterDisplay('Écran Principal', 'department_split'),
-          starterDisplay('Écran État Civil', 'list', { show_next_up: true }),
+          starterDisplay('Main Display', 'department_split'),
+          starterDisplay('Vital Records Display', 'list', { show_next_up: true }),
         ],
         officeSettings: {
           platform_service_areas: [
-            { id: 'hall', label: 'Hall d\'attente', type: 'waiting_area' },
-            { id: 'etat-civil', label: 'Espace État Civil', type: 'queue_lane' },
-            { id: 'documents', label: 'Espace Documents', type: 'queue_lane' },
-            { id: 'priorite', label: 'File Prioritaire', type: 'priority_zone' },
+            { id: 'hall', label: 'Waiting Area', type: 'waiting_area' },
+            { id: 'vital-records', label: 'Vital Records Area', type: 'queue_lane' },
+            { id: 'documents', label: 'ID Documents Area', type: 'queue_lane' },
+            { id: 'priority', label: 'Priority Line', type: 'priority_zone' },
           ],
         },
       },
@@ -251,14 +252,14 @@ export function getBankBranchOverlay(): DeepPartial<IndustryTemplate> {
     ],
     enabledModules: ['kiosk', 'display_board', 'priority_categories', 'customer_history', 'branch_comparison'],
     onboardingCopy: {
-      headline: 'Configurez votre agence bancaire',
-      description: 'File d\'attente par ticket avec guichets, conseillers et écran d\'appel.',
-      reviewChecklist: ['Vérifier les guichets', 'Configurer les priorités', 'Activer l\'écran d\'appel'],
+      headline: 'Set up your bank branch',
+      description: 'Ticketed queue with tellers, advisors and a call display.',
+      reviewChecklist: ['Review your counters', 'Configure priorities', 'Enable the call display'],
     },
     recommendedRoles: [...ADMIN_LIKE_ROLES, STAFF_ROLES.RECEPTIONIST, STAFF_ROLES.DESK_OPERATOR, STAFF_ROLES.ANALYST],
     defaultSlas: [
-      { metric: 'lobby_wait', label: 'Attente hall sous', targetMinutes: 15 },
-      { metric: 'advisor_wait', label: 'Attente conseiller sous', targetMinutes: 20 },
+      { metric: 'lobby_wait', label: 'Lobby wait under', targetMinutes: 15 },
+      { metric: 'advisor_wait', label: 'Advisor wait under', targetMinutes: 20 },
     ],
     capabilityFlags: { privacySafeDisplay: true, appointments: false },
     workflowProfile: {
@@ -271,23 +272,23 @@ export function getBankBranchOverlay(): DeepPartial<IndustryTemplate> {
       routingMode: 'department_first',
       capacityLimit: 100,
       estimatedWaitStrategy: 'historical_average',
-      remoteJoinNotice: 'Prenez votre ticket à distance et venez quand votre numéro approche.',
+      remoteJoinNotice: 'Take a remote ticket and come in when your number is close.',
     },
     experienceProfile: {
       dashboardMode: 'bank',
       kiosk: {
-        welcomeMessage: 'Choisissez votre opération',
-        headerText: 'Bienvenue à l\'agence',
+        welcomeMessage: 'Choose an operation',
+        headerText: 'Welcome to the branch',
         themeColor: '#0f766e',
-        buttonLabel: 'Prendre un ticket',
+        buttonLabel: 'Take a ticket',
         showPriorities: true,
         idleTimeoutSeconds: 75,
       },
       publicJoin: {
-        headline: 'Suivez votre ticket',
-        subheadline: 'Suivez votre position dans la file depuis votre téléphone.',
+        headline: 'Track your ticket',
+        subheadline: 'Follow your position in line from your phone.',
         requireCustomerName: false,
-        namedPartyLabel: 'Nom du client',
+        namedPartyLabel: 'Client name',
       },
       display: { defaultLayout: 'department_split', showNextUp: true, showDepartmentBreakdown: true, announcementSound: true },
       messagingTone: 'institutional',
@@ -305,59 +306,59 @@ export function getBankBranchOverlay(): DeepPartial<IndustryTemplate> {
       },
     },
     starterPriorities: [
-      { name: 'Personne âgée', icon: '🧓', color: '#f97316', weight: 20 },
-      { name: 'Accessible', icon: '♿', color: '#0284c7', weight: 25 },
-      { name: 'Femme enceinte', icon: '🤰', color: '#e11d48', weight: 20 },
+      { name: 'Senior', icon: '🧓', color: '#f97316', weight: 20 },
+      { name: 'Accessibility', icon: '♿', color: '#0284c7', weight: 25 },
+      { name: 'Pregnancy', icon: '🤰', color: '#e11d48', weight: 20 },
     ],
     starterOffices: [
       {
         branchType: 'branch_office',
-        name: 'Agence Principale',
+        name: 'Main Branch',
         timezone: 'Africa/Algiers',
         operatingHours: WEEKDAY_SERVICE_HOURS,
         departments: [
           {
-            name: 'Caisse', code: 'C', sortOrder: 1,
+            name: 'Teller', code: 'T', sortOrder: 1,
             services: [
-              { name: 'Retrait', code: 'RETRAIT', estimatedServiceTime: 7, sortOrder: 1 },
-              { name: 'Versement', code: 'VERSEMENT', estimatedServiceTime: 8, sortOrder: 2 },
-              { name: 'Virement', code: 'VIREMENT', estimatedServiceTime: 10, sortOrder: 3 },
-              { name: 'Change', code: 'CHANGE', estimatedServiceTime: 8, sortOrder: 4 },
+              { name: 'Cash Withdrawal', code: 'WITHDRAW', estimatedServiceTime: 7, sortOrder: 1 },
+              { name: 'Deposit', code: 'DEPOSIT', estimatedServiceTime: 8, sortOrder: 2 },
+              { name: 'Transfer', code: 'TRANSFER', estimatedServiceTime: 10, sortOrder: 3 },
+              { name: 'Currency Exchange', code: 'EXCHANGE', estimatedServiceTime: 8, sortOrder: 4 },
             ],
           },
           {
-            name: 'Opérations', code: 'O', sortOrder: 2,
+            name: 'Account Services', code: 'O', sortOrder: 2,
             services: [
-              { name: 'Relevé de Compte', code: 'RELEVE', estimatedServiceTime: 5, sortOrder: 1 },
-              { name: 'Attestation', code: 'ATTEST', estimatedServiceTime: 8, sortOrder: 2 },
-              { name: 'Chéquier', code: 'CHEQUE', estimatedServiceTime: 6, sortOrder: 3 },
-              { name: 'Carte Bancaire', code: 'CARTE', estimatedServiceTime: 10, sortOrder: 4 },
+              { name: 'Account Statement', code: 'STATEMENT', estimatedServiceTime: 5, sortOrder: 1 },
+              { name: 'Certificate of Account', code: 'CERT', estimatedServiceTime: 8, sortOrder: 2 },
+              { name: 'Checkbook Request', code: 'CHECKBOOK', estimatedServiceTime: 6, sortOrder: 3 },
+              { name: 'Debit / Credit Card', code: 'CARD', estimatedServiceTime: 10, sortOrder: 4 },
             ],
           },
           {
-            name: 'Conseiller', code: 'A', sortOrder: 3,
+            name: 'Advisor', code: 'A', sortOrder: 3,
             services: [
-              { name: 'Ouverture de Compte', code: 'OPEN', estimatedServiceTime: 20, sortOrder: 1 },
-              { name: 'Crédit', code: 'CREDIT', estimatedServiceTime: 25, sortOrder: 2 },
-              { name: 'Réclamation', code: 'RECLAM', estimatedServiceTime: 15, sortOrder: 3 },
+              { name: 'Open Account', code: 'OPEN', estimatedServiceTime: 20, sortOrder: 1 },
+              { name: 'Loan', code: 'LOAN', estimatedServiceTime: 25, sortOrder: 2 },
+              { name: 'Complaint', code: 'COMPLAINT', estimatedServiceTime: 15, sortOrder: 3 },
             ],
           },
         ],
         desks: [
-          starterDesk('guichet-1', 'C', ['RETRAIT', 'VERSEMENT', 'CHANGE'], 'Guichet 1'),
-          starterDesk('guichet-2', 'C', ['RETRAIT', 'VIREMENT', 'CHANGE'], 'Guichet 2'),
-          starterDesk('guichet-3', 'O', ['RELEVE', 'ATTEST', 'CHEQUE', 'CARTE'], 'Guichet 3'),
-          starterDesk('conseiller-1', 'A', ['OPEN', 'CREDIT', 'RECLAM'], 'Conseiller 1'),
-          starterDesk('accueil', 'C', ['RETRAIT', 'VERSEMENT'], 'Accueil'),
+          starterDesk('teller-1', 'T', ['WITHDRAW', 'DEPOSIT', 'EXCHANGE'], 'Teller 1'),
+          starterDesk('teller-2', 'T', ['WITHDRAW', 'TRANSFER', 'EXCHANGE'], 'Teller 2'),
+          starterDesk('services-1', 'O', ['STATEMENT', 'CERT', 'CHECKBOOK', 'CARD'], 'Services 1'),
+          starterDesk('advisor-1', 'A', ['OPEN', 'LOAN', 'COMPLAINT'], 'Advisor 1'),
+          starterDesk('reception', 'T', ['WITHDRAW', 'DEPOSIT'], 'Reception'),
         ],
         displayScreens: [
-          starterDisplay('Écran Hall', 'department_split', { theme: 'light', show_next_up: true }),
+          starterDisplay('Lobby Display', 'department_split', { theme: 'light', show_next_up: true }),
         ],
         officeSettings: {
           platform_service_areas: [
-            { id: 'hall', label: 'Hall d\'attente', type: 'waiting_area' },
-            { id: 'caisse', label: 'Espace Caisse', type: 'queue_lane' },
-            { id: 'conseiller', label: 'Bureau Conseiller', type: 'consult_zone' },
+            { id: 'hall', label: 'Waiting Area', type: 'waiting_area' },
+            { id: 'teller', label: 'Teller Area', type: 'queue_lane' },
+            { id: 'advisor', label: 'Advisor Office', type: 'consult_zone' },
           ],
         },
       },
@@ -439,7 +440,7 @@ export function getClinicOverlay(): DeepPartial<IndustryTemplate> {
     starterOffices: [
       {
         branchType: 'medical_office',
-        name: 'Cabinet Médical',
+        name: 'Medical Office',
         timezone: 'Africa/Algiers',
         operatingHours: CLINIC_HOURS,
         displayScreens: [],
@@ -447,20 +448,20 @@ export function getClinicOverlay(): DeepPartial<IndustryTemplate> {
           {
             name: 'Consultations', code: 'C', sortOrder: 1,
             services: [
-              { name: 'Consultation Générale', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
-              { name: 'Contrôle', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
-              { name: 'Certificat Médical', code: 'CERT', estimatedServiceTime: 10, sortOrder: 3 },
+              { name: 'General Consultation', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
+              { name: 'Follow-Up', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
+              { name: 'Medical Certificate', code: 'CERT', estimatedServiceTime: 10, sortOrder: 3 },
             ],
           },
         ],
         desks: [
-          starterDesk('accueil', 'C', ['CONSULT', 'CONTROL', 'CERT'], 'Accueil'),
-          starterDesk('cabinet', 'C', ['CONSULT', 'CONTROL', 'CERT'], 'Cabinet'),
+          starterDesk('reception', 'C', ['CONSULT', 'CONTROL', 'CERT'], 'Reception'),
+          starterDesk('exam-room', 'C', ['CONSULT', 'CONTROL', 'CERT'], 'Exam Room'),
         ],
         officeSettings: {
           platform_service_areas: [
-            { id: 'reception', label: 'Salle d\'attente', type: 'waiting_room' },
-            { id: 'cabinet', label: 'Cabinet du médecin', type: 'consultation_room' },
+            { id: 'reception', label: 'Waiting Room', type: 'waiting_room' },
+            { id: 'exam-room', label: 'Exam Room', type: 'consultation_room' },
           ],
         },
       },
@@ -504,23 +505,23 @@ export function getRestaurantOverlay(): DeepPartial<IndustryTemplate> {
       routingMode: 'staff_preference',
       capacityLimit: 40,
       estimatedWaitStrategy: 'manual',
-      remoteJoinNotice: 'Rejoignez la file et on vous prévient quand votre table est prête.',
+      remoteJoinNotice: 'Join the waitlist and we\u2019ll notify you when your table is ready.',
     },
     experienceProfile: {
       dashboardMode: 'light_service',
       kiosk: {
-        welcomeMessage: 'Bienvenue',
-        headerText: 'File d\'attente',
+        welcomeMessage: 'Welcome',
+        headerText: 'Waitlist',
         themeColor: '#dc2626',
-        buttonLabel: 'Rejoindre',
+        buttonLabel: 'Join Waitlist',
         showPriorities: false,
         idleTimeoutSeconds: 60,
       },
       publicJoin: {
-        headline: 'Votre table arrive',
-        subheadline: 'Rejoignez la file et revenez quand c\'est votre tour.',
+        headline: 'Your table is on the way',
+        subheadline: 'Join the waitlist and come back when it\u2019s your turn.',
         requireCustomerName: true,
-        namedPartyLabel: 'Nom',
+        namedPartyLabel: 'Name',
       },
       display: { showNextUp: true, showDepartmentBreakdown: false },
       messagingTone: 'friendly',
@@ -549,20 +550,20 @@ export function getRestaurantOverlay(): DeepPartial<IndustryTemplate> {
           {
             name: 'Service', code: 'S', sortOrder: 1,
             services: [
-              { name: 'Sur Place', code: 'DINE', estimatedServiceTime: 30, sortOrder: 1 },
-              { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 10, sortOrder: 2 },
-              { name: 'Livraison', code: 'DELIVERY', estimatedServiceTime: 5, sortOrder: 3 },
+              { name: 'Dine In', code: 'DINE', estimatedServiceTime: 30, sortOrder: 1 },
+              { name: 'Takeout', code: 'TAKEOUT', estimatedServiceTime: 10, sortOrder: 2 },
+              { name: 'Delivery', code: 'DELIVERY', estimatedServiceTime: 5, sortOrder: 3 },
             ],
           },
         ],
         desks: [
-          starterDesk('caisse', 'S', ['DINE', 'TAKEOUT', 'DELIVERY'], 'Caisse'),
-          starterDesk('salle', 'S', ['DINE'], 'Salle'),
+          starterDesk('register', 'S', ['DINE', 'TAKEOUT', 'DELIVERY'], 'Register'),
+          starterDesk('floor', 'S', ['DINE'], 'Floor'),
         ],
         officeSettings: {
           platform_service_areas: [
-            { id: 'salle', label: 'Salle', type: 'floor_zone' },
-            { id: 'terrasse', label: 'Terrasse', type: 'floor_zone' },
+            { id: 'dining-room', label: 'Dining Room', type: 'floor_zone' },
+            { id: 'patio', label: 'Patio', type: 'floor_zone' },
           ],
         },
       },
@@ -1137,12 +1138,12 @@ export function getRealEstateOverlay(): DeepPartial<IndustryTemplate> {
 export function getGeneralServiceOverlay(): DeepPartial<IndustryTemplate> {
   return {
     onboardingCopy: {
-      headline: 'Configurez votre file d\'attente',
-      description: 'File d\'attente flexible pour tout type de commerce ou service.',
+      headline: 'Set up your queue',
+      description: 'Flexible queue for any kind of business or service.',
       reviewChecklist: [
-        'Nommez vos services',
-        'Configurez vos guichets',
-        'Activez la file à distance',
+        'Name your services',
+        'Configure your counters',
+        'Enable remote queue join',
       ],
     },
     experienceProfile: {
@@ -1158,38 +1159,38 @@ export function getGeneralServiceOverlay(): DeepPartial<IndustryTemplate> {
         queueLabel: 'Queue',
       },
       kiosk: {
-        welcomeMessage: 'Bienvenue',
-        headerText: 'File d\'attente',
+        welcomeMessage: 'Welcome',
+        headerText: 'Queue',
         themeColor: '#2563eb',
-        buttonLabel: 'Rejoindre',
+        buttonLabel: 'Join',
       },
       publicJoin: {
-        headline: 'Votre tour arrive',
-        subheadline: 'On vous prévient quand c\'est votre tour.',
+        headline: 'Your turn is coming up',
+        subheadline: 'We\u2019ll notify you when it\u2019s your turn.',
         requireCustomerName: true,
-        namedPartyLabel: 'Nom',
+        namedPartyLabel: 'Name',
       },
       branding: { recommendedPrimaryColor: '#2563eb' },
     },
     starterOffices: [
       {
         branchType: 'general_office',
-        name: 'Local',
+        name: 'Main Location',
         timezone: 'Africa/Algiers',
         operatingHours: WEEKDAY_SERVICE_HOURS,
         departments: [
           {
             name: 'Service', code: 'S', sortOrder: 1,
             services: [
-              { name: 'Accueil', code: 'ACCUEIL', estimatedServiceTime: 5, sortOrder: 1 },
-              { name: 'Service Standard', code: 'STANDARD', estimatedServiceTime: 15, sortOrder: 2 },
-              { name: 'Rendez-vous', code: 'RDV', estimatedServiceTime: 20, sortOrder: 3 },
+              { name: 'Reception', code: 'RECEPTION', estimatedServiceTime: 5, sortOrder: 1 },
+              { name: 'Standard Service', code: 'STANDARD', estimatedServiceTime: 15, sortOrder: 2 },
+              { name: 'Appointment', code: 'APPT', estimatedServiceTime: 20, sortOrder: 3 },
             ],
           },
         ],
         desks: [
-          starterDesk('accueil', 'S', ['ACCUEIL', 'STANDARD', 'RDV'], 'Accueil'),
-          starterDesk('guichet-1', 'S', ['STANDARD', 'RDV'], 'Guichet 1'),
+          starterDesk('reception', 'S', ['RECEPTION', 'STANDARD', 'APPT'], 'Reception'),
+          starterDesk('counter-1', 'S', ['STANDARD', 'APPT'], 'Counter 1'),
         ],
         displayScreens: [],
         officeSettings: {},

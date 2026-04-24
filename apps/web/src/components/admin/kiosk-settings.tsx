@@ -17,7 +17,7 @@ import {
   Ticket,
 } from 'lucide-react';
 import { useI18n } from '@/components/providers/locale-provider';
-import { updateKioskSettings } from '@/lib/actions/admin-actions';
+import { updateKioskSettings, updateOfficeKioskOverrides } from '@/lib/actions/admin-actions';
 import { buildBookingCheckInPath, buildBookingPath, buildKioskPath } from '@/lib/office-links';
 import { PublicLinkActions } from './public-link-actions';
 
@@ -329,8 +329,6 @@ export function KioskSettings({
     });
   }
 
-  const [activeTab, setActiveTab] = useState<'remote' | 'local'>('remote');
-
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
       {/* ── Header ── */}
@@ -370,42 +368,17 @@ export function KioskSettings({
         </div>
       </div>
 
-      {/* ── Tabs ── */}
-      <div className="flex gap-1 rounded-lg bg-muted p-1">
-        <button
-          type="button"
-          onClick={() => setActiveTab('remote')}
-          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'remote'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <span className="flex items-center justify-center gap-2">
-            <ExternalLink className="h-4 w-4" />
-            {t('Remote Kiosk')}
-          </span>
-          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
-            {t('Web-hosted kiosk & booking pages')}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('local')}
-          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'local'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <span className="flex items-center justify-center gap-2">
-            <Tablet className="h-4 w-4" />
-            {t('Local Kiosk')}
-          </span>
-          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
-            {t('Served by Qflo Station on your network')}
-          </span>
-        </button>
+      {/* The same settings power both the remote web kiosk (`/k/...`) and
+          the local kiosk served by Qflo Station. A short reminder replaces
+          the old Remote/Local tab switcher, which implied two separate
+          configs when there's actually just one. Per-office overrides live
+          in the Visibility section below. */}
+      <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        <Tablet className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          <span className="font-medium">{t('These settings power both kiosks.')}</span>{' '}
+          {t('The web kiosk (remote link) and the local kiosk served by Qflo Station share the same configuration. Open the live URLs in the Access section at the bottom.')}
+        </p>
       </div>
 
       {/* ── 1. Text & Copy ── */}
@@ -444,31 +417,13 @@ export function KioskSettings({
         </div>
       </section>
 
-      {/* ── 2. Appearance ── */}
+      {/* ── 2. Logo ── */}
       <section className="rounded-xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-6 py-4">
-          <h2 className="text-sm font-semibold text-foreground">{t('Appearance')}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('Theme color and branding.')}</p>
+          <h2 className="text-sm font-semibold text-foreground">{t('Logo')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('Branding shown in the kiosk header.')}</p>
         </div>
         <div className="space-y-5 px-6 py-5">
-          <div className="flex items-center gap-4">
-            <input
-              type="color"
-              value={normalizeThemeColor(themeColor, templateDefaults.themeColor)}
-              onChange={(event) => setThemeColor(event.target.value)}
-              className="h-10 w-14 cursor-pointer rounded-lg border border-border bg-background"
-            />
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-foreground">{t('Theme color')}</label>
-              <input
-                type="text"
-                value={themeColor}
-                onChange={(event) => setThemeColor(event.target.value)}
-                className="mt-1 w-full max-w-[180px] rounded-lg border border-border bg-background px-3 py-1.5 font-mono text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </div>
-
           <div className="space-y-0 divide-y divide-border rounded-lg border border-border">
             <div className="flex items-center justify-between gap-4 px-4 py-3">
               <div>
@@ -585,7 +540,9 @@ export function KioskSettings({
               <div>
                 <p className="text-sm font-medium text-foreground">{t('Show priority selection')}</p>
                 <p className="text-xs text-muted-foreground">
-                  {availablePriorityFlow ? t('Let customers choose a priority.') : t('Priority rules not configured.')}
+                  {availablePriorityFlow
+                    ? t('Let customers choose a priority on the kiosk.')
+                    : t('Enable priorities in Queue Settings to use this.')}
                 </p>
               </div>
               <Switch
@@ -684,113 +641,320 @@ export function KioskSettings({
         </div>
       </section>
 
-      {/* ── 5. Public Links (Remote tab) ── */}
-      {activeTab === 'remote' ? (
-        <section className="rounded-xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-6 py-4">
-            <h2 className="text-sm font-semibold text-foreground">{t('Public Links')}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">{t('Open or share the live kiosk and booking pages.')}</p>
-          </div>
-
-          <div className="divide-y divide-border">
-            {activeOffices.map((office) => (
-              <div key={office.id} className="px-6 py-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">{office.name}</p>
-                  <a
-                    href={buildKioskPath(office)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    {t('Open kiosk')}
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Kiosk page')}</p>
-                    <PublicLinkActions
-                      path={buildKioskPath(office)}
-                      qrTitle={t('{office} kiosk', { office: office.name })}
-                      qrDescription={t('Scan to open the self-service kiosk.')}
-                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Booking page')}</p>
-                    <PublicLinkActions
-                      path={buildBookingPath(office)}
-                      qrTitle={t('{office} booking', { office: office.name })}
-                      qrDescription={t('Scan to open the booking page.')}
-                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Arrival check-in')}</p>
-                    <PublicLinkActions
-                      path={buildBookingCheckInPath(office)}
-                      qrTitle={t('{office} arrival check-in', { office: office.name })}
-                      qrDescription={t('Scan to look up and check in an appointment.')}
-                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+      {/* ── 5. Per-office visibility overrides ── */}
+      {activeOffices.length > 1 ? (
+        <PerOfficeOverrides
+          offices={activeOffices}
+          departments={activeDepartments}
+          orgHiddenDepartments={hiddenDepartments}
+          orgHiddenServices={hiddenServices}
+          orgLockedDepartmentId={lockedDepartmentId || null}
+        />
       ) : null}
 
-      {/* ── 5. Local Kiosk Info (Local tab) ── */}
-      {activeTab === 'local' ? (
-        <section className="rounded-xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-6 py-4">
-            <h2 className="text-sm font-semibold text-foreground">{t('Local Kiosk Access')}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">{t('Connect tablets and displays on your local network.')}</p>
-          </div>
+      {/* ── 6. Access (public links + local network) ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('Access')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t('Open or share the remote kiosk, and connect local devices on your network.')}
+          </p>
+        </div>
 
-          <div className="space-y-4 px-6 py-5">
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-              <p className="text-sm font-medium text-blue-900">{t('How it works')}</p>
-              <p className="mt-1 text-sm text-blue-800">
-                {t('The local kiosk is served directly by Qflo Station on your network. Open it from the Station app by clicking the kiosk or display links. Any device on the same WiFi can access it.')}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 rounded-lg border border-border px-4 py-3">
-                <Tablet className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">{t('Kiosk (tablet)')}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {t('Customers take tickets from a touchscreen. Open from Station → Kiosk link.')}
+        {/* Remote web kiosk — per office */}
+        <div className="divide-y divide-border">
+          {activeOffices.map((office) => (
+            <div key={office.id} className="px-6 py-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium text-foreground">
+                    {office.name} <span className="text-xs font-normal text-muted-foreground">· {t('Remote (web)')}</span>
                   </p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">http://&lt;station-ip&gt;:3847/kiosk</p>
                 </div>
+                <a
+                  href={buildKioskPath(office)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  {t('Open kiosk')}
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
               </div>
 
-              <div className="flex items-start gap-3 rounded-lg border border-border px-4 py-3">
-                <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div>
-                  <p className="text-sm font-medium text-foreground">{t('Display (waiting room TV)')}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {t('Shows now-serving tickets and queue. Open from Station → Display link.')}
-                  </p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">http://&lt;station-ip&gt;:3847/display</p>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Kiosk page')}</p>
+                  <PublicLinkActions
+                    path={buildKioskPath(office)}
+                    qrTitle={t('{office} kiosk', { office: office.name })}
+                    qrDescription={t('Scan to open the self-service kiosk.')}
+                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
+                  />
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Booking page')}</p>
+                  <PublicLinkActions
+                    path={buildBookingPath(office)}
+                    qrTitle={t('{office} booking', { office: office.name })}
+                    qrDescription={t('Scan to open the booking page.')}
+                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
+                  />
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Arrival check-in')}</p>
+                  <PublicLinkActions
+                    path={buildBookingCheckInPath(office)}
+                    qrTitle={t('{office} arrival check-in', { office: office.name })}
+                    qrDescription={t('Scan to look up and check in an appointment.')}
+                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
+                  />
                 </div>
               </div>
             </div>
+          ))}
+        </div>
 
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-              <p className="text-sm text-amber-900">
-                <span className="font-medium">{t('Note:')}</span>{' '}
-                {t('The local kiosk uses the same settings configured above (text, appearance, behavior, visibility). Changes are applied when you save.')}
-              </p>
+        {/* Local kiosk info */}
+        <div className="space-y-4 border-t border-border bg-muted/20 px-6 py-5">
+          <div className="flex items-center gap-2">
+            <Tablet className="h-4 w-4 text-primary" />
+            <p className="text-sm font-medium text-foreground">{t('Local network (Qflo Station)')}</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {t('Qflo Station serves a local kiosk on your network. Any device on the same WiFi can open it using the Station\'s IP.')}
+          </p>
+          <div className="space-y-2">
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3">
+              <Tablet className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">{t('Kiosk (tablet)')}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {t('Touch-screen ticket pickup. Open from Station → Kiosk link.')}
+                </p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">http://&lt;station-ip&gt;:3847/kiosk</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3">
+              <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">{t('Display (waiting room TV)')}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {t('Now-serving + queue board. Open from Station → Display link.')}
+                </p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">http://&lt;station-ip&gt;:3847/display</p>
+              </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Per-office visibility overrides                                   *
+ * ------------------------------------------------------------------ *
+ * Opt-in: by default the org-wide visibility settings apply to every
+ * branch. Flipping the toggle on a single office unlocks its own
+ * hidden-departments / hidden-services / locked-department picks,
+ * persisted into `offices.settings.kiosk_*`. Fallback order in the
+ * public kiosk is: office override → org default → template profile. */
+
+interface PerOfficeOverridesProps {
+  offices: Office[];
+  departments: Department[];
+  orgHiddenDepartments: string[];
+  orgHiddenServices: string[];
+  orgLockedDepartmentId: string | null;
+}
+
+function PerOfficeOverrides({
+  offices,
+  departments,
+  orgHiddenDepartments,
+  orgHiddenServices,
+  orgLockedDepartmentId,
+}: PerOfficeOverridesProps) {
+  const { t } = useI18n();
+  return (
+    <section className="rounded-xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="text-sm font-semibold text-foreground">{t('Per-office overrides')}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t('By default every branch uses the org-wide visibility above. Toggle an override to hide different departments or services at a single branch.')}
+        </p>
+      </div>
+      <div className="divide-y divide-border">
+        {offices.map((office) => (
+          <OfficeOverrideRow
+            key={office.id}
+            office={office}
+            departments={departments.filter((d) => d.office_id === office.id)}
+            orgHiddenDepartments={orgHiddenDepartments}
+            orgHiddenServices={orgHiddenServices}
+            orgLockedDepartmentId={orgLockedDepartmentId}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OfficeOverrideRow({
+  office,
+  departments,
+  orgHiddenDepartments,
+  orgHiddenServices,
+  orgLockedDepartmentId,
+}: {
+  office: Office;
+  departments: Department[];
+  orgHiddenDepartments: string[];
+  orgHiddenServices: string[];
+  orgLockedDepartmentId: string | null;
+}) {
+  const { t } = useI18n();
+  const initialSettings = (office.settings as Record<string, any> | null) ?? {};
+  const [override, setOverride] = useState<boolean>(Boolean(initialSettings.kiosk_override_visibility));
+  const [hiddenDepartments, setHiddenDepartments] = useState<string[]>(
+    initialSettings.kiosk_hidden_departments ?? orgHiddenDepartments
+  );
+  const [hiddenServices, setHiddenServices] = useState<string[]>(
+    initialSettings.kiosk_hidden_services ?? orgHiddenServices
+  );
+  const [lockedDepartmentId, setLockedDepartmentId] = useState<string>(
+    initialSettings.kiosk_locked_department_id ?? orgLockedDepartmentId ?? ''
+  );
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function save(nextOverride: boolean) {
+    setSaving(true);
+    setMessage(null);
+    const result = await updateOfficeKioskOverrides(office.id, {
+      override: nextOverride,
+      hidden_departments: hiddenDepartments.filter((id) => id !== lockedDepartmentId),
+      hidden_services: hiddenServices,
+      locked_department_id: lockedDepartmentId || null,
+    });
+    setSaving(false);
+    if (result?.error) {
+      setMessage(result.error);
+    } else {
+      setMessage(t('Saved.'));
+      setTimeout(() => setMessage(null), 2500);
+    }
+  }
+
+  function toggleDepartment(id: string) {
+    setHiddenDepartments((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    );
+  }
+  function toggleService(id: string) {
+    setHiddenServices((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    );
+  }
+
+  return (
+    <div className="px-6 py-5 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{office.name}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {override
+              ? t('This branch uses its own visibility settings below.')
+              : t('Using org-wide visibility.')}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {message ? <span className="text-xs text-muted-foreground">{message}</span> : null}
+          <Switch
+            checked={override}
+            onChange={(next) => {
+              setOverride(next);
+              void save(next);
+            }}
+            disabled={saving}
+            label={t('Override for {office}', { office: office.name })}
+          />
+        </div>
+      </div>
+      {override ? (
+        <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+          <FieldBlock label={t('Starting department')} hint={t('Skip the department picker at this branch.')}>
+            <select
+              value={lockedDepartmentId}
+              onChange={(event) => setLockedDepartmentId(event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">{t('Let customers choose')}</option>
+              {departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>
+                  {dept.name} ({dept.code})
+                </option>
+              ))}
+            </select>
+          </FieldBlock>
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {departments.map((dept) => {
+              const deptVisible = !hiddenDepartments.includes(dept.id);
+              return (
+                <div key={dept.id}>
+                  <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{dept.name}</p>
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {dept.code}
+                      </span>
+                    </div>
+                    <Switch
+                      checked={deptVisible}
+                      onChange={() => toggleDepartment(dept.id)}
+                      label={t('{name} visibility', { name: dept.name })}
+                    />
+                  </div>
+                  {deptVisible && dept.services.length > 0 ? (
+                    <div className="border-t border-border/50 bg-muted/20">
+                      {dept.services.filter((s) => s.is_active).map((svc) => {
+                        const svcVisible = !hiddenServices.includes(svc.id);
+                        return (
+                          <div key={svc.id} className="flex items-center justify-between gap-4 px-4 py-2 pl-8">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm text-foreground">{svc.name}</p>
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {svc.code}
+                              </span>
+                            </div>
+                            <Switch
+                              checked={svcVisible}
+                              onChange={() => toggleService(svc.id)}
+                              label={t('{name} visibility', { name: svc.name })}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => save(true)}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {saving ? t('Saving...') : t('Save overrides')}
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );

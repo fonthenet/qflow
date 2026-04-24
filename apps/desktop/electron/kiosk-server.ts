@@ -932,7 +932,14 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     Expires: '0',
   });
   // Merge organization-level kiosk settings so the local kiosk respects
-  // the same config as the remote web kiosk (theme, text, behavior, visibility)
+  // the same config as the remote web kiosk (theme, text, behavior, visibility).
+  // Visibility (hidden depts / services / locked dept) may be overridden per
+  // office when `kiosk_override_visibility` is set on the branch — this
+  // mirrors the web `/k/[officeToken]` fallback logic.
+  const officeSettingsParsed = (office.settings && typeof office.settings === 'string'
+    ? JSON.parse(office.settings)
+    : office.settings) as Record<string, any> | null;
+  const officeOverrideOn = officeSettingsParsed?.kiosk_override_visibility === true;
   const kioskConfig = {
     theme_color: organizationSettings.kiosk_theme_color || null,
     welcome_message: organizationSettings.kiosk_welcome_message || null,
@@ -943,9 +950,15 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     logo_url: organizationSettings.kiosk_logo_url || null,
     show_estimated_time: organizationSettings.kiosk_show_estimated_time ?? true,
     show_priorities: organizationSettings.kiosk_show_priorities ?? false,
-    hidden_departments: organizationSettings.kiosk_hidden_departments || [],
-    hidden_services: organizationSettings.kiosk_hidden_services || [],
-    locked_department_id: organizationSettings.kiosk_locked_department_id || null,
+    hidden_departments: officeOverrideOn
+      ? (officeSettingsParsed?.kiosk_hidden_departments ?? [])
+      : (organizationSettings.kiosk_hidden_departments || []),
+    hidden_services: officeOverrideOn
+      ? (officeSettingsParsed?.kiosk_hidden_services ?? [])
+      : (organizationSettings.kiosk_hidden_services || []),
+    locked_department_id: officeOverrideOn
+      ? (officeSettingsParsed?.kiosk_locked_department_id ?? null)
+      : (organizationSettings.kiosk_locked_department_id || null),
     idle_timeout: organizationSettings.kiosk_idle_timeout || 60,
   };
 

@@ -10,6 +10,7 @@ import { CalendarModal } from '../components/CalendarModal';
 import { TableSuggestionBar } from '../components/TableSuggestionBar';
 import { FloorMap } from '../components/FloorMap';
 import { MenuEditor } from '../components/MenuEditor';
+import { getCountryConfig, getOrgCountryConfig, type CountryConfig } from '../lib/country-config';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
@@ -102,7 +103,7 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Panel (docked at bottom of main area) ───────
-function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth, timezone = 'Africa/Algiers', orgSettings = {} }: {
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth, timezone = 'UTC', orgSettings = {} }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
@@ -1705,8 +1706,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [customerPhoneToOpen, setCustomerPhoneToOpen] = useState<string | undefined>();
   // showAppointmentsModal removed — unified into CalendarModal
-  const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
+  // Initial placeholder only — the real org timezone loads async below
+  // (single source of truth: organizations.timezone). UTC is the safe
+  // no-op until that lands; never seed an Algerian timezone.
+  const [officeTimezone, setOfficeTimezone] = useState<string>('UTC');
   const [orgSettings, setOrgSettings] = useState<Record<string, any>>({});
+  const [countryConfig, setCountryConfig] = useState<CountryConfig | null>(null);
+  // Currency display is driven by the org's country config — never a
+  // hardcoded 'DA'. Symbol/decimals come from country_config; falls back
+  // to neutral placeholders while the config loads so we never leak
+  // Algerian defaults into a US/FR/etc. org.
+  const currencySymbol = countryConfig?.currency_symbol ?? '';
+  const currencyDecimals = countryConfig?.currency_decimals ?? 2;
   const [callTimeoutSeconds, setCallTimeoutSeconds] = useState(DEFAULT_CALL_TIMEOUT);
   const [settingsVersion, setSettingsVersion] = useState(0);
   useEffect(() => {
@@ -1750,6 +1761,37 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     })();
     return () => { cancelled = true; };
   }, [session.organization_id, settingsVersion]);
+
+  // Load the org's country config so currency/decimals are driven by
+  // country_config (never hardcoded DA/DZD). Try the Station's local
+  // SQLite cache first (offline-safe); fall back to Supabase if the
+  // local org row is stale from before a country change/backfill.
+  useEffect(() => {
+    let cancelled = false;
+    if (!session.organization_id) return;
+    (async () => {
+      let cfg: CountryConfig | null = null;
+      try {
+        cfg = await getOrgCountryConfig(session.organization_id!);
+      } catch { /* IPC failure — fall through to Supabase */ }
+      if (!cfg) {
+        try {
+          await ensureAuth();
+          const sb = await getSupabase();
+          const { data } = await sb
+            .from('organizations')
+            .select('country')
+            .eq('id', session.organization_id)
+            .single();
+          const code = (data as { country?: string | null })?.country ?? null;
+          if (code) cfg = await getCountryConfig(code);
+        } catch { /* offline — leave null, UI shows neutral '—' placeholder */ }
+      }
+      if (!cancelled) setCountryConfig(cfg);
+    })();
+    return () => { cancelled = true; };
+  }, [session.organization_id, settingsVersion]);
+
   // storedAuth kept as empty stub for prop compatibility — ensureAuth() uses IPC (pure token auth v1.8.0)
   const storedAuth = useMemo(() => ({}), []);
   // Today's counter + RDV side panel
@@ -4295,7 +4337,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   deskId={session.desk_id ?? null}
                   locale={locale}
                   orgId={session.organization_id ?? null}
-                  currency={(orgSettings as any)?.currency || 'DA'}
+                  currency={currencySymbol}
+                  decimals={currencyDecimals}
                   onOpenMenu={() => setShowMenuEditor(true)}
                 />
               </div>
@@ -4569,7 +4612,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           <MenuEditor
             orgId={session.organization_id}
             locale={locale}
-            currency={(orgSettings as any)?.currency || 'DA'}
+            currency={currencySymbol}
+                  decimals={currencyDecimals}
             onClose={() => setShowMenuEditor(false)}
           />
         )}

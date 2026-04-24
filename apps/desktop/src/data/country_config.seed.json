@@ -16,7 +16,7 @@
     "vat_label": "TVA",
     "payment_providers": [],
     "channel_providers": ["whatsapp", "messenger"],
-    "feature_flags": { "wilaya_picker": true, "dzd_centimes": true, "cash_only": true }
+    "feature_flags": { "wilaya_picker": true, "cash_only": true }
   },
   {
     "code": "MA",

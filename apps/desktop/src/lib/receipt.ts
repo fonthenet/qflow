@@ -1,5 +1,5 @@
 import { t as translate, type DesktopLocale } from './i18n';
-import { formatMoney, type CurrencyUnit } from './money';
+import { formatMoney } from './money';
 
 export interface ReceiptItem {
   name: string;
@@ -17,19 +17,19 @@ export interface ReceiptArgs {
   tendered: number;
   change: number;
   currency: string;
+  decimals?: number;
   paidAt: Date;
   widthMm: number;
   locale: DesktopLocale;
-  currencyUnit?: CurrencyUnit;
 }
 
 // HTML receipt designed for 58mm / 80mm thermal printers. Uses a fixed-width
 // monospace layout so line breaks stay predictable under any driver. Printed
 // via Electron webContents.print → the OS driver handles cutting/feeding.
 export function buildReceiptHtml(args: ReceiptArgs): string {
-  const { orgName, ticketNumber, tableCode, staffName, items, total, tendered, change, currency, paidAt, widthMm, locale, currencyUnit = 'da' } = args;
+  const { orgName, ticketNumber, tableCode, staffName, items, total, tendered, change, currency, decimals = 2, paidAt, widthMm, locale } = args;
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
-  const fmt = (n: number) => formatMoney(n, currencyUnit, currency);
+  const fmt = (n: number) => formatMoney(n, currency, decimals);
   const cols = widthMm >= 80 ? 42 : 32;
 
   const pad = (s: string, n: number) => s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);

@@ -1211,8 +1211,62 @@ export async function updateKioskSettings(settings: Record<string, any>) {
 
   revalidatePath('/admin/kiosk');
   revalidatePath('/admin/settings');
+  // Revalidate BOTH the current (`/k/[officeToken]`) and legacy
+  // (`/kiosk/[officeSlug]`) public kiosk routes so saved changes flush
+  // immediately regardless of which URL the customer lands on.
+  revalidatePath('/k/[officeToken]', 'page');
   revalidatePath('/kiosk/[officeSlug]', 'page');
-  revalidatePath('/sandbox/[token]/kiosk', 'page');
+  return { success: true };
+}
+
+/**
+ * Per-office kiosk visibility overrides. Writes a narrow set of keys into
+ * `offices.settings` so a single branch can hide departments / services
+ * differently from the org-wide kiosk config. Org defaults apply unless
+ * `kiosk_override_visibility` is set to true on the office.
+ */
+export async function updateOfficeKioskOverrides(
+  officeId: string,
+  payload: {
+    override: boolean;
+    hidden_departments: string[];
+    hidden_services: string[];
+    locked_department_id: string | null;
+  },
+) {
+  const context = await getAdminContext();
+  await requireOrganizationAdmin(context);
+  const office = await getOfficeById(context, officeId);
+  const currentSettings = (office.settings as Record<string, unknown> | null) ?? {};
+  const nextSettings: Record<string, unknown> = {
+    ...currentSettings,
+    kiosk_override_visibility: payload.override,
+    kiosk_hidden_departments: payload.hidden_departments,
+    kiosk_hidden_services: payload.hidden_services,
+    kiosk_locked_department_id: payload.locked_department_id,
+  };
+
+  const { error } = await context.supabase
+    .from('offices')
+    .update({ settings: nextSettings } as any)
+    .eq('id', officeId);
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'office_kiosk_overrides_updated',
+    entityType: 'office',
+    entityId: officeId,
+    officeId,
+    summary: payload.override
+      ? `Enabled per-office kiosk overrides for ${office.name}`
+      : `Disabled per-office kiosk overrides for ${office.name}`,
+    metadata: payload,
+  });
+
+  revalidatePath('/admin/kiosk');
+  revalidatePath('/k/[officeToken]', 'page');
+  revalidatePath('/kiosk/[officeSlug]', 'page');
   return { success: true };
 }
 

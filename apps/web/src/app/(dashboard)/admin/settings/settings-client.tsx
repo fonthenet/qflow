@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib/actions/settings-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 import { createClient } from '@/lib/supabase/client';
-import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey, VOICE_CATALOG } from '@qflo/shared';
 
 interface Organization {
@@ -46,6 +45,7 @@ interface SettingsClientProps {
     recommendedRoles: string[];
   };
   templateConfigured: boolean;
+  wizardCompleted: boolean;
 }
 
 function formatEnumLabel(value: string, t: (key: string) => string) {
@@ -149,6 +149,7 @@ export function SettingsClient({
   virtualQueueCodes = [],
   templateSummary,
   templateConfigured,
+  wizardCompleted,
 }: SettingsClientProps) {
   const { t } = useI18n();
   const [isPending, startTransition] = useTransition();
@@ -163,9 +164,6 @@ export function SettingsClient({
   const [logoUrl, setLogoUrl] = useState(organization.logo_url ?? '');
 
   // Business Directory
-  const [businessCategory, setBusinessCategory] = useState<string>(
-    settings.business_category ?? 'other'
-  );
   const [listedInDirectory, setListedInDirectory] = useState<boolean>(
     settings.listed_in_directory ?? true
   );
@@ -224,13 +222,6 @@ export function SettingsClient({
     typeof settings.voice_output_device_id === 'string' ? settings.voice_output_device_id : ''
   );
 
-  // Language Settings
-  const [supportedLanguages, setSupportedLanguages] = useState<string[]>(
-    settings.supported_languages ?? ['en']
-  );
-  const [defaultLanguage, setDefaultLanguage] = useState<string>(
-    settings.default_language ?? 'en'
-  );
   const [visitIntakeOverrideMode, setVisitIntakeOverrideMode] = useState<string>(
     settings.visit_intake_override_mode ?? 'business_hours'
   );
@@ -405,6 +396,10 @@ export function SettingsClient({
   async function handleUpdatePassword() {
     setPasswordSuccess(null);
     setPasswordError(null);
+    if (!currentPassword) {
+      setPasswordError(t('Please enter your current password.'));
+      return;
+    }
     if (newPassword.length < 6) {
       setPasswordError(t('Password must be at least 6 characters.'));
       return;
@@ -416,6 +411,23 @@ export function SettingsClient({
     setPasswordUpdating(true);
     try {
       const supabase = createClient();
+      // Re-auth with the current password before allowing a change. Supabase's
+      // updateUser({ password }) trusts the active session, so without this
+      // check anyone with an open laptop could rotate the password.
+      const { data: userData } = await supabase.auth.getUser();
+      const email = userData.user?.email;
+      if (!email) {
+        setPasswordError(t('Could not verify your current session. Please sign in again.'));
+        return;
+      }
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email,
+        password: currentPassword,
+      });
+      if (reauthError) {
+        setPasswordError(t('Current password is incorrect.'));
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
         setPasswordError(error.message);
@@ -430,21 +442,6 @@ export function SettingsClient({
     } finally {
       setPasswordUpdating(false);
     }
-  }
-
-  const languageOptions = [
-    { code: 'en', label: t('English') },
-    { code: 'fr', label: t('French') },
-    { code: 'ar', label: t('Arabic') },
-    { code: 'es', label: t('Spanish') },
-  ];
-
-  function toggleLanguage(code: string) {
-    setSupportedLanguages((prev) =>
-      prev.includes(code)
-        ? prev.filter((l) => l !== code)
-        : [...prev, code]
-    );
   }
 
   function handleSave() {
@@ -472,8 +469,6 @@ export function SettingsClient({
           voice_id: voiceId || null,
           voice_rate: voiceRate,
           voice_output_device_id: voiceOutputDeviceId || null,
-          supported_languages: supportedLanguages,
-          default_language: defaultLanguage,
           visit_intake_override_mode: visitIntakeOverrideMode,
           email_otp_enabled: emailOtpEnabled,
           email_otp_required_for_booking: emailOtpRequiredForBooking,
@@ -493,7 +488,6 @@ export function SettingsClient({
           messenger_default_virtual_code_id: whatsappDefaultVirtualCodeId,
           messenger_enabled: messengerEnabled,
           messenger_page_id: messengerPageId.trim(),
-          business_category: businessCategory,
           listed_in_directory: listedInDirectory,
           // Booking
           booking_mode: bookingEnabled ? 'simple' : 'disabled',
@@ -535,14 +529,16 @@ export function SettingsClient({
               {t('Your current business setup controls labels, navigation, starter structure, and customer-facing defaults.')}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/admin/setup-wizard"
-              className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-            >
-              {t('Open Setup')}
-            </Link>
-          </div>
+          {wizardCompleted ? (
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/admin/setup-wizard"
+                className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+              >
+                {t('Open Setup')}
+              </Link>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -683,25 +679,11 @@ export function SettingsClient({
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Business Category')}
-            </label>
-            <select
-              value={businessCategory}
-              onChange={(e) => setBusinessCategory(e.target.value)}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              {BUSINESS_CATEGORIES.map((cat) => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.emoji} {t(cat.label.en)}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('Helps customers find your business in the WhatsApp/Messenger directory.')}
-            </p>
-          </div>
+          {/* Business Category intentionally removed — it's derived from the
+              template's vertical (picked in the Setup Wizard), so asking the
+              admin to pick it again was pointless. The existing value stored
+              at settings.business_category continues to feed the WhatsApp
+              directory search index (see api/directory/search/route.ts). */}
 
           <div className="flex items-start">
             <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4 w-full">
@@ -1206,7 +1188,7 @@ export function SettingsClient({
                   value={ticketFormat}
                   onChange={(e) => setTicketFormat(e.target.value)}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  style={{ colorScheme: 'light dark' }}
+                  style={{ colorScheme: 'light' }}
                 >
                   <option value="dept_numeric">{t('Department only')} — SERVICE-0001</option>
                   <option value="prefix_numeric">{t('Prefix only')} — TK-0001</option>
@@ -1826,53 +1808,10 @@ export function SettingsClient({
         </div>
       </section>
 
-      {/* ── Language Settings ──────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
-          {t('Language')}
-        </h2>
-
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground mb-2">
-            {t('Languages customers can use')}
-          </label>
-          <div className="flex flex-wrap gap-3">
-            {languageOptions.map((lang) => (
-              <label
-                key={lang.code}
-                className="flex items-center gap-2 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={supportedLanguages.includes(lang.code)}
-                  onChange={() => toggleLanguage(lang.code)}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-                />
-                <span className="text-sm text-foreground">{lang.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground mb-1">
-            {t('Default language')}
-          </label>
-          <select
-            value={defaultLanguage}
-            onChange={(e) => setDefaultLanguage(e.target.value)}
-            className="w-full sm:w-64 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-          >
-            {languageOptions
-              .filter((l) => supportedLanguages.includes(l.code))
-              .map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label}
-                </option>
-              ))}
-          </select>
-        </div>
-      </section>
+      {/* Language settings live on Business Settings → Organization Profile
+          ("Primary Locale"). That field writes to organizations.locale_primary
+          which drives the resolveLocale() cascade used by WhatsApp, Messenger,
+          the booking page, the kiosk, and the /q/[token] ticket page. */}
 
       {/* ── Account ─────────────────────────────────────────────────────── */}
       <section className="rounded-xl border border-border bg-card p-6 space-y-4">
@@ -1973,24 +1912,6 @@ export function SettingsClient({
               <span className="text-sm text-red-600">{passwordError}</span>
             )}
           </div>
-        </div>
-      </section>
-
-      {/* ── Payment Methods ───────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">{t('Payment Methods')}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('Configure how customers can pay you. Methods appear on their ticket page and in WhatsApp confirmations.')}
-            </p>
-          </div>
-          <Link
-            href="/admin/settings/payments"
-            className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors whitespace-nowrap"
-          >
-            {t('Payment options')}
-          </Link>
         </div>
       </section>
 

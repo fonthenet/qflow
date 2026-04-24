@@ -102,11 +102,11 @@ export async function POST(request: NextRequest) {
   const timezone = body.timezone?.trim() || DEFAULT_TIMEZONE;
   const locale: CategoryLocale = body.locale ?? 'fr';
 
-  if (!email || !password || !fullName || !businessName || !categoryValue || !officeName) {
+  if (!email || !password || !fullName || !businessName) {
     return NextResponse.json(
       {
         error:
-          'Missing required fields: email, password, fullName, businessName, category, officeName',
+          'Missing required fields: email, password, fullName, businessName',
       },
       { status: 400 },
     );
@@ -115,8 +115,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
   }
 
-  const category = getBusinessCategory(categoryValue);
-  if (!category) {
+  // Category + officeName are optional. When both are present we do the
+  // full Station-style seeding (office + department + service + desk +
+  // VQC). When either is missing we create an "org shell" and let the
+  // admin finish configuration in the setup wizard — this lets the web
+  // /register page and the Station signup hit the exact same endpoint.
+  const fullSeed = Boolean(categoryValue && officeName);
+  const category = categoryValue ? getBusinessCategory(categoryValue) : null;
+  if (categoryValue && !category) {
     return NextResponse.json({ error: `Unknown category: ${categoryValue}` }, { status: 400 });
   }
 
@@ -174,11 +180,22 @@ export async function POST(request: NextRequest) {
     if (rpcErr || !orgId) throw rpcErr ?? new Error('RPC returned no org id');
     const organizationId = orgId as string;
 
+    // 3-8. Optional full seeding — only when the caller passed
+    // category + officeName (Station signup). When missing, we skip
+    // office/dept/service/desk and let the setup wizard create them.
+    let office: { id: string; name: string } | null = null;
+    let departmentId: string | null = null;
+    let deskId: string | null = null;
+    let deskName: string | null = null;
+    let vqcId: string | null = null;
+    let staff: { id: string; role: string | null } | null = null;
+
+    if (fullSeed && category && officeName) {
     // 3. Office. Carry country/city/wilaya so the public directory, SMS
     //    tax compliance and per-country overlays can target this office
     //    without re-asking the user.
     const wilaya = resolveCityToWilaya(country, city);
-    const { data: office, error: officeErr } = await supabase
+    const { data: officeRow, error: officeErr } = await supabase
       .from('offices')
       .insert({
         organization_id: organizationId,
@@ -193,7 +210,8 @@ export async function POST(request: NextRequest) {
       })
       .select('id, name')
       .single();
-    if (officeErr || !office) throw new Error(`office: ${officeErr?.message ?? 'no row'}`);
+    if (officeErr || !officeRow) throw new Error(`office: ${officeErr?.message ?? 'no row'}`);
+    office = officeRow;
 
     // 4. Department — operator-named, falls back to category default.
     const deptName = body.departmentName?.trim() || resolveLocalized(category.defaultDepartment.name, locale);
@@ -208,7 +226,9 @@ export async function POST(request: NextRequest) {
       .select('id')
       .single();
     if (deptErr || !dept) throw new Error(`department: ${deptErr?.message ?? 'no row'}`);
-    const departmentId = dept.id;
+    departmentId = dept.id;
+    const deptIdLocal: string = dept.id;
+    const officeLocal = officeRow;
 
     // 5. Services — operator-customized list, or single category default.
     const servicesToSeed = (body.services && body.services.length > 0)
@@ -228,7 +248,7 @@ export async function POST(request: NextRequest) {
     const { data: svcRows, error: svcErr } = await supabase
       .from('services')
       .insert(servicesToSeed.map((s) => ({
-        department_id: departmentId,
+        department_id: deptIdLocal,
         code: s.code,
         name: s.name,
         estimated_service_time: s.estimatedMinutes,
@@ -238,11 +258,12 @@ export async function POST(request: NextRequest) {
     if (svcErr || !svcRows || svcRows.length === 0) throw new Error(`service: ${svcErr?.message ?? 'no row'}`);
 
     // 6. Desks — first one open + assigned to the admin, the rest closed.
-    const { data: staff } = await supabase
+    const { data: staffRow } = await supabase
       .from('staff')
       .select('id, role')
       .eq('auth_user_id', authUserId)
       .single();
+    staff = staffRow as { id: string; role: string | null } | null;
 
     const desksToSeed = (body.desks && body.desks.length > 0)
       ? body.desks.map((d) => d.trim() || resolveLocalized(category.defaultDesk.name, locale))
@@ -251,8 +272,8 @@ export async function POST(request: NextRequest) {
     const { data: deskRows, error: deskErr } = await supabase
       .from('desks')
       .insert(desksToSeed.map((name, idx) => ({
-        office_id: office.id,
-        department_id: departmentId,
+        office_id: officeLocal.id,
+        department_id: deptIdLocal,
         name,
         is_active: true,
         current_staff_id: idx === 0 ? (staff?.id ?? null) : null,
@@ -261,13 +282,14 @@ export async function POST(request: NextRequest) {
       .select('id, name');
     if (deskErr || !deskRows || deskRows.length === 0) throw new Error(`desk: ${deskErr?.message ?? 'no row'}`);
     const desk = deskRows[0];
-    const deskId = desk.id;
+    deskId = desk.id;
+    deskName = desk.name;
 
     // 7. Assign admin to the new office + dept so /desk works on first click.
     if (staff) {
       await supabase
         .from('staff')
-        .update({ office_id: office.id, department_id: departmentId })
+        .update({ office_id: officeLocal.id, department_id: deptIdLocal })
         .eq('id', staff.id);
     }
 
@@ -280,15 +302,16 @@ export async function POST(request: NextRequest) {
       .from('virtual_queue_codes')
       .insert({
         organization_id: organizationId,
-        office_id: office.id,
-        department_id: departmentId,
+        office_id: officeLocal.id,
+        department_id: deptIdLocal,
         service_id: null,
         qr_token: vqcToken,
         is_active: true,
       })
       .select('id')
       .single();
-    const vqcId = vqc?.id ?? null;
+    vqcId = vqc?.id ?? null;
+    } // end if (fullSeed)
 
     // 9. Org settings merge — channel defaults + category + wizard_completed_at.
     const autoCode = businessName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) || 'QUEUE';
@@ -302,7 +325,6 @@ export async function POST(request: NextRequest) {
     const currentSettings = (orgRow?.settings ?? {}) as Record<string, unknown>;
 
     const channelDefaults: Record<string, unknown> = {
-      business_category: category.value,
       business_country: country,
       business_city: city,
       whatsapp_enabled: true,
@@ -317,9 +339,16 @@ export async function POST(request: NextRequest) {
       allow_cancellation: true,
       min_booking_lead_hours: 1,
       default_check_in_mode: 'hybrid',
-      business_setup_wizard_completed_at: new Date().toISOString(),
-      platform_template_id: getCategoryTemplateId(category),
+      listed_in_directory: true,
     };
+    if (category) {
+      // Only stamp category-derived fields when we actually have a
+      // category picked. The portal signup defers these to the setup
+      // wizard so the admin can pick a template there.
+      channelDefaults.business_category = category.value;
+      channelDefaults.business_setup_wizard_completed_at = new Date().toISOString();
+      channelDefaults.platform_template_id = getCategoryTemplateId(category);
+    }
     if (vqcId) {
       channelDefaults.whatsapp_default_virtual_code_id = vqcId;
       channelDefaults.messenger_default_virtual_code_id = vqcId;
@@ -329,27 +358,40 @@ export async function POST(request: NextRequest) {
     // Profile screen, country-gated features (currency, wilaya, tax
     // rules) and the public directory all read consistent values —
     // settings.business_* is kept for legacy readers.
+    const orgUpdate: Record<string, unknown> = {
+      settings: { ...currentSettings, ...channelDefaults },
+      country,
+      timezone,
+      locale_primary: locale,
+    };
+    if (category) orgUpdate.vertical = category.vertical;
     await supabase
       .from('organizations')
-      .update({
-        settings: { ...currentSettings, ...channelDefaults } as any,
-        country,
-        timezone,
-        locale_primary: locale,
-        vertical: category.vertical,
-      })
+      .update(orgUpdate as any)
       .eq('id', organizationId);
+
+    // Pull the staff row even in shell mode so the client gets a proper
+    // role back (the RPC created this row). In full-seed mode we already
+    // loaded it above.
+    if (!staff) {
+      const { data: staffRow } = await supabase
+        .from('staff')
+        .select('id, role')
+        .eq('auth_user_id', authUserId)
+        .single();
+      staff = staffRow as { id: string; role: string | null } | null;
+    }
 
     // 10. Authenticated session for the client.
     const { data: sessionData } = await supabase.auth.signInWithPassword({ email, password });
 
     return NextResponse.json({
       organization_id: organizationId,
-      office_id: office.id,
-      office_name: office.name,
+      office_id: office?.id ?? null,
+      office_name: office?.name ?? null,
       department_id: departmentId,
       desk_id: deskId,
-      desk_name: desk.name,
+      desk_name: deskName,
       staff_id: staff?.id ?? null,
       user_id: authUserId,
       role: staff?.role ?? 'admin',

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { formatMoney } from '../lib/money';
-import { usePosCurrencyUnit } from '../lib/use-pos-currency-unit';
 
 // ── Order pad ─────────────────────────────────────────────────────
 // Full-screen modal for taking orders on a seated ticket. Category
@@ -54,11 +53,12 @@ interface Props {
   tableCode?: string | null;
   locale: DesktopLocale;
   currency?: string;
+  decimals?: number;
   onClose: () => void;
   onChanged?: () => void;
 }
 
-export function OrderPad({ orgId, staffId, ticketId, ticketNumber, tableCode, locale, currency = 'DA', onClose, onChanged }: Props) {
+export function OrderPad({ orgId, staffId, ticketId, ticketNumber, tableCode, locale, currency = '', decimals = 2, onClose, onChanged }: Props) {
   const t = useCallback((k: string, v?: Record<string, any>) => translate(locale, k, v), [locale]);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -175,8 +175,7 @@ export function OrderPad({ orgId, staffId, ticketId, ticketNumber, tableCode, lo
     } finally { setBusy(null); }
   };
 
-  const currencyUnit = usePosCurrencyUnit();
-  const fmt = (n: number) => formatMoney(n, currencyUnit, currency);
+  const fmt = (n: number) => formatMoney(n, currency, decimals);
 
   return createPortal(
     <div style={backdrop} onClick={onClose}>

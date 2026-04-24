@@ -1,59 +1,52 @@
-// Money formatting + parsing for the Algeria market.
+// Money formatting + parsing.
 //
-// Amounts are ALWAYS stored in dinars (DA) as floats with 2-decimal
-// (centime) resolution. The operator can toggle how they are displayed
-// and typed via the POS currency-unit pref:
+// Amounts are stored in the org's main currency unit (DA for Algeria,
+// $ for US, € for France, etc.) as floats. The Station looks up the
+// org's country config to pick the symbol + decimal places at render
+// time — there is no hardcoded currency.
 //
-//   - 'da'       → "1 234,56 DA"   (bank-style, 2 decimals always)
-//   - 'centimes' → "123 456 centim" (integer, ×100 of the DA value)
-//
-// Colloquially in Algeria people often quote prices in centimes
-// ("cent mille" = 100 000 centimes = 1 000 DA), so the centimes view
-// matches everyday speech. Storage stays in DA so the whole system
-// (menu, reports, cloud sync) keeps a single canonical representation.
+// The old "centimes" sub-unit toggle (Algeria folk habit of quoting
+// prices ×100) was removed in favor of a single canonical display:
+// every country renders amounts in its main unit with its own decimals.
 
-export type CurrencyUnit = 'da' | 'centimes';
-
-const CENTIMES_LABEL = 'centim';
-
-export function formatMoney(amountDA: number, unit: CurrencyUnit, currency = 'DA'): string {
-  if (!isFinite(amountDA)) return `0 ${unit === 'centimes' ? CENTIMES_LABEL : currency}`;
-  if (unit === 'centimes') {
-    const centimes = Math.round(amountDA * 100);
-    return `${groupDigits(String(centimes))} ${CENTIMES_LABEL}`;
-  }
-  // DA: always 2 decimals, comma separator, thin-space thousands grouping.
-  const [intPart, decPart] = amountDA.toFixed(2).split('.');
-  return `${groupDigits(intPart)},${decPart} ${currency}`;
+export function formatMoney(
+  amount: number,
+  currency = '',
+  decimals = 2,
+): string {
+  const suffix = currency ? ` ${currency}` : '';
+  if (!isFinite(amount)) return `0${suffix}`;
+  // Fixed decimals, comma separator, thin-space thousands grouping.
+  const [intPart, decPart] = amount.toFixed(decimals).split('.');
+  return decPart
+    ? `${groupDigits(intPart)},${decPart}${suffix}`
+    : `${groupDigits(intPart)}${suffix}`;
 }
 
-// Parse operator input back into a DA value. In 'da' mode we accept
-// "1234.56" / "1234,56" directly; in 'centimes' mode we divide by 100
-// so typing 100000 means 1000 DA.
-export function parseMoney(input: string, unit: CurrencyUnit): number {
+// Parse operator input back into a main-unit value (accepts "1234.56"
+// or "1234,56"). No sub-unit conversion — what the operator types is
+// what gets stored.
+export function parseMoney(input: string): number {
   const raw = input.replace(/[^0-9.,-]/g, '').replace(',', '.');
   if (!raw) return 0;
   const n = Number(raw);
-  if (!isFinite(n)) return 0;
-  return unit === 'centimes' ? n / 100 : n;
+  return isFinite(n) ? n : 0;
 }
 
-// Displays the amount inside an <input> (so the operator sees the same
-// unit they configured). DA mode keeps trailing zeros; centimes mode
-// is always integer.
-export function formatMoneyForInput(amountDA: number, unit: CurrencyUnit): string {
-  if (unit === 'centimes') return String(Math.round(amountDA * 100));
-  return amountDA.toFixed(2);
+// Displays the amount inside an <input>. Fixed decimals so the
+// operator sees a stable placeholder (e.g. "1234.56", "1234.000").
+export function formatMoneyForInput(amount: number, decimals = 2): string {
+  return amount.toFixed(decimals);
 }
 
-// Quick-add button values. In DA they are 500/1000/2000/5000 DA. In
-// centimes view we want the equivalent nice round labels — same
-// dinar values, rendered as centimes.
-export const QUICK_ADD_DA = [500, 1000, 2000, 5000];
+// Quick-add button values in the org's main currency unit. Reasonable
+// cash denominations that work across currencies (5/10/20/50 of main
+// unit × 100 for small-denomination currencies like DA/JPY — apps
+// scale these per-country if they want).
+export const QUICK_ADD = [500, 1000, 2000, 5000];
 
-export function labelForQuickAdd(amountDA: number, unit: CurrencyUnit): string {
-  if (unit === 'centimes') return `+${groupDigits(String(amountDA * 100))}`;
-  return `+${groupDigits(String(amountDA))}`;
+export function labelForQuickAdd(amount: number): string {
+  return `+${groupDigits(String(amount))}`;
 }
 
 function groupDigits(s: string): string {

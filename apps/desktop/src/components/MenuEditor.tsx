@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import type { MenuCategory, MenuItem } from './OrderPad';
 import { formatMoney } from '../lib/money';
-import { usePosCurrencyUnit } from '../lib/use-pos-currency-unit';
 
 // ── Menu editor ───────────────────────────────────────────────────
 // Admin-facing category + item editor. Categories rail on the left,
@@ -15,6 +14,7 @@ interface Props {
   orgId: string;
   locale: DesktopLocale;
   currency?: string;
+  decimals?: number;
   onClose?: () => void;
   /** When true, renders inline (for Settings tab) instead of a portal modal. */
   embedded?: boolean;
@@ -23,14 +23,16 @@ interface Props {
 const CAT_COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4', '#ec4899', '#6366f1'];
 const CAT_ICONS = ['🍽️', '🍕', '🍔', '🥗', '🍰', '🍷', '☕', '🍹', '🥤', '🍲', '🍝', '🍣', '🌮', '🍖'];
 
-export function MenuEditor({ orgId, locale, currency = 'DA', onClose, embedded = false }: Props) {
+export function MenuEditor({ orgId, locale, currency = '', decimals = 2, onClose, embedded = false }: Props) {
   const t = useCallback((k: string, v?: Record<string, any>) => translate(locale, k, v), [locale]);
-  const currencyUnit = usePosCurrencyUnit();
-  const fmt = (n: number) => formatMoney(n, currencyUnit, currency);
+  const fmt = (n: number) => formatMoney(n, currency, decimals);
   const fmtNoCur = (n: number) => {
-    const full = formatMoney(n, currencyUnit, currency);
-    // strip the currency/unit suffix for inline contexts that render it elsewhere
-    return full.replace(/\s+(DA|centim)$/, '');
+    // Strip the trailing symbol for inline contexts that render it
+    // elsewhere. Dynamic regex so any country's symbol works.
+    const full = formatMoney(n, currency, decimals);
+    if (!currency) return full;
+    const escaped = currency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return full.replace(new RegExp(`\\s+${escaped}$`), '');
   };
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);

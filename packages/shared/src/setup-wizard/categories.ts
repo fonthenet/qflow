@@ -305,6 +305,44 @@ export function getBusinessCategory(value: string | null | undefined): CategoryD
   return BUSINESS_CATEGORIES.find((c) => c.value === value);
 }
 
+/**
+ * Reverse lookup: given a `vertical` (e.g. 'public_service', 'clinic',
+ * 'restaurant') return the `BusinessCategory` it belongs to. Useful for
+ * orgs provisioned by the Portal's platform wizard which writes
+ * `platform_vertical` + `vertical` but may not yet have the
+ * `business_category` settings key — this lets readers (Station,
+ * reporting) normalize to a single enum.
+ */
+export function getBusinessCategoryByVertical(
+  vertical: string | null | undefined,
+): BusinessCategory | undefined {
+  if (!vertical) return undefined;
+  // Normalize both underscore (TS enum style: 'public_service') and
+  // hyphen (DB slug style: 'public-service') so either representation
+  // resolves to the same BusinessCategory. The `organizations.vertical`
+  // column FK uses DB slugs while `settings.platform_vertical` uses the
+  // TS style — readers should never have to care which one they got.
+  const normalized = vertical.toLowerCase().replace(/-/g, '_');
+  const hit = BUSINESS_CATEGORIES.find(
+    (c) => c.vertical.toLowerCase().replace(/-/g, '_') === normalized,
+  );
+  if (hit) return hit.value;
+  // Common DB-slug aliases that don't map 1:1 to a BUSINESS_CATEGORIES
+  // vertical. Keep this conservative — only add aliases we've seen in
+  // production so we don't silently mis-categorize.
+  const aliases: Record<string, BusinessCategory> = {
+    gov: 'government',
+    barber: 'beauty',
+    salon: 'beauty',
+    spa: 'beauty',
+    dental: 'healthcare',
+    veterinary: 'healthcare',
+    pharmacy: 'healthcare',
+    retail: 'other',
+  };
+  return aliases[normalized];
+}
+
 export function resolveLocalized(text: LocalizedText, locale: CategoryLocale = 'fr'): string {
   return text[locale] ?? text.fr ?? text.en;
 }

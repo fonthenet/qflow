@@ -44,8 +44,13 @@ export default function LoginPage() {
   async function handleSubmit(formData: FormData) {
     setError(null);
 
-    const emailValue = formData.get('email') as string;
-    const passwordValue = formData.get('password') as string;
+    const emailValue = (formData.get('email') as string | null)?.trim() ?? '';
+    const passwordValue = (formData.get('password') as string | null) ?? '';
+
+    // Inline validation — avoids Chromium's dark native validation tooltip.
+    if (!emailValue) return setError(t('Email is required.'));
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) return setError(t('Enter a valid email address.'));
+    if (!passwordValue) return setError(t('Password is required.'));
 
     localStorage.setItem('qflo_saved_email', emailValue);
     localStorage.setItem('qflo_remember_password', rememberPassword ? 'true' : 'false');
@@ -70,7 +75,7 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
-          <form action={handleSubmit} className="space-y-5">
+          <form action={handleSubmit} noValidate className="space-y-5">
             {error && (
               <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {error}
@@ -85,7 +90,6 @@ export default function LoginPage() {
                 id="email"
                 name="email"
                 type="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -101,7 +105,6 @@ export default function LoginPage() {
                 id="password"
                 name="password"
                 type="password"
-                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

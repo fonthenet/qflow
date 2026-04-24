@@ -66,10 +66,18 @@ export default async function KioskPage({ params }: KioskPageProps) {
           : (orgSettings.kiosk_show_priorities ??
             (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities)),
       showEstimatedTime: orgSettings.kiosk_show_estimated_time ?? profile.showEstimatedTime,
-      hiddenDepartments: orgSettings.kiosk_hidden_departments ?? officeSettings.kiosk_hidden_departments ?? [],
-      hiddenServices: orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
+      hiddenDepartments:
+        officeSettings.kiosk_override_visibility === true
+          ? (officeSettings.kiosk_hidden_departments ?? [])
+          : (orgSettings.kiosk_hidden_departments ?? []),
+      hiddenServices:
+        officeSettings.kiosk_override_visibility === true
+          ? (officeSettings.kiosk_hidden_services ?? [])
+          : (orgSettings.kiosk_hidden_services ?? []),
       lockedDepartmentId:
-        orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
+        officeSettings.kiosk_override_visibility === true
+          ? (officeSettings.kiosk_locked_department_id ?? null)
+          : (orgSettings.kiosk_locked_department_id ?? null),
       buttonLabel: orgSettings.kiosk_button_label ?? profile.buttonLabel,
       idleTimeout: orgSettings.kiosk_idle_timeout ?? profile.idleTimeoutSeconds,
       visitIntakeOverrideMode:

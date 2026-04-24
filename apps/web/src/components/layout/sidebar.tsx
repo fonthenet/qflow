@@ -157,6 +157,16 @@ export function Sidebar({
       // Hide Setup Wizard once the admin has finished it — they can reach it
       // again from Overview or Settings if they want to edit structure in bulk.
       if (item.href === '/admin/setup-wizard' && wizardCompleted) return false;
+      // Pre-launch focus mode: before the wizard is complete, strip the nav
+      // down to the essentials so new admins aren't distracted by empty
+      // modules (customers, bookings, channels, insights — all blank until
+      // structure is seeded). Keep Overview (structure checklist lives there),
+      // Setup Wizard (the one required path), and Business Settings (org
+      // name / locale / timezone).
+      if (!wizardCompleted) {
+        const allowedPreLaunch = ['/admin/overview', '/admin/setup-wizard'];
+        if (!allowedPreLaunch.includes(item.href)) return false;
+      }
       const anyItem = item as typeof item & { siblings?: string[] };
       const allHrefs = [item.href, ...(anyItem.siblings ?? [])];
       return allHrefs.some((h) => allowedNavigation.includes(h));
@@ -212,7 +222,7 @@ export function Sidebar({
           </p>
           {!templateConfigured && (
             <div className="mt-2 rounded-md bg-amber-50 px-2 py-2 text-xs font-medium text-amber-800">
-              {t('Sandbox mode: test the setup before you make it live.')}
+              {t('Finish the setup wizard to go live.')}
             </div>
           )}
         </div>

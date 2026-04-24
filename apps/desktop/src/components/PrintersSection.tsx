@@ -97,7 +97,9 @@ export function PrintersSection({ t, locale }: Props) {
         total: 1000,
         tendered: 1000,
         change: 0,
-        currency: 'DA',
+        // Test receipt — no currency symbol needed; real receipts pull
+        // the symbol from country_config via PaymentModal.
+        currency: '',
         paidAt: new Date(),
         widthMm: p.width_mm || 80,
         locale,

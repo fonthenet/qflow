@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import type { TicketItem } from './OrderPad';
 import { buildReceiptHtml } from '../lib/receipt';
-import { formatMoney, parseMoney, formatMoneyForInput, QUICK_ADD_DA, labelForQuickAdd } from '../lib/money';
-import { usePosCurrencyUnit } from '../lib/use-pos-currency-unit';
+import { formatMoney, parseMoney, formatMoneyForInput, QUICK_ADD, labelForQuickAdd } from '../lib/money';
 
 interface Printer {
   id: string;
@@ -27,24 +26,24 @@ interface Props {
   orgName?: string | null;
   locale: DesktopLocale;
   currency?: string;
+  decimals?: number;
   onClose: () => void;
   onPaid: (payment: { method: 'cash'; amount: number; tendered: number; change: number }) => void;
 }
 
 export function PaymentModal({
   orgId, staffId, staffName, ticketId, ticketNumber, tableCode,
-  items, orgName, locale, currency = 'DA', onClose, onPaid,
+  items, orgName, locale, currency = '', decimals = 2, onClose, onPaid,
 }: Props) {
   const t = useCallback((k: string, v?: Record<string, any>) => translate(locale, k, v), [locale]);
-  const currencyUnit = usePosCurrencyUnit();
   const total = useMemo(
     () => items.reduce((s, it) => s + ((it.price ?? 0) * it.qty), 0),
     [items]
   );
-  const fmt = (n: number) => formatMoney(n, currencyUnit, currency);
+  const fmt = (n: number) => formatMoney(n, currency, decimals);
 
-  // tendered is the raw string the operator is typing (in the active
-  // unit — DA or centimes). We parse it back into DA for math.
+  // tendered is the raw string the operator is typing, in the org's
+  // main currency unit. parseMoney converts it back to a number.
   const [tendered, setTendered] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [printer, setPrinter] = useState<Printer | null>(null);
@@ -61,20 +60,15 @@ export function PaymentModal({
     }).catch(() => { setPrinter(null); setDoPrint(false); });
   }, []);
 
-  // Switching unit mid-flow would keep the literal digits which is
-  // misleading ("500" in DA ≠ "500" in centimes). Simplest fix: reset
-  // the tendered field whenever the unit pref flips.
-  useEffect(() => { setTendered(''); }, [currencyUnit]);
-
-  const tenderedDA = tendered === '' ? 0 : parseMoney(tendered, currencyUnit);
-  const change = Math.max(0, tenderedDA - total);
-  const short = tendered !== '' && tenderedDA < total;
+  const tenderedAmt = tendered === '' ? 0 : parseMoney(tendered);
+  const change = Math.max(0, tenderedAmt - total);
+  const short = tendered !== '' && tenderedAmt < total;
 
   const pay = async () => {
     setErr(null);
     if (total <= 0) { setErr(t('Nothing to charge — ticket has no priced items.')); return; }
     const amt = total;
-    const tend = tendered === '' ? amt : tenderedDA;
+    const tend = tendered === '' ? amt : tenderedAmt;
     if (tend < amt) { setErr(t('Tendered is less than total.')); return; }
     setBusy(true);
     try {
@@ -98,10 +92,10 @@ export function PaymentModal({
             tendered: tend,
             change: Math.max(0, tend - amt),
             currency,
+            decimals,
             paidAt: new Date(),
             widthMm: printer.width_mm || 80,
             locale,
-            currencyUnit,
           });
           await (window as any).qf.receipts.print({
             driverName: printer.driver_name,
@@ -165,21 +159,21 @@ export function PaymentModal({
               value={tendered}
               onChange={(e) => setTendered(e.target.value.replace(/[^0-9.,]/g, ''))}
               onKeyDown={(e) => { if (e.key === 'Enter' && !busy) pay(); }}
-              placeholder={formatMoneyForInput(total, currencyUnit)}
+              placeholder={formatMoneyForInput(total, decimals)}
               style={{ ...inputStyle, fontSize: 24, fontWeight: 800, textAlign: 'right' }}
               inputMode="decimal"
             />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button onClick={() => setTendered(formatMoneyForInput(total, currencyUnit))} style={quickBtn}>{t('Exact')}</button>
-              {QUICK_ADD_DA.map((n) => (
+              <button onClick={() => setTendered(formatMoneyForInput(total, decimals))} style={quickBtn}>{t('Exact')}</button>
+              {QUICK_ADD.map((n) => (
                 <button
                   key={n}
                   onClick={() => {
-                    const baseDA = tendered === '' ? 0 : tenderedDA;
-                    setTendered(formatMoneyForInput(baseDA + n, currencyUnit));
+                    const base = tendered === '' ? 0 : tenderedAmt;
+                    setTendered(formatMoneyForInput(base + n, decimals));
                   }}
                   style={quickBtn}
-                >{labelForQuickAdd(n, currencyUnit)}</button>
+                >{labelForQuickAdd(n)}</button>
               ))}
               <button onClick={() => setTendered('')} style={{ ...quickBtn, marginLeft: 'auto', color: '#ef4444' }}>{t('Clear')}</button>
             </div>
@@ -187,7 +181,7 @@ export function PaymentModal({
             <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 14, color: 'var(--text3)' }}>{t('Change')}</span>
               <span style={{ fontSize: 22, fontWeight: 800, color: short ? '#ef4444' : '#22c55e' }}>
-                {short ? `- ${fmt(total - tenderedDA)}` : fmt(change)}
+                {short ? `- ${fmt(total - tenderedAmt)}` : fmt(change)}
               </span>
             </div>
 

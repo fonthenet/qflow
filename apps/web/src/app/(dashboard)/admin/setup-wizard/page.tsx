@@ -15,7 +15,7 @@ export default async function SetupWizardPage() {
 
   const { data: organization } = await context.supabase
     .from('organizations')
-    .select('id, name, settings')
+    .select('id, name, settings, country, timezone')
     .eq('id', orgId)
     .single();
 
@@ -127,7 +127,22 @@ export default async function SetupWizardPage() {
 
   return (
     <SetupWizardClient
-      organization={{ id: organization.id, name: organization.name }}
+      organization={{
+        id: organization.id,
+        name: organization.name,
+        // Country + timezone drive country-gated template profiles and
+        // the default timezone we seed the first office with. Fall back
+        // to settings.business_country for orgs created before we added
+        // the first-class column.
+        country:
+          (organization as any).country ??
+          (settings.business_country as string | null | undefined) ??
+          null,
+        timezone:
+          (organization as any).timezone ??
+          (settings.timezone as string | null | undefined) ??
+          null,
+      }}
       confirmed={confirmed}
       trialSettings={settings}
       vocabulary={vocabulary}

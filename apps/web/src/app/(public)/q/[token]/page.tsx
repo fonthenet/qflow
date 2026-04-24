@@ -8,6 +8,7 @@ import { getPriorityAlertConfig } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured } from '@/lib/sms';
 import { getServerI18n } from '@/lib/i18n';
 import { LanguageSwitcher } from '@/components/shared/language-switcher';
+import { getCountryConfig, resolveLocale } from '@/lib/country';
 
 interface PageProps {
   params: Promise<{ token: string }>;
@@ -87,15 +88,19 @@ export default async function TicketStatusPage({ params }: PageProps) {
   let priorityAlertConfig = null;
   let messengerPageId: string | null = null;
   let acceptsCash = false;
+  let orgLocalePrimary: string | null = null;
+  let orgCountry: string | null = null;
   if (office?.organization_id) {
     const { data: organization } = await (supabase as any)
       .from('organizations')
-      .select('name, settings, accepts_cash')
+      .select('name, settings, accepts_cash, locale_primary, country')
       .eq('id', office.organization_id)
-      .single() as { data: { name: string; settings: Record<string, any> | null; accepts_cash: boolean } | null };
+      .single() as { data: { name: string; settings: Record<string, any> | null; accepts_cash: boolean; locale_primary: string | null; country: string | null } | null };
 
     organizationName = organization?.name ?? '';
     acceptsCash = organization?.accepts_cash ?? false;
+    orgLocalePrimary = organization?.locale_primary ?? null;
+    orgCountry = organization?.country ?? null;
     const orgSettings = (organization?.settings as Record<string, any> | null) ?? null;
     priorityAlertConfig = getPriorityAlertConfig(orgSettings, isSmsProviderConfigured());
     if (orgSettings?.messenger_enabled && orgSettings?.messenger_page_id) {
@@ -137,7 +142,11 @@ export default async function TicketStatusPage({ params }: PageProps) {
     serviceDescription: service?.description ?? '',
   };
 
-  const ticketLocale: string = ((ticket.customer_data as Record<string, unknown> | null)?.locale as string | undefined) ?? 'en';
+  // Locale cascade — the customer's pick wins; otherwise respect the business's
+  // Primary Locale, then country default, then 'en'.
+  const customerPickedLocale = (ticket.customer_data as Record<string, unknown> | null)?.locale as string | undefined;
+  const countryConfig = orgCountry ? await getCountryConfig(supabase as any, orgCountry).catch(() => null) : null;
+  const ticketLocale: string = resolveLocale(customerPickedLocale, orgLocalePrimary, countryConfig);
 
   // Status: issued with no customer data -> show check-in form
   if (ticket.status === 'issued' && !ticket.customer_data) {

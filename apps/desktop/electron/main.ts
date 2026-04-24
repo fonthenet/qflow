@@ -2066,23 +2066,7 @@ function setupIPC() {
     return nextLocale;
   });
 
-  // POS currency-unit pref — 'da' (2-decimal dinars) or 'centimes'
-  // (×100 integer view). Storage is always DA; this only flips display
-  // + input parsing. Broadcast to renderer so open POS modals refresh.
-  ipcMain.handle('settings:get-pos-currency-unit', () => {
-    try {
-      const row = db.prepare("SELECT value FROM session WHERE key = 'pos_currency_unit'").get() as { value?: string } | undefined;
-      return row?.value === 'centimes' ? 'centimes' : 'da';
-    } catch { return 'da'; }
-  });
-  ipcMain.handle('settings:set-pos-currency-unit', (_e, unit: string) => {
-    const next = unit === 'centimes' ? 'centimes' : 'da';
-    db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('pos_currency_unit', ?)").run(next);
-    mainWindow?.webContents.send('settings:pos-currency-unit-changed', next);
-    return next;
-  });
-
-  // ── Google Sheets CSV fetch (bypasses renderer CORS) ──────────
+// ── Google Sheets CSV fetch (bypasses renderer CORS) ──────────
   ipcMain.handle('http:fetch-text', async (_e, url: string) => {
     try {
       const res = await fetch(url, { redirect: 'follow' });

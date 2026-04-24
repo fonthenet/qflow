@@ -1,7 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { type BranchType, type TemplateSectionKey, type TrialTemplateStructure } from '@qflo/shared';
+import {
+  getBusinessCategoryByVertical,
+  type BranchType,
+  type TemplateSectionKey,
+  type TrialTemplateStructure,
+} from '@qflo/shared';
 import { logAuditEvent } from '@/lib/audit';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import {
@@ -224,6 +229,13 @@ async function seedConfirmedTemplate(
     branchType: input.branchType,
   });
 
+  // Map the template.vertical back to a BusinessCategory so Station +
+  // reporting + catalog-tab gating all read a consistent enum. Without
+  // this, orgs provisioned via the platform wizard land in the DB with
+  // only `platform_vertical` set, and the Station's Settings dropdown
+  // + "Menu/Products" gating fall through to "Other".
+  const derivedCategory = getBusinessCategoryByVertical(template.vertical);
+
   const nextSettings = clearTrialTemplateSettings({
     ...currentSettings,
     platform_template_state: 'template_confirmed',
@@ -241,7 +253,23 @@ async function seedConfirmedTemplate(
     platform_experience_profile: template.experienceProfile,
     platform_role_policy: template.rolePolicy,
     platform_capability_snapshot: template.capabilityFlags,
+    // Canonical keys the Station + public directory read (rule: one
+    // API/key per capability). Preserve an existing value if already set.
+    business_category:
+      (currentSettings as Record<string, unknown>).business_category ??
+      derivedCategory ??
+      null,
   });
+
+  // We deliberately do NOT write `vertical` onto the first-class
+  // `organizations.vertical` column here — that column has an FK to a
+  // `verticals` table whose slugs (e.g. 'public-service', 'barber')
+  // don't match the TS enum slugs (e.g. 'public_service', 'barbershop')
+  // used by industry templates. Trying to write the TS slug would fail
+  // the FK constraint. `settings.platform_vertical` + the derived
+  // `settings.business_category` are the canonical keys readers (Station,
+  // public directory, Station's Settings dropdown) rely on. Reconciling
+  // the `verticals` FK slugs is a separate schema cleanup.
 
   const { error: updateOrgError } = await context.supabase
     .from('organizations')

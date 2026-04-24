@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { formatMoney } from '../lib/money';
-import { usePosCurrencyUnit } from '../lib/use-pos-currency-unit';
 
 interface Props {
   orgId: string;
   locale: DesktopLocale;
   currency?: string;
+  decimals?: number;
   onClose: () => void;
 }
 
@@ -34,13 +34,12 @@ function todayLocal(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export function ZReportModal({ orgId, locale, currency = 'DA', onClose }: Props) {
+export function ZReportModal({ orgId, locale, currency = '', decimals = 2, onClose }: Props) {
   const t = useCallback((k: string, v?: Record<string, any>) => translate(locale, k, v), [locale]);
   const [day, setDay] = useState(todayLocal());
   const [report, setReport] = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(false);
-  const currencyUnit = usePosCurrencyUnit();
-  const fmt = (n: number) => formatMoney(n, currencyUnit, currency);
+  const fmt = (n: number) => formatMoney(n, currency, decimals);
 
   const load = useCallback(async () => {
     setLoading(true);
