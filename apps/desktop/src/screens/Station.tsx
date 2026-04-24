@@ -3131,12 +3131,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const park = (id: string) => {
     setActiveTicket(null); // Clear calling panel immediately
+    // Preserve serving_started_at so resumeParked can detect that the
+    // ticket was being served (not just called) and restore the right
+    // status. The transition validator forbids waiting→serving directly,
+    // so resume re-runs called → serving as a fast follow-up.
+    const prev = tickets.find((t) => t.id === id);
+    const wasServing = prev?.status === 'serving';
     updateTicketStatus(id, {
       status: 'waiting',
       desk_id: null,
       called_at: null,
       called_by_staff_id: null,
-      serving_started_at: null,
+      serving_started_at: wasServing ? prev?.serving_started_at ?? null : null,
       parked_at: new Date().toISOString(),
     });
     const ticket = tickets.find((t) => t.id === id);
@@ -3156,6 +3162,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       showToast(t('Complete or park the current ticket first'), 'error');
       return;
     }
+    const prev = tickets.find((tk) => tk.id === id);
+    // If it had been serving before park (we kept serving_started_at as
+    // a marker), we want to land back in 'serving' — but the transition
+    // validator only allows waiting → called. Go through called first,
+    // then immediately promote to serving.
+    const wasServing = !!prev?.serving_started_at;
     updateTicketStatus(id, {
       status: 'called',
       desk_id: session.desk_id,
@@ -3163,10 +3175,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       called_at: new Date().toISOString(),
       parked_at: null,
     });
-    const ticket = tickets.find((tk) => tk.id === id);
+    if (wasServing) {
+      // Defer one tick so the called update flushes through IPC first.
+      setTimeout(() => startServing(id), 0);
+    }
+    const ticket = prev;
     if (ticket) {
-      addActivity(ticket.ticket_number, translate(locale, 'Ticket called back to desk'), ticket.id);
-      showToast(t('Ticket called back to desk'), 'success');
+      addActivity(
+        ticket.ticket_number,
+        translate(locale, wasServing ? 'Resumed serving' : 'Ticket called back to desk'),
+        ticket.id,
+      );
+      showToast(t(wasServing ? 'Resumed serving' : 'Ticket called back to desk'), 'success');
     }
   };
 
