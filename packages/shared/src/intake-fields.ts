@@ -20,7 +20,7 @@ export interface IntakeField {
   label_ar?: string;
 }
 
-export type PresetKey = 'name' | 'phone' | 'age' | 'wilaya' | 'reason' | 'party_size';
+export type PresetKey = 'name' | 'phone' | 'email' | 'age' | 'wilaya' | 'reason' | 'party_size';
 
 /** Built-in preset definitions with trilingual labels */
 export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string; label_ar: string; placeholder?: string; placeholder_fr?: string; placeholder_ar?: string }> = {
@@ -39,6 +39,14 @@ export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string
     placeholder: '0555 123 456',
     placeholder_fr: '0555 123 456',
     placeholder_ar: '0555 123 456',
+  },
+  email: {
+    label: 'Email',
+    label_fr: 'E-mail',
+    label_ar: 'البريد الإلكتروني',
+    placeholder: 'name@example.com',
+    placeholder_fr: 'nom@exemple.com',
+    placeholder_ar: 'name@example.com',
   },
   age: {
     label: 'Age',
@@ -74,7 +82,7 @@ export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string
   },
 };
 
-export const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'age', 'wilaya', 'reason', 'party_size'];
+export const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'email', 'age', 'wilaya', 'reason', 'party_size'];
 
 /** Get the display label for a field in the given locale */
 export function getFieldLabel(field: IntakeField, locale: 'en' | 'fr' | 'ar'): string {
@@ -119,6 +127,10 @@ export function getDefaultIntakeFields(): IntakeField[] {
   return [
     { key: 'name', type: 'preset', enabled: true, required: false },
     { key: 'phone', type: 'preset', enabled: true, required: false },
+    // Email is off by default for new businesses — admins opt in when they
+    // actually need it (e.g. to enable email OTP). Scoped to booking only
+    // since walk-in/kiosk customers rarely provide an email at the counter.
+    { key: 'email', type: 'preset', enabled: false, required: false, scope: 'booking' },
     { key: 'age', type: 'preset', enabled: false, required: false },
     { key: 'wilaya', type: 'preset', enabled: false, required: false },
     { key: 'reason', type: 'preset', enabled: false, required: false },
@@ -150,6 +162,9 @@ export function migrateToIntakeFields(settings: Record<string, any>): IntakeFiel
   const fields: IntakeField[] = [
     { key: 'name', type: 'preset', enabled: !!requireName, required: false },
     { key: 'phone', type: 'preset', enabled: true, required: false },
+    // Email is off by default on both fresh and legacy installs — admins turn
+    // it on when they need email OTP or want to capture contact email.
+    { key: 'email', type: 'preset', enabled: false, required: false, scope: 'booking' },
     { key: 'age', type: 'preset', enabled: false, required: false },
     { key: 'wilaya', type: 'preset', enabled: !isFreshInstall, required: false },
     { key: 'reason', type: 'preset', enabled: !isFreshInstall, required: false },

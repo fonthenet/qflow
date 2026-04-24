@@ -169,12 +169,14 @@ export function BookingForm({
   function getIntakeValue(field: IntakeField): string {
     if (field.key === 'name') return customerName;
     if (field.key === 'phone') return customerPhone;
+    if (field.key === 'email') return customerEmail;
     return intakeData[field.key] ?? '';
   }
 
   function setIntakeValue(field: IntakeField, value: string) {
     if (field.key === 'name') { setCustomerName(value); return; }
     if (field.key === 'phone') { setCustomerPhone(value); return; }
+    if (field.key === 'email') { setCustomerEmail(value); return; }
     setIntakeData((prev) => ({ ...prev, [field.key]: value }));
   }
 
@@ -390,7 +392,7 @@ export function BookingForm({
     // Build extra notes from dynamic intake fields (age, reason, custom)
     const extraParts: string[] = [];
     for (const field of intakeFields) {
-      if (['name', 'phone'].includes(field.key)) continue; // mapped to dedicated columns
+      if (['name', 'phone', 'email'].includes(field.key)) continue; // mapped to dedicated columns
       const val = (intakeData[field.key] ?? '').trim();
       if (val) {
         const label = getFieldLabel(field, intakeLocale);
@@ -1143,6 +1145,35 @@ export function BookingForm({
                   );
                 }
 
+                if (presetKey === 'email') {
+                  const emailRequired = isRequired || bookingEmailOtpRequired;
+                  return (
+                    <div key={field.key}>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        {t(label)}{' '}
+                        {emailRequired ? (
+                          <span className="text-destructive">*</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
+                        )}
+                      </label>
+                      <input
+                        type="email"
+                        value={value}
+                        onChange={(e) => setIntakeValue(field, e.target.value)}
+                        placeholder={t(placeholder)}
+                        autoComplete="email"
+                        className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      />
+                      {bookingEmailOtpRequired ? (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          {t('This business requires email verification before a booking is confirmed.')}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                }
+
                 if (presetKey === 'age') {
                   return (
                     <div key={field.key}>
@@ -1208,29 +1239,27 @@ export function BookingForm({
                 </div>
               )}
 
-              {/* Email field — always shown separately (special-cased for OTP) */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
-                  Email{' '}
-                  {bookingEmailOtpRequired ? (
-                    <span className="text-destructive">*</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
-                  )}
-                </label>
-                <input
-                  type="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder={t('Enter your email address')}
-                  className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                />
-                {bookingEmailOtpRequired ? (
+              {/* Safety net: if the admin requires email OTP but disabled the
+                  email preset in intake_fields, force-render it so bookings
+                  aren't blocked by a misconfiguration. */}
+              {bookingEmailOtpRequired && !intakeFields.some((f) => f.key === 'email') && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">
+                    Email <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    placeholder={t('Enter your email address')}
+                    autoComplete="email"
+                    className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
                   <p className="mt-1.5 text-xs text-muted-foreground">
                     {t('This business requires email verification before a booking is confirmed.')}
                   </p>
-                ) : null}
-              </div>
+                </div>
+              )}
             </div>
 
             <button
@@ -1299,7 +1328,7 @@ export function BookingForm({
                   <span className="font-medium text-foreground">{customerName}</span>
                 </div>
               )}
-              {customerEmail && (
+              {customerEmail && !intakeFields.some((f) => f.key === 'email') && (
                 <div className="flex justify-between py-2">
                   <span className="text-muted-foreground">{t('Email')}</span>
                   <span className="font-medium text-foreground">{customerEmail}</span>
@@ -1515,7 +1544,7 @@ export function BookingForm({
                 {intakeFields.map((field) => {
                   const val = getIntakeValue(field);
                   if (!val.trim()) return null;
-                  const icon = field.key === 'name' ? 'N' : field.key === 'phone' ? 'P' : field.key === 'wilaya' ? 'W' : field.key === 'age' ? 'A' : '•';
+                  const icon = field.key === 'name' ? 'N' : field.key === 'phone' ? 'P' : field.key === 'email' ? '@' : field.key === 'wilaya' ? 'W' : field.key === 'age' ? 'A' : '•';
                   return (
                     <div key={field.key} className="flex items-center gap-3 text-sm text-foreground">
                       <span className="w-4 shrink-0 text-center text-muted-foreground">{icon}</span>
@@ -1529,7 +1558,7 @@ export function BookingForm({
                     <span>{customerName}</span>
                   </div>
                 )}
-                {customerEmail && (
+                {customerEmail && !intakeFields.some((f) => f.key === 'email') && (
                   <div className="flex items-center gap-3 text-sm text-foreground">
                     <span className="w-4 shrink-0 text-center text-muted-foreground">@</span>
                     <span>{customerEmail}</span>
