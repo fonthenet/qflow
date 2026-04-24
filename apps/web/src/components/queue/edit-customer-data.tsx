@@ -30,7 +30,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
   const baseContactFields: EditableField[] = [
     {
       id: 'base-name',
-      service_id: ticket.service_id,
+      service_id: ticket.service_id ?? '',
       field_name: 'name',
       field_label: t('Name'),
       field_type: 'text',
@@ -43,7 +43,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
     },
     {
       id: 'base-phone',
-      service_id: ticket.service_id,
+      service_id: ticket.service_id ?? '',
       field_name: 'phone',
       field_label: t('Phone'),
       field_type: 'phone',
@@ -56,7 +56,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
     },
     {
       id: 'base-reason',
-      service_id: ticket.service_id,
+      service_id: ticket.service_id ?? '',
       field_name: 'reason',
       field_label: t('Reason for visit'),
       field_type: 'text',

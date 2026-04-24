@@ -74,6 +74,8 @@ function buildSandboxTicket(
       status: state,
       ticket_number: baseEntry?.ticketNumber ?? 'SBX-001',
       transferred_from_ticket_id: null,
+      locale: null,
+      payment_status: null,
     },
     position: state === 'waiting' ? baseEntry?.position ?? 2 : null,
     estimatedWait:

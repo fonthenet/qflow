@@ -78,7 +78,8 @@ export function useRealtimeTicket({
     }
   }, [ticketId]);
 
-  const fetchWaitTime = useCallback(async (departmentId: string, serviceId: string) => {
+  const fetchWaitTime = useCallback(async (departmentId: string, serviceId: string | null) => {
+    if (!serviceId) return;
     const supabase = supabaseRef.current;
     try {
       const { data } = await supabase.rpc('estimate_wait_time', {

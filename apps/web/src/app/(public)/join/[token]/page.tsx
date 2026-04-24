@@ -133,7 +133,7 @@ export default async function RemoteJoinPage({ params }: PageProps) {
       estimatedWait={estimatedWait}
       offices={offices ?? []}
       departments={departments ?? []}
-      waitingTickets={waitingTickets ?? []}
+      waitingTickets={(waitingTickets ?? []).filter((t): t is { id: string; office_id: string; department_id: string; service_id: string } => t.service_id !== null)}
       publicJoinProfile={platformConfig.experienceProfile.publicJoin}
       vocabulary={platformConfig.experienceProfile.vocabulary}
       whatsappEnabled={whatsappEnabled}

@@ -25,7 +25,7 @@ export function CheckInForm({ ticket, officeName, serviceName }: CheckInFormProp
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fetchFields = useCallback(async () => {
-    const result = await getPublicIntakeFields(ticket.service_id);
+    const result = await getPublicIntakeFields(ticket.service_id ?? '');
     const data = result.data ?? [];
 
     if (data && data.length > 0) {

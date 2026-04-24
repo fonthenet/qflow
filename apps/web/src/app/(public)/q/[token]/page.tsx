@@ -114,7 +114,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
   const { data: service } = await supabase
     .from('services')
     .select('name, description')
-    .eq('id', ticket.service_id)
+    .eq('id', ticket.service_id ?? '')
     .single();
 
   // Fetch desk info if assigned
