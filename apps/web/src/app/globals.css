@@ -64,16 +64,10 @@
     user-select: none;
     touch-action: manipulation;
   }
-  /* Dark dropdown highlight for queue pages */
-  select option:checked,
-  select option:hover {
-    background-color: rgb(30 41 59) !important; /* slate-800 */
-    color: white !important;
-  }
-  select option {
-    background-color: rgb(15 23 42); /* slate-900 */
-    color: rgb(226 232 240); /* slate-200 */
-  }
+  /* Native dropdowns follow the page color-scheme (light) — do NOT
+     hardcode dark option backgrounds here; it breaks every <select>
+     in the admin portal. Individual queue pages that want dark styling
+     should scope it locally. */
 }
 
 /* ── Kiosk success checkmark animation ── */
