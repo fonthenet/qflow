@@ -15,7 +15,6 @@ import {
   House,
   LayoutDashboard,
   Rocket,
-  Megaphone,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 import { useI18n } from '@/components/providers/locale-provider';
@@ -91,8 +90,6 @@ const adminNav: Array<{
     section: 'Channels',
     siblings: ['/admin/displays'],
   },
-
-  { href: '/admin/broadcast', label: 'Broadcast', icon: Megaphone, section: 'Channels' },
 
   // Reports + Activity Log merged under Insights.
   {
