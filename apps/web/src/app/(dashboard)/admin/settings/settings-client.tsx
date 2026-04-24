@@ -6,13 +6,14 @@ import Link from 'next/link';
 import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib/actions/settings-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 import { createClient } from '@/lib/supabase/client';
-import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey, VOICE_CATALOG } from '@qflo/shared';
+import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey, VOICE_CATALOG, isArabicCountry } from '@qflo/shared';
 
 interface Organization {
   id: string;
   name: string;
   slug: string;
   logo_url?: string | null;
+  country?: string | null;
   settings?: Record<string, any> | null;
 }
 
@@ -155,6 +156,10 @@ export function SettingsClient({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const settings = organization.settings ?? {};
+  // Arabic Code (queue join in Arabic) only makes sense in Arabic-speaking
+  // markets. Hide it for France, US, Kenya, etc. Single source of truth in
+  // @qflo/shared so web + Station + mobile stay in sync.
+  const showArabicCode = isArabicCountry(organization.country);
 
   // Organization Settings
   const [orgName, setOrgName] = useState(organization.name);
@@ -1413,6 +1418,7 @@ whatsapp_enabled: whatsappEnabled,
                     </p>
                   </div>
 
+                  {showArabicCode && (
                   <div>
                     <label className="block text-sm font-medium text-muted-foreground mb-1">
                       {t('Arabic Code')} <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
@@ -1441,6 +1447,7 @@ whatsapp_enabled: whatsappEnabled,
                       {t('Arabic alternative for your business code. Customers can type')} <code className="font-mono font-bold" dir="rtl">انضم {arabicCode || 'حدابي'}</code>
                     </p>
                   </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-muted-foreground mb-1">

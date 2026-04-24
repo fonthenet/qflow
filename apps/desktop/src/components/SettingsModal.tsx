@@ -2105,6 +2105,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                     <div style={miniHelp}>{t('sm.help.whatsapp_code')}</div>
                   </div>
                   <div />
+                  {showArabicName && (
                   <div style={{ gridColumn: '1 / -1' }}>
                     <div style={miniLabel}>{t('sm.field.arabic_code')}</div>
                     <div style={{ position: 'relative', maxWidth: 220 }}>
@@ -2124,6 +2125,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                     </div>
                     <div style={miniHelp}>{t('sm.help.arabic_code')}</div>
                   </div>
+                  )}
                 </div>
               );
             })()}

@@ -1,6 +1,22 @@
 export * from './business-hours';
 export * from './calendar';
 
+/**
+ * ISO-3166 alpha-2 codes for Arab League / Arabic-speaking countries.
+ * Used to gate Arabic-only UI (e.g. Arabic queue codes, RTL-specific helpers)
+ * so we don't show Arabic fields to orgs in France, the US, Kenya, etc.
+ */
+export const ARABIC_COUNTRY_CODES = new Set([
+  'DZ', 'BH', 'KM', 'DJ', 'EG', 'IQ', 'JO', 'KW',
+  'LB', 'LY', 'MR', 'MA', 'OM', 'PS', 'QA', 'SA',
+  'SO', 'SD', 'SY', 'TN', 'AE', 'YE',
+]);
+
+export function isArabicCountry(country: string | null | undefined): boolean {
+  if (!country) return false;
+  return ARABIC_COUNTRY_CODES.has(country.toUpperCase());
+}
+
 export const isElectron = () =>
   typeof window !== 'undefined' && !!(window as any).electronAPI;
 

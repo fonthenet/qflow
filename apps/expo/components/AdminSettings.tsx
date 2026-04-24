@@ -28,6 +28,7 @@ import type { LangCode } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { isArabicCountry } from '@qflo/shared';
 
 interface OrgSettings {
   id: string;
@@ -71,6 +72,7 @@ interface OrgSettings {
   whatsapp_enabled: boolean;
   whatsapp_code: string;     // English keyword (e.g. "JOIN")
   arabic_code: string;       // Arabic keyword (e.g. "انضم")
+  country: string | null;    // ISO-3166 alpha-2; used to gate Arabic UI
   // Messenger — Facebook Page ID is hardcoded by QFlo; only the enable toggle
   // is exposed per-org.
   messenger_enabled: boolean;
@@ -264,6 +266,7 @@ export default function AdminSettings() {
         whatsapp_enabled: json.whatsapp_enabled ?? false,
         whatsapp_code: json.whatsapp_code ?? '',
         arabic_code: json.arabic_code ?? '',
+        country: (d.country ?? null) as string | null,
         messenger_enabled: json.messenger_enabled ?? false,
         priority_alerts_sms_enabled: json.priority_alerts_sms_enabled ?? false,
         priority_alerts_sms_on_call: json.priority_alerts_sms_on_call ?? true,
@@ -709,6 +712,7 @@ export default function AdminSettings() {
                   placeholderTextColor={colors.textMuted}
                 />
               </SettingRow>
+              {isArabicCountry(settings.country) && (
               <SettingRow label={t('adminMore.arabicCode', { defaultValue: 'Join keyword (AR)' })} icon="pricetag-outline">
                 <TextInput
                   style={[styles.input, { textAlign: 'right', writingDirection: 'rtl' }]}
@@ -720,6 +724,7 @@ export default function AdminSettings() {
                   placeholderTextColor={colors.textMuted}
                 />
               </SettingRow>
+              )}
             </>
           )}
         </CollapsibleSection>
