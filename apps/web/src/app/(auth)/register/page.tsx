@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { register } from '@/lib/actions/auth-actions';
 import { useI18n } from '@/components/providers/locale-provider';
-import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 
 export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
@@ -51,25 +50,6 @@ export default function RegisterPage() {
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 placeholder={t('City Hospital, Post Office...')}
               />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="businessCategory" className="text-sm font-medium">
-                {t('Business Category')}
-              </label>
-              <select
-                id="businessCategory"
-                name="businessCategory"
-                required
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">{t('Select a category...')}</option>
-                {BUSINESS_CATEGORIES.map((cat) => (
-                  <option key={cat.value} value={cat.value}>
-                    {cat.emoji} {t(cat.label.en)}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div className="space-y-2">

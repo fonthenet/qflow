@@ -40,7 +40,8 @@ export async function register(formData: FormData) {
   const password = formData.get('password') as string;
   const fullName = formData.get('fullName') as string;
   const organizationName = formData.get('organizationName') as string;
-  const businessCategory = (formData.get('businessCategory') as string) || 'other';
+  // Business category is no longer collected at signup — the setup wizard
+  // captures the template (which supersedes category) as the first step.
 
   // Create the auth user
   const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -80,8 +81,9 @@ export async function register(formData: FormData) {
     return { error: orgError.message };
   }
 
-  // Save business category and enable directory listing by default
-  if (businessCategory) {
+  // Enable directory listing by default; business_category is derived from
+  // the template the admin selects in the setup wizard.
+  {
     const { data: staffRow } = await supabase
       .from('staff')
       .select('organization_id')
@@ -93,7 +95,6 @@ export async function register(formData: FormData) {
         .from('organizations')
         .update({
           settings: {
-            business_category: businessCategory,
             listed_in_directory: true,
           },
         })
