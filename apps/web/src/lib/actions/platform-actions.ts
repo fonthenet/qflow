@@ -1067,3 +1067,83 @@ export async function saveTemplateCustomization(input: {
   revalidatePath('/admin/settings');
   return { success: true };
 }
+
+// ── Reset business type selection ──────────────────────────────────
+// Allows an admin to undo the "confirm template" step from the setup
+// wizard BEFORE they launch. Deletes all offices/departments/services/
+// desks for the org (cascades), nulls out staff location pointers, and
+// reverts settings to the trial state so the wizard can re-run. This
+// is the in-wizard escape hatch mirroring the post-mortem recovery
+// path already in setup-wizard/page.tsx.
+export async function resetBusinessTypeSelection() {
+  const context = await getStaffContext();
+  await requireOrganizationAdmin(context);
+  const orgId = context.staff.organization_id;
+
+  const { data: orgRow, error: orgErr } = await context.supabase
+    .from('organizations')
+    .select('settings, name')
+    .eq('id', orgId)
+    .single();
+  if (orgErr || !orgRow) return { error: orgErr?.message ?? 'Organization not found' };
+
+  const currentSettings = (orgRow.settings as Record<string, unknown> | null) ?? {};
+  if (currentSettings.business_setup_wizard_completed_at) {
+    return { error: 'Cannot reset business type after the wizard is complete. Use governed upgrades instead.' };
+  }
+
+  // 1. Null out staff pointers so office delete cascade doesn't orphan FKs.
+  await context.supabase
+    .from('staff')
+    .update({ office_id: null, department_id: null })
+    .eq('organization_id', orgId);
+
+  // 2. Delete all offices — departments/services/desks/desk_services cascade.
+  const { error: deleteErr } = await context.supabase
+    .from('offices')
+    .delete()
+    .eq('organization_id', orgId);
+  if (deleteErr) return { error: deleteErr.message };
+
+  // 3. Revert settings: strip confirmed template keys, restore trial keys
+  //    so the wizard treats this as a fresh trial.
+  const nextSettings: Record<string, unknown> = { ...currentSettings };
+  const confirmedKeys = [
+    'platform_template_state',
+    'platform_template_confirmed_at',
+    'platform_template_id',
+    'platform_template_version',
+    'platform_template_applied_at',
+    'platform_vertical',
+    'platform_operating_model',
+    'platform_branch_type',
+    'platform_enabled_modules',
+    'platform_default_navigation',
+    'platform_workflow_profile',
+    'platform_queue_policy',
+    'platform_experience_profile',
+    'platform_role_policy',
+    'platform_capability_snapshot',
+    'business_setup_wizard_completed_at',
+  ];
+  for (const key of confirmedKeys) delete nextSettings[key];
+  nextSettings.platform_template_state = 'template_trial_state';
+
+  const { error: updateErr } = await context.supabase
+    .from('organizations')
+    .update({ settings: nextSettings })
+    .eq('id', orgId);
+  if (updateErr) return { error: updateErr.message };
+
+  await logAuditEvent(context, {
+    actionType: 'template_reset',
+    entityType: 'organization',
+    entityId: orgId,
+    summary: 'Reset business type selection (pre-launch)',
+    metadata: { previous_template_id: currentSettings.platform_template_id ?? null },
+  });
+
+  revalidatePath('/admin/setup-wizard');
+  revalidatePath('/admin/overview');
+  return { success: true };
+}

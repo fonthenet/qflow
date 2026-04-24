@@ -37,6 +37,7 @@ import {
 import {
   saveIndustryTemplateTrial,
   confirmIndustryTemplateSetup,
+  resetBusinessTypeSelection,
 } from '@/lib/actions/platform-actions';
 import {
   updateDeskServices,
@@ -625,18 +626,52 @@ function BusinessStep({
   if (confirmed) {
     const tmplId = trialSettings.platform_template_id ?? trialSettings.platform_trial_template_id;
     const tmpl = industryTemplates.find((t) => t.id === tmplId);
+
+    function handleReset() {
+      if (!window.confirm(
+        'Reset business type?\n\nThis will DELETE the office, departments, services and desks that were seeded so you can pick a different business type. Your staff accounts stay, but they will need to be reassigned afterward.\n\nThis only works before you launch. Continue?',
+      )) return;
+      startTransition(async () => {
+        setError(null);
+        const result = await resetBusinessTypeSelection();
+        if (result?.error) {
+          setError(result.error);
+        } else {
+          // Full reload: the page-level server component needs to re-derive
+          // lifecycle state from scratch (cached props would keep `confirmed`
+          // stale and the user stuck on the confirmed view).
+          window.location.reload();
+        }
+      });
+    }
+
     return (
       <StepCard>
         <StepHeader icon={LayoutTemplate} title="Business Type" subtitle="Your business type has been confirmed." />
+        {error && (
+          <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>
+        )}
         <div className="rounded-xl border border-success/30 bg-success/5 p-4 flex items-center gap-3">
           <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
-          <div>
+          <div className="flex-1">
             <p className="font-semibold text-foreground">
               {tmpl ? `${verticalEmoji(tmpl.vertical)} ${tmpl.title}` : t('Business configured')}
             </p>
             <p className="text-xs text-muted-foreground">{t('Template confirmed and structure created.')}</p>
           </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={isPending}
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:border-destructive hover:text-destructive transition-colors disabled:opacity-50"
+            title={t('Delete the seeded office and pick a different business type')}
+          >
+            {isPending ? t('Resetting...') : t('Change business type')}
+          </button>
         </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          {t('You can still change your business type until you launch. This will delete the seeded structure so you can pick again.')}
+        </p>
         <StepNavigation onNext={onNext} showPrev={false} />
       </StepCard>
     );
