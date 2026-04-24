@@ -3834,6 +3834,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   )}
                 </div>
               )}
+
+              {/* Tables/Queue toggle — restaurants only, lives in the toolbar
+                  next to pause/status so the operator can flip views without
+                  the floating pill stealing space from the main panel. */}
+              {isRestaurantFloor && mainView === 'queue' && (
+                <div style={{
+                  display: 'inline-flex', gap: 2, padding: 3,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 999,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setFloorView('tables')}
+                    aria-pressed={floorView === 'tables'}
+                    style={{
+                      padding: '4px 12px', borderRadius: 999, border: 'none',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      background: floorView === 'tables' ? 'var(--accent, #3b82f6)' : 'transparent',
+                      color: floorView === 'tables' ? '#fff' : 'var(--text)',
+                    }}
+                  >
+                    🍽️ {t('Tables')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFloorView('queue')}
+                    aria-pressed={floorView === 'queue'}
+                    style={{
+                      padding: '4px 12px', borderRadius: 999, border: 'none',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      background: floorView === 'queue' ? 'var(--accent, #3b82f6)' : 'transparent',
+                      color: floorView === 'queue' ? '#fff' : 'var(--text)',
+                    }}
+                  >
+                    📋 {t('Queue')}
+                  </button>
+                </div>
+              )}
             </div>
             <div className="pills-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* Primary action — standalone pill, visually distinct from the view tabs.
@@ -4371,49 +4409,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </>
             )}
           </div>
-          )}
-
-          {/* Standalone Tables/Queue toggle — restaurants only, always visible
-              in the Queue tab (regardless of whether an active ticket is being
-              served), so the operator can always flip views. */}
-          {isRestaurantFloor && mainView === 'queue' && (
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: 4, padding: '6px 0 4px', flexShrink: 0,
-            }}>
-              <div style={{
-                display: 'inline-flex', gap: 2, padding: 3,
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 999,
-              }}>
-                <button
-                  type="button"
-                  onClick={() => setFloorView('tables')}
-                  aria-pressed={floorView === 'tables'}
-                  style={{
-                    padding: '6px 14px', borderRadius: 999, border: 'none',
-                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    background: floorView === 'tables' ? 'var(--accent, #3b82f6)' : 'transparent',
-                    color: floorView === 'tables' ? '#fff' : 'var(--text)',
-                  }}
-                >
-                  🍽️ {t('Tables')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFloorView('queue')}
-                  aria-pressed={floorView === 'queue'}
-                  style={{
-                    padding: '6px 14px', borderRadius: 999, border: 'none',
-                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    background: floorView === 'queue' ? 'var(--accent, #3b82f6)' : 'transparent',
-                    color: floorView === 'queue' ? '#fff' : 'var(--text)',
-                  }}
-                >
-                  📋 {t('Queue')}
-                </button>
-              </div>
-            </div>
           )}
 
           {/* Queue view: idle panel (or floor map for restaurants) + optional booking side panel.
