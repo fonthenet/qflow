@@ -29,7 +29,6 @@ interface VirtualQueueCode {
 
 interface SettingsClientProps {
   organization: Organization;
-  smsProviderReady: boolean;
   whatsappProviderReady: boolean;
   messengerPageInfo?: MessengerPageInfo;
   virtualQueueCodes?: VirtualQueueCode[];
@@ -143,7 +142,6 @@ function ConnectedPageCard({ pageInfo, t }: { pageInfo?: MessengerPageInfo; t: (
 
 export function SettingsClient({
   organization,
-  smsProviderReady,
   whatsappProviderReady,
   messengerPageInfo,
   virtualQueueCodes = [],
@@ -225,22 +223,7 @@ export function SettingsClient({
   const [visitIntakeOverrideMode, setVisitIntakeOverrideMode] = useState<string>(
     settings.visit_intake_override_mode ?? 'business_hours'
   );
-  const [priorityAlertsEnabled, setPriorityAlertsEnabled] = useState<boolean>(
-    settings.priority_alerts_sms_enabled ?? false
-  );
-  const [priorityAlertsOnCall, setPriorityAlertsOnCall] = useState<boolean>(
-    settings.priority_alerts_sms_on_call ?? true
-  );
-  const [priorityAlertsOnRecall, setPriorityAlertsOnRecall] = useState<boolean>(
-    settings.priority_alerts_sms_on_recall ?? true
-  );
-  const [priorityAlertsOnBuzz, setPriorityAlertsOnBuzz] = useState<boolean>(
-    settings.priority_alerts_sms_on_buzz ?? true
-  );
-  const [priorityAlertsPhoneLabel, setPriorityAlertsPhoneLabel] = useState<string>(
-    settings.priority_alerts_phone_label ?? t('Mobile number')
-  );
-  const [emailOtpEnabled, setEmailOtpEnabled] = useState<boolean>(
+const [emailOtpEnabled, setEmailOtpEnabled] = useState<boolean>(
     settings.email_otp_enabled ?? false
   );
   const [emailOtpRequiredForBooking, setEmailOtpRequiredForBooking] = useState<boolean>(
@@ -348,6 +331,12 @@ export function SettingsClient({
     migrateToIntakeFields(settings)
   );
   const [bookingSettingsTab, setBookingSettingsTab] = useState<'intake' | 'queue' | 'appointments' | 'channels'>('intake');
+
+  // Top-level settings section — replaces the linear stack with a focused
+  // sidenav. One section is visible at a time so the page stops feeling
+  // like a 2000-line scroll-dump.
+  type SettingsSection = 'business' | 'bookings' | 'display' | 'account';
+  const [activeSection, setActiveSection] = useState<SettingsSection>('business');
 
   // Account Settings
   const [newEmail, setNewEmail] = useState('');
@@ -475,12 +464,7 @@ export function SettingsClient({
           email_otp_required_for_booking_changes: emailOtpRequiredForBookingChanges,
           email_otp_code_expiry_minutes: emailOtpCodeExpiryMinutes,
           email_otp_resend_cooldown_seconds: emailOtpResendCooldownSeconds,
-          priority_alerts_sms_enabled: priorityAlertsEnabled,
-          priority_alerts_sms_on_call: priorityAlertsOnCall,
-          priority_alerts_sms_on_recall: priorityAlertsOnRecall,
-          priority_alerts_sms_on_buzz: priorityAlertsOnBuzz,
-          priority_alerts_phone_label: priorityAlertsPhoneLabel,
-          whatsapp_enabled: whatsappEnabled,
+whatsapp_enabled: whatsappEnabled,
           whatsapp_code: whatsappCode.toUpperCase().trim(),
           arabic_code: arabicCode.trim(),
           whatsapp_business_phone: whatsappBusinessPhone,
@@ -512,16 +496,48 @@ export function SettingsClient({
     });
   }
 
+  const sectionNav: { id: SettingsSection; label: string; description: string }[] = [
+    { id: 'business', label: t('Business'), description: t('Identity, template, directory listing') },
+    { id: 'bookings', label: t('Bookings & Queue'), description: t('Intake, queue, appointments, channels') },
+    { id: 'display', label: t('Display & Voice'), description: t('Public screens, voice announcements') },
+    { id: 'account', label: t('Account'), description: t('Your email and password') },
+  ];
+
   return (
-    <div className="space-y-6 p-6">
-      <div>
+    <div className="p-6">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">{t('Business Settings')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {t('Manage the important defaults for your business, customer communication, and public screens.')}
         </p>
       </div>
 
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        {/* Left rail — focused sub-nav instead of the old scroll-dump layout. */}
+        <nav className="lg:sticky lg:top-6 lg:self-start">
+          <ul className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
+            {sectionNav.map((item) => (
+              <li key={item.id} className="shrink-0 lg:shrink">
+                <button
+                  type="button"
+                  onClick={() => setActiveSection(item.id)}
+                  className={`w-full whitespace-nowrap rounded-lg border px-3 py-2 text-start text-sm transition-colors lg:whitespace-normal ${
+                    activeSection === item.id
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  <div className="font-medium text-foreground">{item.label}</div>
+                  <div className="hidden text-xs text-muted-foreground lg:block">{item.description}</div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div className="space-y-6 min-w-0">
+
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'business'}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('Business Setup')}</h2>
@@ -585,7 +601,7 @@ export function SettingsClient({
       </section>
 
       {/* ── Organization Settings ──────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'business'}>
         <h2 className="text-lg font-semibold text-foreground">
           {t('Business Details')}
         </h2>
@@ -706,7 +722,7 @@ export function SettingsClient({
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'bookings'}>
         <div>
           <h2 className="text-lg font-semibold text-foreground">
             {t('Booking Email Verification')}
@@ -805,112 +821,11 @@ export function SettingsClient({
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">
-            {t('Priority Alert Backup')}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('Keep free push notifications as the primary path, and add SMS as an optional backup for customers who choose to enter a phone number.')}
-          </p>
-          </div>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              smsProviderReady
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-amber-100 text-amber-700'
-            }`}
-          >
-            {smsProviderReady ? t('Provider Ready') : t('Provider Not Configured')}
-          </span>
-        </div>
-
-        {!smsProviderReady && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {t('SMS is not configured in environment variables yet. You can save these settings now, but text alerts will not send until the provider credentials are added.')}
-          </div>
-        )}
-
-        <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4">
-          <input
-            type="checkbox"
-            checked={priorityAlertsEnabled}
-            onChange={(e) => setPriorityAlertsEnabled(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-          />
-          <div>
-            <span className="text-sm font-medium text-foreground">
-              {t('Enable SMS backup alerts')}
-            </span>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('Customers can add a mobile number on their queue page to receive a text backup for urgent queue events.')}
-            </p>
-          </div>
-        </label>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Phone Field Label')}
-            </label>
-            <input
-              type="text"
-              value={priorityAlertsPhoneLabel}
-              onChange={(e) => setPriorityAlertsPhoneLabel(e.target.value)}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder={t('Mobile number')}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('Shown on the customer queue page when they add a text-alert number.')}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={priorityAlertsOnCall}
-              onChange={(e) => setPriorityAlertsOnCall(e.target.checked)}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-            />
-            <div>
-              <span className="text-sm font-medium text-foreground">{t('On Call')}</span>
-              <p className="text-xs text-muted-foreground">{t('Send when the ticket is first called.')}</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={priorityAlertsOnRecall}
-              onChange={(e) => setPriorityAlertsOnRecall(e.target.checked)}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-            />
-            <div>
-              <span className="text-sm font-medium text-foreground">{t('On Recall')}</span>
-              <p className="text-xs text-muted-foreground">{t('Send reminder texts on recall.')}</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={priorityAlertsOnBuzz}
-              onChange={(e) => setPriorityAlertsOnBuzz(e.target.checked)}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-            />
-            <div>
-              <span className="text-sm font-medium text-foreground">{t('On Buzz')}</span>
-              <p className="text-xs text-muted-foreground">{t('Send a stronger “staff is trying to reach you” text.')}</p>
-            </div>
-          </label>
-        </div>
-      </section>
+      {/* Priority Alert SMS section removed — we don't ship SMS yet;
+          WhatsApp + Messenger are the supported channels. */}
 
       {/* ── Booking & Queue (tabbed) ──────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'bookings'}>
         <div>
           <h2 className="text-lg font-semibold text-foreground">
             {t('Booking & Queue')}
@@ -1629,7 +1544,7 @@ export function SettingsClient({
       </section>
 
       {/* ── Display Settings ───────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'display'}>
         <h2 className="text-lg font-semibold text-foreground">
           {t('Public Display')}
         </h2>
@@ -1814,7 +1729,7 @@ export function SettingsClient({
           the booking page, the kiosk, and the /q/[token] ticket page. */}
 
       {/* ── Account ─────────────────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'account'}>
         <h2 className="text-lg font-semibold text-foreground">
           {t('Account')}
         </h2>
@@ -1937,6 +1852,9 @@ export function SettingsClient({
           <span className="text-sm text-red-600">{errorMessage}</span>
         )}
       </div>
+
+        </div>{/* /content column */}
+      </div>{/* /grid */}
     </div>
   );
 }

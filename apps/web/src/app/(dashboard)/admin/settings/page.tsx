@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import { SettingsClient } from './settings-client';
-import { isSmsProviderConfigured } from '@/lib/sms';
 import { isWhatsAppConfigured } from '@/lib/whatsapp';
 import { resolvePlatformConfig, summarizeTemplate } from '@/lib/platform/config';
 import { getServerI18n } from '@/lib/i18n';
@@ -93,7 +92,6 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       <SettingsClient
         organization={organization}
-        smsProviderReady={isSmsProviderConfigured()}
         whatsappProviderReady={isWhatsAppConfigured()}
         templateSummary={summarizeTemplate(platformConfig)}
         templateConfigured={typeof (organization.settings as Record<string, unknown> | null)?.platform_template_id === 'string'}
