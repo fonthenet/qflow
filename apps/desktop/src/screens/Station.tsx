@@ -4005,7 +4005,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           )}
 
           {activeTicket && !effectiveRestaurantFloor && (
-          <div className="active-ticket-panel" style={{ display: mainView === 'queue' ? undefined : 'none' }}>
+          <div
+            className={`active-ticket-panel${isRestaurantFloor ? ' compact' : ''}`}
+            style={{ display: mainView === 'queue' ? undefined : 'none' }}
+          >
             {activeTicket.status === 'called' ? (
               <>
                 <div className="active-status called">{t('CALLING')}</div>

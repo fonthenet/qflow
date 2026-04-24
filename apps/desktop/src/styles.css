@@ -360,7 +360,17 @@ button:not([disabled]):active {
 .idle-panel p { color: var(--text2); font-size: 16px; margin-bottom: 32px; }
 
 /* ── Active Ticket Panel ─────────────────────────────────────────── */
-.active-ticket-panel { text-align: center; width: 100%; max-width: 500px; }
+.active-ticket-panel { text-align: center; width: 100%; max-width: 500px; margin-inline: auto; }
+/* Compact variant — restaurant Queue mode, needs room for Tables/Queue
+   toggle below without cropping. */
+.active-ticket-panel.compact { max-width: 420px; }
+.active-ticket-panel.compact .active-number { font-size: 48px; letter-spacing: -1px; }
+.active-ticket-panel.compact .active-status { font-size: 12px; margin-bottom: 4px; }
+.active-ticket-panel.compact .active-customer { font-size: 16px; }
+.active-ticket-panel.compact .active-phone { font-size: 12px; }
+.active-ticket-panel.compact .active-notes { font-size: 12px; padding: 8px 12px; margin-top: 8px; }
+.active-ticket-panel.compact .active-actions { margin-top: 16px; gap: 10px; }
+.active-ticket-panel.compact .btn-lg { padding: 10px 18px; font-size: 15px; }
 .active-status { font-size: 14px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px; }
 .active-status.called { color: var(--called); }
 .active-status.serving { color: var(--serving); }
