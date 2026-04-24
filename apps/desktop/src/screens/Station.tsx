@@ -3490,15 +3490,31 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // still needs to see who's in the pre-call queue.
   const isRestaurantFloor =
     orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe';
+  // Per-device toggle: restaurants can switch between the floor map (tables
+  // grid) and the classic ticket queue view. Default 'tables' for restaurants;
+  // persisted in localStorage per office so each Station remembers its choice.
+  const floorViewStorageKey = `qflo.floorView.${session.office_id}`;
+  const [floorView, setFloorView] = useState<'tables' | 'queue'>(() => {
+    try {
+      const v = typeof window !== 'undefined' ? window.localStorage.getItem(floorViewStorageKey) : null;
+      return v === 'queue' ? 'queue' : 'tables';
+    } catch { return 'tables'; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(floorViewStorageKey, floorView); } catch {}
+  }, [floorView, floorViewStorageKey]);
+  // Non-restaurant orgs always render the classic queue; for restaurants we
+  // only treat it as "floor mode" when the operator has tables view on.
+  const effectiveRestaurantFloor = isRestaurantFloor && floorView === 'tables';
   const waiting = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !t.parked_at), [tickets]);
   const parked = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !!t.parked_at), [tickets]);
   const called = useMemo(
-    () => (isRestaurantFloor ? [] : tickets.filter((t) => t.status === 'called')),
-    [tickets, isRestaurantFloor]
+    () => (effectiveRestaurantFloor ? [] : tickets.filter((t) => t.status === 'called')),
+    [tickets, effectiveRestaurantFloor]
   );
   const serving = useMemo(
-    () => (isRestaurantFloor ? [] : tickets.filter((t) => t.status === 'serving')),
-    [tickets, isRestaurantFloor]
+    () => (effectiveRestaurantFloor ? [] : tickets.filter((t) => t.status === 'serving')),
+    [tickets, effectiveRestaurantFloor]
   );
 
   // ── Recent activity log ─────────────────────────────────────────
@@ -4349,18 +4365,62 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           )}
 
           {/* Queue view: idle panel (or floor map for restaurants) + optional booking side panel.
-              Restaurants/cafes always render the floor map even when an
-              "active ticket" exists — they manage many tables concurrently. */}
-          {(!activeTicket || orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe') && (
+              Restaurants/cafes render the floor map by default, but the operator
+              can toggle to the classic queue view via the Tables/Queue pill. */}
+          {(!activeTicket || effectiveRestaurantFloor) && (
           <div style={{
             display: mainView === 'queue' ? 'flex' : 'none',
             flex: 1, width: '100%', alignItems: 'stretch', overflow: 'hidden',
+            flexDirection: 'column',
           }}>
-            {/* Floor map replaces the idle panel for restaurants/cafes:
-                the operator manages many tables concurrently, not one
-                active ticket. Non-restaurant orgs keep the classic
-                single-ticket idle panel. */}
-            {(orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe') ? (
+            {/* Tables/Queue toggle — restaurants only. Lets a waiter who prefers
+                a plain list swap the floor map for the classic active-ticket
+                queue view. Persisted per-device so each Station remembers. */}
+            {isRestaurantFloor && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 4, padding: '6px 0 4px', flexShrink: 0,
+              }}>
+                <div style={{
+                  display: 'inline-flex', gap: 2, padding: 3,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 999,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setFloorView('tables')}
+                    aria-pressed={floorView === 'tables'}
+                    style={{
+                      padding: '6px 14px', borderRadius: 999, border: 'none',
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      background: floorView === 'tables' ? 'var(--accent, #3b82f6)' : 'transparent',
+                      color: floorView === 'tables' ? '#fff' : 'var(--text)',
+                    }}
+                  >
+                    🍽️ {t('Tables')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFloorView('queue')}
+                    aria-pressed={floorView === 'queue'}
+                    style={{
+                      padding: '6px 14px', borderRadius: 999, border: 'none',
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      background: floorView === 'queue' ? 'var(--accent, #3b82f6)' : 'transparent',
+                      color: floorView === 'queue' ? '#fff' : 'var(--text)',
+                    }}
+                  >
+                    📋 {t('Queue')}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div style={{ flex: 1, display: 'flex', width: '100%', alignItems: 'stretch', overflow: 'hidden' }}>
+            {/* Floor map replaces the idle panel for restaurants/cafes when
+                the operator has "Tables" view selected. Otherwise (or for
+                non-restaurant orgs) the classic single-ticket idle panel is
+                shown. */}
+            {effectiveRestaurantFloor ? (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <FloorMap
                   officeId={session.office_id}
@@ -4540,6 +4600,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               )}
             </div>
             )}
+            </div>
 
           </div>
           )}
@@ -5312,7 +5373,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   )}
                 </div>
                 {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
-                  isRestaurantFloor ? null : (
+                  effectiveRestaurantFloor ? null : (
                     <button
                       className="btn-sm btn-call"
                       aria-label={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
