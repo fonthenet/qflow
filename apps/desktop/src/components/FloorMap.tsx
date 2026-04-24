@@ -271,37 +271,13 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
         current_ticket_id: ticketId,
         assigned_at: nowIso,
       }).eq('id', table.id);
-      // Direct seat skips the "called" step, so the customer never got a
-      // buzz. Notify them now that they've been seated at {table.code}.
-      notifySeated(ticketId, table);
+      // The "seated" WhatsApp/Messenger notification is sent by the IPC
+      // mirror inside writeTicket above — main.ts:db:update-ticket calls
+      // /api/ticket-transition with deskName=tableCode for serving transitions.
+      // Do NOT fire a second notification here (caused duplicate "service
+      // has started" WhatsApp messages in production).
       await load();
     } finally { setBusy(null); }
-  };
-
-  // Fire the "seated" WhatsApp/Messenger notification for this ticket. Uses
-  // the 'serving' notifyEvent on /api/ticket-transition — the unified
-  // notification path (see apps/web/src/app/api/ticket-transition/route.ts).
-  // skipStatusUpdate is true because the ticket's status row is already
-  // set by writeTicket above; we only want the notification side-effect.
-  // Non-blocking — failure to notify must not fail the seat action.
-  const notifySeated = async (ticketId: string, table: RestaurantTable) => {
-    try {
-      const token = await ensureAuth();
-      if (!token) return;
-      cloudFetch(`${CLOUD_URL}/api/ticket-transition`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          ticketId,
-          status: 'serving',
-          skipStatusUpdate: true,
-          notifyEvent: 'serving',
-          deskName: table.code,
-        }),
-      }).catch((err) => console.warn('[FloorMap] seated notify failed', err));
-    } catch (err) {
-      console.warn('[FloorMap] seated notify threw', err);
-    }
   };
 
   const confirmSeated = async (table: RestaurantTable) => {
@@ -318,9 +294,9 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
       await ensureAuth();
       const sb = await getSupabase();
       await sb.from('restaurant_tables').update({ assigned_at: nowIso }).eq('id', table.id);
-      // Confirm-seated follows a prior "called" buzz — the customer now
-      // knows they've actually been seated. Fires the 'serving' template.
-      notifySeated(table.current_ticket_id, table);
+      // Serving notification is emitted by the IPC mirror in writeTicket
+      // (main.ts → /api/ticket-transition). Firing a second explicit notify
+      // here produced duplicate WhatsApp messages.
       await load();
     } finally { setBusy(null); }
   };
