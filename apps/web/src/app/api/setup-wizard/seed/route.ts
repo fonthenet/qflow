@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { resolveCityToWilaya } from '@/lib/business-location';
 import {
   getBusinessCategory,
   getCategoryTemplateId,
@@ -106,7 +107,8 @@ export async function POST(request: NextRequest) {
   const currentSettings = (orgRow?.settings ?? {}) as Record<string, unknown>;
 
   try {
-    // 1. Office.
+    // 1. Office — carry country/city/wilaya for directory + overlays.
+    const wilaya = resolveCityToWilaya(country, city);
     const { data: office, error: officeErr } = await supabase
       .from('offices')
       .insert({
@@ -115,6 +117,9 @@ export async function POST(request: NextRequest) {
         address,
         is_active: true,
         timezone,
+        country,
+        city,
+        wilaya,
         operating_hours: DEFAULT_OFFICE_HOURS,
       })
       .select('id, name')
@@ -217,9 +222,17 @@ export async function POST(request: NextRequest) {
       channelDefaults.messenger_default_virtual_code_id = vqcId;
     }
 
+    // First-class org columns — keeps Settings → Organization Profile,
+    // country-gated currency/wilaya UI and the public directory in sync.
     await supabase
       .from('organizations')
-      .update({ settings: { ...currentSettings, ...channelDefaults } as any })
+      .update({
+        settings: { ...currentSettings, ...channelDefaults } as any,
+        country,
+        timezone,
+        locale_primary: locale,
+        vertical: category.vertical,
+      })
       .eq('id', organizationId);
 
     return NextResponse.json({

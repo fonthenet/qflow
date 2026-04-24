@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { resolveCityToWilaya } from '@/lib/business-location';
 import {
   getBusinessCategory,
   getCategoryTemplateId,
@@ -168,7 +169,10 @@ export async function POST(request: NextRequest) {
     if (rpcErr || !orgId) throw rpcErr ?? new Error('RPC returned no org id');
     const organizationId = orgId as string;
 
-    // 3. Office.
+    // 3. Office. Carry country/city/wilaya so the public directory, SMS
+    //    tax compliance and per-country overlays can target this office
+    //    without re-asking the user.
+    const wilaya = resolveCityToWilaya(country, city);
     const { data: office, error: officeErr } = await supabase
       .from('offices')
       .insert({
@@ -177,6 +181,9 @@ export async function POST(request: NextRequest) {
         address,
         is_active: true,
         timezone,
+        country,
+        city,
+        wilaya,
         operating_hours: DEFAULT_OFFICE_HOURS,
       })
       .select('id, name')
@@ -298,9 +305,19 @@ export async function POST(request: NextRequest) {
       channelDefaults.messenger_default_virtual_code_id = vqcId;
     }
 
+    // Also write to first-class columns so the Settings → Organization
+    // Profile screen, country-gated features (currency, wilaya, tax
+    // rules) and the public directory all read consistent values —
+    // settings.business_* is kept for legacy readers.
     await supabase
       .from('organizations')
-      .update({ settings: { ...currentSettings, ...channelDefaults } as any })
+      .update({
+        settings: { ...currentSettings, ...channelDefaults } as any,
+        country,
+        timezone,
+        locale_primary: locale,
+        vertical: category.vertical,
+      })
       .eq('id', organizationId);
 
     // 10. Authenticated session for the client.
