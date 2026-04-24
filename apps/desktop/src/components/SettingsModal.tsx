@@ -111,6 +111,32 @@ function MiniQueueToggleCard({ t }: { t: (k: string, v?: any) => string }) {
   );
 }
 
+// Per-device touch-mode toggle. Stored in localStorage (NOT in the
+// org settings) so a single business can run a desktop install on the
+// host stand and a tablet install at the door with different settings.
+// Dispatches a custom event so App.tsx applies the body class
+// instantly without a reload.
+function TouchModeToggleCard({ t }: { t: (k: string, v?: any) => string }) {
+  return (
+    <StationPrefToggleCard
+      t={t}
+      icon="👆"
+      title={t('Touch mode')}
+      help={t('Enlarges every button and input to a finger-sized tap target. Use on touchscreens and tablets. Per-device setting — does not affect other staff.')}
+      getEnabled={() => {
+        try { return localStorage.getItem('qflo_touch_mode') === 'true'; } catch { return false; }
+      }}
+      setEnabled={(v) => {
+        try {
+          localStorage.setItem('qflo_touch_mode', v ? 'true' : 'false');
+          window.dispatchEvent(new CustomEvent('qflo:touch-mode-changed'));
+        } catch {}
+      }}
+      defaultEnabled={false}
+    />
+  );
+}
+
 function NotificationsToggleCard({ t }: { t: (k: string, v?: any) => string }) {
   return (
     <StationPrefToggleCard
@@ -3153,6 +3179,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>
 
+                    <TouchModeToggleCard t={t} />
                     <MiniQueueToggleCard t={t} />
                     <NotificationsToggleCard t={t} />
 

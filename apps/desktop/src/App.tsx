@@ -84,6 +84,25 @@ export function App() {
     } catch {}
   }, []);
 
+  // ── Touch mode ────────────────────────────────────────────────────
+  // Per-device preference (persisted in localStorage) that adds a
+  // `touch-mode` class on <body>. CSS in styles.css scales every
+  // interactive surface to ≥44px tap targets. Listens for a
+  // `qflo:touch-mode-changed` window event so the SettingsModal toggle
+  // takes effect instantly across the app without a reload.
+  useEffect(() => {
+    const apply = () => {
+      try {
+        const on = localStorage.getItem('qflo_touch_mode') === 'true';
+        document.body.classList.toggle('touch-mode', on);
+      } catch {}
+    };
+    apply();
+    const handler = () => apply();
+    window.addEventListener('qflo:touch-mode-changed', handler);
+    return () => window.removeEventListener('qflo:touch-mode-changed', handler);
+  }, []);
+
   // Load saved session on mount
   useEffect(() => {
     Promise.all([

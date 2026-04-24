@@ -1070,3 +1070,95 @@ html[dir="rtl"] .station-action-pills .pills-right {
 .sidebar-section > div > button:hover {
   filter: brightness(1.1);
 }
+
+/* ── Touch Mode ─────────────────────────────────────────────────────
+   Enabled per-device via Settings → Account → "Touch mode". Sets a
+   `touch-mode` class on <body>. Bumps every interactive surface to a
+   ≥44px tap target (Apple HIG / Material) without changing layout
+   structure, so a desktop install can keep the dense default and a
+   tablet/touchscreen install can switch to large targets.
+
+   No layout structural changes — only sizes, paddings, and font sizes
+   so nothing reflows or overlaps. The pills toolbar height grows from
+   ~32px to ~52px; we compensate with a larger top padding on
+   .station-main so the active ticket / FloorMap content never sits
+   under the toolbar. */
+body.touch-mode .station-action-pills {
+  padding: 10px 20px !important;
+  gap: 10px;
+}
+body.touch-mode .station-action-pills button {
+  font-size: 14px !important;
+  padding: 10px 18px !important;
+  min-height: 44px;
+  border-radius: 22px !important;
+}
+body.touch-mode .station-action-pills .shortcut-hint,
+body.touch-mode .station-action-pills [class*="shortcut"] {
+  display: none !important;
+}
+body.touch-mode .station-action-pills .pause-toggle {
+  gap: 12px !important;
+}
+/* Tables/Queue toggle inside the pills bar */
+body.touch-mode .station-action-pills > div > div > button {
+  padding: 8px 18px !important;
+  font-size: 14px !important;
+  min-height: 40px;
+}
+
+/* Compensate for taller pills bar so active panel / floor map / queue
+   list are not covered. Default is 40px; touch grows to 64px. */
+body.touch-mode .station-main { padding-top: 64px !important; }
+
+/* Sidebar queue rows — bigger hit targets, taller rows */
+body.touch-mode .queue-item {
+  padding: 14px 14px;
+  gap: 12px;
+  min-height: 56px;
+}
+body.touch-mode .queue-item-number { font-size: 16px; }
+body.touch-mode .queue-item-meta { font-size: 13px; }
+body.touch-mode .queue-item button,
+body.touch-mode .queue-list button {
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+/* Form controls — 16px font prevents iOS zoom-on-focus and stays
+   readable on touch screens at arm's length. */
+body.touch-mode input[type="text"],
+body.touch-mode input[type="email"],
+body.touch-mode input[type="tel"],
+body.touch-mode input[type="number"],
+body.touch-mode input[type="search"],
+body.touch-mode input[type="password"],
+body.touch-mode textarea,
+body.touch-mode select {
+  font-size: 16px !important;
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+/* Primary action buttons — Complete Service / Start Serving etc. */
+body.touch-mode .btn-lg { padding: 18px 36px; font-size: 20px; min-height: 60px; }
+body.touch-mode .btn-outline { padding: 10px 20px; font-size: 14px; min-height: 44px; }
+
+/* Active ticket secondary actions row — Park / No Show / Cancel / Ban */
+body.touch-mode .secondary-actions { gap: 14px; }
+body.touch-mode .secondary-actions button { min-height: 44px; padding: 10px 18px; font-size: 14px; }
+
+/* FloorMap table tiles — already big, keep same size but bigger label
+   for touch. */
+body.touch-mode .floor-map-table {
+  font-size: 18px;
+}
+
+/* Compact restaurant active-ticket panel: relax compact reductions in
+   touch mode so buttons stay finger-sized. */
+body.touch-mode .active-ticket-panel.compact .btn-lg {
+  padding: 16px 28px; font-size: 18px;
+}
+body.touch-mode .active-ticket-panel.compact .active-number { font-size: 64px; }
+
