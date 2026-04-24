@@ -959,6 +959,7 @@ export async function createStaffMember(formData: FormData) {
   });
 
   revalidatePath('/admin/staff');
+  revalidatePath('/admin/setup-wizard');
   return { success: true };
 }
 
