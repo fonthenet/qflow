@@ -74,6 +74,12 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
   const [officeName, setOfficeName] = useState('');
   const [address, setAddress] = useState('');
 
+  // Editable seed — prefilled from the category defaults so the operator
+  // sees (and can override) exactly what we'll create on first run.
+  const [deptName, setDeptName] = useState('');
+  const [services, setServices] = useState<Array<{ name: string; minutes: number }>>([]);
+  const [desks, setDesks] = useState<string[]>([]);
+
   // Country + city drive the timezone — operators never see a raw IANA string.
   const detected = useMemo(() => detectDefaultCountry(), []);
   const [countryCode, setCountryCode] = useState<string>(detected?.code ?? 'DZ');
@@ -97,10 +103,23 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
   );
   const timezone = selectedCity?.timezone ?? selectedCountry?.defaultTimezone ?? DEFAULT_TIMEZONE;
 
-  // Prefill office name from category default once a category is chosen.
+  // Prefill office name + editable seed from the category defaults.
   useEffect(() => {
-    if (selectedCategory && !officeName) {
+    if (!selectedCategory) return;
+    if (!officeName) {
       setOfficeName(resolveLocalized(selectedCategory.defaultOfficeName, wizardLocale));
+    }
+    if (!deptName) {
+      setDeptName(resolveLocalized(selectedCategory.defaultDepartment.name, wizardLocale));
+    }
+    if (services.length === 0) {
+      setServices([{
+        name: resolveLocalized(selectedCategory.defaultService.name, wizardLocale),
+        minutes: selectedCategory.defaultService.estimatedMinutes,
+      }]);
+    }
+    if (desks.length === 0) {
+      setDesks([resolveLocalized(selectedCategory.defaultDesk.name, wizardLocale)]);
     }
   }, [selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,6 +140,12 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
     if (step.id === 'location') {
       if (officeName.trim().length < 2) return 'Office name is required.';
       if (!countryCode) return 'Please pick a country.';
+      if (deptName.trim().length < 2) return 'Department name is required.';
+      if (services.length === 0) return 'Add at least one service.';
+      if (services.some((s) => s.name.trim().length < 2)) return 'All services need a name.';
+      if (services.some((s) => !Number.isFinite(s.minutes) || s.minutes < 1)) return 'Service durations must be at least 1 minute.';
+      if (desks.length === 0) return 'Add at least one counter.';
+      if (desks.some((d) => d.trim().length < 2)) return 'All counters need a name.';
     }
     return '';
   }
@@ -149,6 +174,9 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
           city: cityName || undefined,
           timezone,
           locale: wizardLocale,
+          departmentName: deptName.trim(),
+          services: services.map((s) => ({ name: s.name.trim(), estimatedMinutes: s.minutes })),
+          desks: desks.map((d) => d.trim()),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -328,6 +356,104 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
           <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: -4 }}>
             Timezone: <code style={{ fontFamily: 'monospace' }}>{timezone}</code>
           </div>
+
+          {selectedCategory && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 14,
+                border: '1px solid var(--border, #475569)',
+                borderRadius: 10,
+                background: 'var(--surface2, rgba(255,255,255,0.04))',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+                <strong style={{ fontSize: 13, color: 'var(--text, #f1f5f9)' }}>
+                  What we&apos;ll set up for {businessName || 'your business'}
+                </strong>
+                <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>Edit anything before finishing</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 10 }}>
+                {selectedCategory.emoji} {resolveLocalized(selectedCategory.label, wizardLocale)} · Mon–Sat 9:00–18:00
+              </div>
+
+              {/* Department */}
+              <div className="form-field">
+                <label>Department</label>
+                <input type="text" value={deptName} onChange={(e) => setDeptName(e.target.value)} />
+              </div>
+
+              {/* Services */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', marginTop: 6, marginBottom: 6 }}>Services</div>
+              {services.map((s, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 34px', gap: 6, marginBottom: 6 }}>
+                  <input
+                    type="text"
+                    value={s.name}
+                    onChange={(e) => setServices((arr) => arr.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))}
+                    placeholder="Service name"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={480}
+                    value={s.minutes}
+                    onChange={(e) => setServices((arr) => arr.map((x, idx) => idx === i ? { ...x, minutes: Math.max(1, Number(e.target.value) || 1) } : x))}
+                    title="Estimated minutes"
+                    style={{ textAlign: 'center' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setServices((arr) => arr.filter((_, idx) => idx !== i))}
+                    disabled={services.length <= 1}
+                    style={{ ...secondaryBtn, flex: 'none', padding: '6px 10px', opacity: services.length <= 1 ? 0.4 : 1 }}
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setServices((arr) => [...arr, { name: '', minutes: 15 }])}
+                style={{ ...secondaryBtn, flex: 'none', padding: '6px 12px', marginTop: 2 }}
+              >
+                + Add service
+              </button>
+              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 6 }}>
+                Minutes on the right drive wait-time forecasts.
+              </div>
+
+              {/* Desks */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', marginTop: 14, marginBottom: 6 }}>Counters / Desks</div>
+              {desks.map((d, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 34px', gap: 6, marginBottom: 6 }}>
+                  <input
+                    type="text"
+                    value={d}
+                    onChange={(e) => setDesks((arr) => arr.map((x, idx) => idx === i ? e.target.value : x))}
+                    placeholder="Counter name"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDesks((arr) => arr.filter((_, idx) => idx !== i))}
+                    disabled={desks.length <= 1}
+                    style={{ ...secondaryBtn, flex: 'none', padding: '6px 10px', opacity: desks.length <= 1 ? 0.4 : 1 }}
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setDesks((arr) => [...arr, `Counter ${arr.length + 1}`])}
+                style={{ ...secondaryBtn, flex: 'none', padding: '6px 12px', marginTop: 2 }}
+              >
+                + Add counter
+              </button>
+            </div>
+          )}
 
           {loading && progress && (
             <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', padding: '6px 0' }}>⏳ {progress}</div>

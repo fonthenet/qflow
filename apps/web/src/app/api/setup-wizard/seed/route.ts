@@ -35,6 +35,12 @@ interface SeedBody {
   city?: string;
   timezone?: string;
   locale?: CategoryLocale;
+  /** Operator overrides from the wizard preview. When absent, fall back to
+   *  the category defaults — this keeps the endpoint backward-compatible
+   *  with older clients that don't yet send the customized seed. */
+  departmentName?: string;
+  services?: Array<{ name: string; estimatedMinutes: number }>;
+  desks?: string[];
 }
 
 function buildTicketPrefix(businessName: string): string {
@@ -126,8 +132,8 @@ export async function POST(request: NextRequest) {
       .single();
     if (officeErr || !office) throw new Error(`office: ${officeErr?.message ?? 'no row'}`);
 
-    // 2. Department.
-    const deptName = resolveLocalized(category.defaultDepartment.name, locale);
+    // 2. Department — operator-named, falls back to category default.
+    const deptName = body.departmentName?.trim() || resolveLocalized(category.defaultDepartment.name, locale);
     const { data: dept, error: deptErr } = await supabase
       .from('departments')
       .insert({
@@ -140,34 +146,53 @@ export async function POST(request: NextRequest) {
       .single();
     if (deptErr || !dept) throw new Error(`department: ${deptErr?.message ?? 'no row'}`);
 
-    // 3. Service.
-    const svcName = resolveLocalized(category.defaultService.name, locale);
+    // 3. Services — operator-customized list, or the single category default.
+    //    Auto-generate service codes from the department code + index so the
+    //    queue number format stays deterministic.
+    const servicesToSeed = (body.services && body.services.length > 0)
+      ? body.services.map((s, idx) => ({
+          name: s.name.trim() || resolveLocalized(category.defaultService.name, locale),
+          estimatedMinutes: Math.max(1, Math.min(480, Number(s.estimatedMinutes) || category.defaultService.estimatedMinutes)),
+          code: idx === 0
+            ? category.defaultService.code
+            : `${category.defaultDepartment.code}${String(idx + 1).padStart(2, '0')}`,
+        }))
+      : [{
+          name: resolveLocalized(category.defaultService.name, locale),
+          estimatedMinutes: category.defaultService.estimatedMinutes,
+          code: category.defaultService.code,
+        }];
+
     const { error: svcErr } = await supabase
       .from('services')
-      .insert({
+      .insert(servicesToSeed.map((s) => ({
         department_id: dept.id,
-        code: category.defaultService.code,
-        name: svcName,
-        estimated_service_time: category.defaultService.estimatedMinutes,
+        code: s.code,
+        name: s.name,
+        estimated_service_time: s.estimatedMinutes,
         is_active: true,
-      });
+      })));
     if (svcErr) throw new Error(`service: ${svcErr.message}`);
 
-    // 4. Desk (assigned to this admin, open).
-    const deskName = resolveLocalized(category.defaultDesk.name, locale);
-    const { data: desk, error: deskErr } = await supabase
+    // 4. Desks — first one gets the admin assigned + open; the rest go
+    //    unassigned/closed so the admin can staff them later.
+    const desksToSeed = (body.desks && body.desks.length > 0)
+      ? body.desks.map((d) => d.trim() || resolveLocalized(category.defaultDesk.name, locale))
+      : [resolveLocalized(category.defaultDesk.name, locale)];
+
+    const { data: deskRows, error: deskErr } = await supabase
       .from('desks')
-      .insert({
+      .insert(desksToSeed.map((name, idx) => ({
         office_id: office.id,
         department_id: dept.id,
-        name: deskName,
+        name,
         is_active: true,
-        current_staff_id: context.staff.id,
-        status: 'open',
-      })
-      .select('id, name')
-      .single();
-    if (deskErr || !desk) throw new Error(`desk: ${deskErr?.message ?? 'no row'}`);
+        current_staff_id: idx === 0 ? context.staff.id : null,
+        status: idx === 0 ? 'open' : 'closed',
+      })))
+      .select('id, name');
+    if (deskErr || !deskRows || deskRows.length === 0) throw new Error(`desk: ${deskErr?.message ?? 'no row'}`);
+    const desk = deskRows[0];
 
     // 5. Admin lands on this office+dept by default.
     await supabase

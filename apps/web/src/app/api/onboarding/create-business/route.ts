@@ -43,6 +43,11 @@ interface CreateBusinessBody {
   city?: string;
   timezone?: string;
   locale?: CategoryLocale;
+  /** Operator overrides from the wizard preview. When absent, fall back to
+   *  the category defaults so older clients stay supported. */
+  departmentName?: string;
+  services?: Array<{ name: string; estimatedMinutes: number }>;
+  desks?: string[];
 }
 
 function slugify(name: string): string {
@@ -190,8 +195,8 @@ export async function POST(request: NextRequest) {
       .single();
     if (officeErr || !office) throw new Error(`office: ${officeErr?.message ?? 'no row'}`);
 
-    // 4. Default department.
-    const deptName = resolveLocalized(category.defaultDepartment.name, locale);
+    // 4. Department — operator-named, falls back to category default.
+    const deptName = body.departmentName?.trim() || resolveLocalized(category.defaultDepartment.name, locale);
     const { data: dept, error: deptErr } = await supabase
       .from('departments')
       .insert({
@@ -205,42 +210,57 @@ export async function POST(request: NextRequest) {
     if (deptErr || !dept) throw new Error(`department: ${deptErr?.message ?? 'no row'}`);
     const departmentId = dept.id;
 
-    // 5. Default service.
-    const svcName = resolveLocalized(category.defaultService.name, locale);
-    const { data: svc, error: svcErr } = await supabase
-      .from('services')
-      .insert({
-        department_id: departmentId,
-        code: category.defaultService.code,
-        name: svcName,
-        estimated_service_time: category.defaultService.estimatedMinutes,
-        is_active: true,
-      })
-      .select('id')
-      .single();
-    if (svcErr || !svc) throw new Error(`service: ${svcErr?.message ?? 'no row'}`);
+    // 5. Services — operator-customized list, or single category default.
+    const servicesToSeed = (body.services && body.services.length > 0)
+      ? body.services.map((s, idx) => ({
+          name: s.name.trim() || resolveLocalized(category.defaultService.name, locale),
+          estimatedMinutes: Math.max(1, Math.min(480, Number(s.estimatedMinutes) || category.defaultService.estimatedMinutes)),
+          code: idx === 0
+            ? category.defaultService.code
+            : `${category.defaultDepartment.code}${String(idx + 1).padStart(2, '0')}`,
+        }))
+      : [{
+          name: resolveLocalized(category.defaultService.name, locale),
+          estimatedMinutes: category.defaultService.estimatedMinutes,
+          code: category.defaultService.code,
+        }];
 
-    // 6. Default desk, open, assigned to the admin.
+    const { data: svcRows, error: svcErr } = await supabase
+      .from('services')
+      .insert(servicesToSeed.map((s) => ({
+        department_id: departmentId,
+        code: s.code,
+        name: s.name,
+        estimated_service_time: s.estimatedMinutes,
+        is_active: true,
+      })))
+      .select('id');
+    if (svcErr || !svcRows || svcRows.length === 0) throw new Error(`service: ${svcErr?.message ?? 'no row'}`);
+
+    // 6. Desks — first one open + assigned to the admin, the rest closed.
     const { data: staff } = await supabase
       .from('staff')
       .select('id, role')
       .eq('auth_user_id', authUserId)
       .single();
 
-    const deskName = resolveLocalized(category.defaultDesk.name, locale);
-    const { data: desk, error: deskErr } = await supabase
+    const desksToSeed = (body.desks && body.desks.length > 0)
+      ? body.desks.map((d) => d.trim() || resolveLocalized(category.defaultDesk.name, locale))
+      : [resolveLocalized(category.defaultDesk.name, locale)];
+
+    const { data: deskRows, error: deskErr } = await supabase
       .from('desks')
-      .insert({
+      .insert(desksToSeed.map((name, idx) => ({
         office_id: office.id,
         department_id: departmentId,
-        name: deskName,
+        name,
         is_active: true,
-        current_staff_id: staff?.id ?? null,
-        status: 'open',
-      })
-      .select('id, name')
-      .single();
-    if (deskErr || !desk) throw new Error(`desk: ${deskErr?.message ?? 'no row'}`);
+        current_staff_id: idx === 0 ? (staff?.id ?? null) : null,
+        status: idx === 0 ? 'open' : 'closed',
+      })))
+      .select('id, name');
+    if (deskErr || !deskRows || deskRows.length === 0) throw new Error(`desk: ${deskErr?.message ?? 'no row'}`);
+    const desk = deskRows[0];
     const deskId = desk.id;
 
     // 7. Assign admin to the new office + dept so /desk works on first click.
