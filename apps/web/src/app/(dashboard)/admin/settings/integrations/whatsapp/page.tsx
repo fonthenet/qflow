@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import { loadWhatsAppCredentials } from '@/lib/actions/whatsapp-actions';
 import { WhatsAppSettingsClient } from './whatsapp-settings-client';
+import { WhatsAppEmbeddedSignupButton } from './embedded-signup-button';
 
 export default async function WhatsAppSettingsPage() {
   const context = await getStaffContext();
@@ -32,6 +33,7 @@ export default async function WhatsAppSettingsPage() {
           notifications and accept inbound messages on your behalf.
         </p>
       </div>
+      <WhatsAppEmbeddedSignupButton />
       <WhatsAppSettingsClient
         initialPhoneNumberId={credentials.phone_number_id ?? ''}
         initialBusinessAccountId={credentials.business_account_id ?? ''}
