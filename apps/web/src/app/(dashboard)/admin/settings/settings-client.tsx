@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib/actions/settings-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 import { createClient } from '@/lib/supabase/client';
-import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey, VOICE_CATALOG, isArabicCountry } from '@qflo/shared';
+import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, ensureAllPresets, generateCustomFieldKey, VOICE_CATALOG, isArabicCountry } from '@qflo/shared';
 
 interface Organization {
   id: string;
@@ -333,7 +333,10 @@ const [emailOtpEnabled, setEmailOtpEnabled] = useState<boolean>(
     settings.require_appointment_approval ?? true
   );
   const [intakeFields, setIntakeFields] = useState<IntakeField[]>(
-    migrateToIntakeFields(settings)
+    // Backfill every applicable preset so toggles for Email, Party size,
+    // etc. are always visible. Wilaya is DZ-only; non-DZ orgs get it
+    // stripped. See packages/shared/src/intake-fields.ts#ensureAllPresets.
+    ensureAllPresets(migrateToIntakeFields(settings), { country: organization.country })
   );
   const [bookingSettingsTab, setBookingSettingsTab] = useState<'intake' | 'queue' | 'appointments' | 'channels'>('intake');
 

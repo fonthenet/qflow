@@ -13,6 +13,7 @@ import {
   PRESET_KEYS,
   getFieldLabel,
   migrateToIntakeFields,
+  ensureAllPresets,
   BUSINESS_CATEGORIES,
   COUNTRIES,
   getBusinessCategoryByVertical,
@@ -2217,7 +2218,24 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     }
 
     if (sec.id === 'booking') {
-      const intakeFields: IntakeField[] = values.intake_fields ?? [];
+      // Backfill missing presets so admins can always toggle on Email,
+      // Party size, etc. regardless of what the org was seeded with.
+      // Wilaya is DZ-only; non-DZ orgs get it stripped.
+      const savedIntake: IntakeField[] = values.intake_fields ?? [];
+      const intakeFields: IntakeField[] = ensureAllPresets(savedIntake, { country: orgCountry });
+      // If backfill changed the array length (new presets injected or stale
+      // wilaya stripped), sync back into values so save persists the new
+      // shape. Effect guards against render loop.
+      if (intakeFields.length !== savedIntake.length) {
+        queueMicrotask(() => {
+          setValues(prev => {
+            const current = prev.intake_fields ?? [];
+            const reconciled = ensureAllPresets(current, { country: orgCountry });
+            if (reconciled.length === current.length) return prev;
+            return { ...prev, intake_fields: reconciled };
+          });
+        });
+      }
       const intakeLocale: 'en' | 'fr' | 'ar' = (locale === 'ar' ? 'ar' : locale === 'fr' ? 'fr' : 'en');
       const allFields = sec._allFields ?? [];
       // Split _allFields into queue fields and appointment fields by key

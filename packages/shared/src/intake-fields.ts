@@ -214,3 +214,64 @@ export function getEnabledIntakeFields(
 export function generateCustomFieldKey(): string {
   return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
+
+// ── Arabic-speaking countries (gates the Wilaya / Arabic-name presets) ────────
+const ARABIC_COUNTRY_CODES = new Set([
+  'DZ', 'BH', 'KM', 'DJ', 'EG', 'IQ', 'JO', 'KW',
+  'LB', 'LY', 'MR', 'MA', 'OM', 'PS', 'QA', 'SA',
+  'SO', 'SD', 'SY', 'TN', 'AE', 'YE',
+]);
+
+/**
+ * Ensure every preset the org *could* use appears in the field list so the
+ * Settings UI can render toggles for all of them — otherwise presets the
+ * org has never opted into (e.g. Email, Party size) are invisible and admins
+ * can't turn them on without an admin re-seeding the array.
+ *
+ * Country + vertical hints drive which presets are applicable:
+ *   - Wilaya is only relevant to Algeria (DZ). For every other country we
+ *     strip stale wilaya entries AND skip injecting it.
+ *   - Party size is always applicable (restaurants need it, clinics also use
+ *     it for family bookings, banks for group appointments).
+ *   - Email is always applicable (email OTP, receipts).
+ *
+ * Safe to call on display: saved/enabled state is preserved, only disabled
+ * presets are appended. Order: keep existing order, append new presets at end.
+ */
+export function ensureAllPresets(
+  fields: IntakeField[],
+  opts: { country?: string | null } = {},
+): IntakeField[] {
+  const country = (opts.country ?? '').toUpperCase();
+  const isWilayaMarket = country === 'DZ';
+
+  // Drop stale wilaya rows if org is outside Algeria — avoids a dead toggle
+  // in US/FR/IN settings when data was seeded under the legacy defaults.
+  const cleaned = fields.filter((f) => {
+    if (f.key === 'wilaya' && country && !isWilayaMarket) return false;
+    return true;
+  });
+
+  const existing = new Set(cleaned.map((f) => f.key));
+  const applicable: PresetKey[] = ['name', 'phone', 'email', 'party_size', 'age', 'reason'];
+  if (isWilayaMarket || !country) applicable.push('wilaya');
+
+  const appended: IntakeField[] = [];
+  for (const key of applicable) {
+    if (!existing.has(key)) {
+      appended.push({ key, type: 'preset', enabled: false, required: false });
+    }
+  }
+  return [...cleaned, ...appended];
+}
+
+/** Does this country use Arabic wilayas / Arabic-name fields by default? */
+export function isWilayaCountry(country: string | null | undefined): boolean {
+  if (!country) return false;
+  return country.toUpperCase() === 'DZ';
+}
+
+export function isArabicCountryCode(country: string | null | undefined): boolean {
+  if (!country) return false;
+  return ARABIC_COUNTRY_CODES.has(country.toUpperCase());
+}
