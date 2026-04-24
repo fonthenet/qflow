@@ -122,7 +122,12 @@ function getLabelOverrides(templateSummary: SidebarProps['templateSummary']) {
     '/admin/departments': `${vocabulary.departmentLabel}s`,
     '/admin/services': `${vocabulary.serviceLabel}s`,
     '/admin/desks': `${vocabulary.deskLabel}s`,
-    '/admin/customers': `${vocabulary.customerLabel}s`,
+    // Sidebar nav categories stay universal — "Customers" everywhere, no
+    // "Residents" / "Patients" / "Clients" per vertical. The per-vertical
+    // customerLabel still drives context-specific screens (e.g. "Add Patient"
+    // on a clinic intake form); the top-level nav just needs to be
+    // recognizable to any operator regardless of their template.
+    '/admin/customers': 'Customers',
     '/admin/bookings': `${vocabulary.bookingLabel}s`,
     '/desk': `My ${vocabulary.deskLabel}`,
   } as Record<string, string>;
