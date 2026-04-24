@@ -517,29 +517,31 @@ whatsapp_enabled: whatsappEnabled,
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        {/* Left rail — focused sub-nav instead of the old scroll-dump layout. */}
-        <nav className="lg:sticky lg:top-6 lg:self-start">
-          <ul className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-            {sectionNav.map((item) => (
-              <li key={item.id} className="shrink-0 lg:shrink">
-                <button
-                  type="button"
-                  onClick={() => setActiveSection(item.id)}
-                  className={`w-full whitespace-nowrap rounded-lg border px-3 py-2 text-start text-sm transition-colors lg:whitespace-normal ${
-                    activeSection === item.id
-                      ? 'border-primary bg-primary/10 text-foreground'
-                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  <div className="font-medium text-foreground">{item.label}</div>
-                  <div className="hidden text-xs text-muted-foreground lg:block">{item.description}</div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+      {/* Top tab bar — horizontal nav (Stripe / Linear style). */}
+      <nav className="mb-6 border-b border-border">
+        <ul className="flex gap-1 overflow-x-auto">
+          {sectionNav.map((item) => (
+            <li key={item.id} className="shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveSection(item.id)}
+                className={`relative whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors ${
+                  activeSection === item.id
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {item.label}
+                {activeSection === item.id && (
+                  <span className="absolute inset-x-0 -bottom-px h-0.5 bg-primary" />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
+      <div>
         <div className="space-y-6 min-w-0">
 
       <section className="rounded-xl border border-border bg-card p-6 space-y-4" hidden={activeSection !== 'business'}>
