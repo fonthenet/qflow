@@ -4,15 +4,22 @@ import { createTestDB } from './helpers';
 
 // Mock electron safeStorage
 vi.mock('electron', () => ({
+  app: {
+    getPath: () => '/tmp',
+    isPackaged: false,
+  },
   safeStorage: {
     isEncryptionAvailable: () => false,
     decryptString: () => '',
   },
 }));
 
-// Mock logTicketEvent from db module
+// Mock db module exports used by SyncEngine
 vi.mock('../db', () => ({
   logTicketEvent: vi.fn(),
+  setSyncNotifier: vi.fn(),
+  enqueueSync: vi.fn(),
+  deriveOrgIdForSyncItem: vi.fn(),
 }));
 
 // Import after mocks are set up
