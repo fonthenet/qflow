@@ -99,16 +99,14 @@ function setTouchModeEnabled(enabled: boolean) {
   } catch {}
   applyTouchModeToWindows(enabled);
 }
-function applyTouchModeToWindows(enabled: boolean) {
-  // Hide the native File/Edit/View/Window/Language/Help bar in touch
-  // mode — operators on a touch screen don't need it and the small
-  // top-left text targets aren't reachable. Alt key still reveals it
-  // when toggled off via setMenuBarVisibility(false) since
-  // setAutoHideMenuBar(true) lets it pop with Alt for power users.
+function applyTouchModeToWindows(_enabled: boolean) {
+  // Native menu bar must remain visible in BOTH modes. Operators rely
+  // on it to access Settings / language / view options. Touch mode
+  // only changes in-app CSS sizing — never window chrome.
   for (const w of BrowserWindow.getAllWindows()) {
     try {
-      w.setAutoHideMenuBar(enabled);
-      w.setMenuBarVisibility(!enabled);
+      w.setAutoHideMenuBar(false);
+      w.setMenuBarVisibility(true);
     } catch {}
   }
 }
@@ -401,13 +399,10 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#0f172a',
-    // Hide menu bar at construction if touch mode is on so the window
-    // doesn't flash with the menu before applyTouchModeToWindows runs.
-    autoHideMenuBar: getTouchModeEnabled(),
+    // Native menu bar always visible — touch mode does not hide chrome.
+    autoHideMenuBar: false,
   });
-  if (getTouchModeEnabled()) {
-    try { mainWindow.setMenuBarVisibility(false); } catch {}
-  }
+  try { mainWindow.setMenuBarVisibility(true); } catch {}
 
   // Grant microphone access so the Audio output dropdown can enumerate
   // real devices with labels. Chromium hides audiooutput labels unless

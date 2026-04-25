@@ -436,7 +436,17 @@
     "newest": "Plus récent",
     "oldest": "Plus ancien",
     "queueOverview": "Aperçu de la file",
-    "offlineMsg": "Connexion perdue — mode hors ligne. Les actions seront synchronisées au retour."
+    "offlineMsg": "Connexion perdue — mode hors ligne. Les actions seront synchronisées au retour.",
+    "viewQueue": "File d'attente",
+    "viewTables": "Tables"
+  },
+
+  "floorMap": {
+    "waitingInQueue": "{{count}} en attente",
+    "seats": "places",
+    "free": "Libre",
+    "occupied": "Occupé",
+    "onHold": "En pause"
   },
 
   "operatorQueue": {
@@ -505,7 +515,13 @@
     "offline": "Hors ligne",
     "view": "Voir",
     "displayUnavailable": "Affichage non disponible",
-    "kioskUnavailable": "Kiosque non disponible"
+    "kioskUnavailable": "Kiosque non disponible",
+    "tabletMode": "Mode tablette",
+    "tabletModeHelp": "Optimise la mise en page pour tablettes — vue double panneau, cibles plus grandes, typographie agrandie.",
+    "tabletModeAuto": "Auto (selon l'appareil)",
+    "tabletModeOn": "Activé",
+    "tabletModeOff": "Désactivé",
+    "displayPreferences": "Préférences d'affichage"
   },
 
   "customer": {

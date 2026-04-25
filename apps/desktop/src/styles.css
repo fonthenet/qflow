@@ -1084,14 +1084,15 @@ html[dir="rtl"] .station-action-pills .pills-right {
    .station-main so the active ticket / FloorMap content never sits
    under the toolbar. */
 body.touch-mode .station-action-pills {
-  padding: 10px 20px !important;
-  gap: 10px;
+  padding: 6px 12px !important;
+  gap: 6px;
 }
 body.touch-mode .station-action-pills button {
-  font-size: 14px !important;
-  padding: 10px 18px !important;
-  min-height: 44px;
-  border-radius: 22px !important;
+  font-size: 12px !important;
+  padding: 6px 12px !important;
+  min-height: 40px;
+  border-radius: 20px !important;
+  white-space: nowrap;
 }
 body.touch-mode .station-action-pills .shortcut-hint,
 body.touch-mode .station-action-pills [class*="shortcut"] {
@@ -1108,8 +1109,15 @@ body.touch-mode .station-action-pills > div > div > button {
 }
 
 /* Compensate for taller pills bar so active panel / floor map / queue
-   list are not covered. Default is 40px; touch grows to 64px. */
-body.touch-mode .station-main { padding-top: 64px !important; }
+   list are not covered. Default is 40px; touch grows to ~100px to
+   accommodate wrapped pills (≤1024px viewports wrap pills to 2 rows
+   when buttons are touch-sized). The !important defeats the inline
+   `padding: 0` set on station-main when calendar/customers views are
+   active — we must reserve space or the embedded view sits BEHIND the
+   pills bar (which is `position: absolute; top: 0`). */
+body.touch-mode .station-main {
+  padding-top: 60px !important;
+}
 
 /* Sidebar queue rows — bigger hit targets, taller rows */
 body.touch-mode .queue-item {

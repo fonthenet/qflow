@@ -6,6 +6,7 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -21,6 +22,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import * as Actions from '@/lib/data-adapter';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { useTabletMode } from '@/lib/use-tablet-mode';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,6 +62,9 @@ export default function OperatorSettingsScreen() {
 
   const isAdmin = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin';
   const isLocal = localMode === 'local';
+
+  // Tablet mode preference
+  const { isTablet, override: tabletOverride, setOverride: setTabletOverride } = useTabletMode();
 
   // Station info (local mode only)
   const [syncStatus, setSyncStatus] = useState<{ isOnline: boolean; pendingCount: number; lastSyncAt: string | null } | null>(null);
@@ -409,6 +414,51 @@ export default function OperatorSettingsScreen() {
         </View>
       )}
 
+      {/* Display preferences — tablet mode toggle */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <Ionicons name="tablet-portrait-outline" size={20} color={colors.primary} />
+          <Text style={styles.sectionTitle}>{t('settings.displayPreferences')}</Text>
+        </View>
+
+        <View style={styles.prefRow}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.prefTitle}>{t('settings.tabletMode')}</Text>
+            <Text style={styles.prefSub}>{t('settings.tabletModeHelp')}</Text>
+          </View>
+          <Switch
+            value={isTablet}
+            onValueChange={(val) => {
+              // Tapping toggle: if auto matches the target, store null; otherwise store explicit
+              const hardwareIsTablet = isTablet && tabletOverride === null;
+              const willMatchAuto = val === hardwareIsTablet;
+              setTabletOverride(willMatchAuto ? null : val);
+            }}
+            trackColor={{ false: colors.border, true: colors.primary + '60' }}
+            thumbColor={isTablet ? colors.primary : colors.textMuted}
+          />
+        </View>
+
+        {/* Indicator row showing current auto-detect value */}
+        <View style={styles.prefHintRow}>
+          <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.prefHint}>
+            {tabletOverride === null
+              ? t('settings.tabletModeAuto')
+              : isTablet
+              ? t('settings.tabletModeOn')
+              : t('settings.tabletModeOff')}
+          </Text>
+          {tabletOverride !== null && (
+            <TouchableOpacity onPress={() => setTabletOverride(null)}>
+              <Text style={[styles.prefHint, { color: colors.primary, marginStart: 4 }]}>
+                {t('settings.tabletModeAuto')}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {/* Account — only in cloud mode */}
       {!isLocal && (
         <View style={styles.section}>
@@ -631,6 +681,34 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     marginTop: 1,
+  },
+
+  // Tablet mode pref row
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  prefTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  prefSub: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    lineHeight: 17,
+  },
+  prefHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: -spacing.xs,
+  },
+  prefHint: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
   },
 
   // Logout

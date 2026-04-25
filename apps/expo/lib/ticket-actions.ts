@@ -450,8 +450,18 @@ export async function resetToQueue(ticketId: string) {
 }
 
 // ── Park Ticket (put on hold) ─────────────────────────────────────
-// Matches web: reverts to waiting, clears desk assignment, keeps parked_at
+// Sets parked_at timestamp and moves to waiting. Preserves serving_started_at
+// so that resumeParkedTicket can detect it was previously being served and
+// chain called → serving automatically (mirroring Station's park/resume logic).
 export async function parkTicket(ticketId: string) {
+  // Read current serving_started_at before we overwrite status so we can
+  // keep it on the parked row as a resume signal.
+  const { data: current } = await supabase
+    .from('tickets')
+    .select('serving_started_at')
+    .eq('id', ticketId)
+    .single();
+
   const { error } = await supabase
     .from('tickets')
     .update({
@@ -459,7 +469,9 @@ export async function parkTicket(ticketId: string) {
       desk_id: null,
       called_at: null,
       called_by_staff_id: null,
-      serving_started_at: null,
+      // Intentionally KEEP serving_started_at so resumeParkedTicket knows to
+      // chain called → serving on resume (Station parity).
+      serving_started_at: current?.serving_started_at ?? null,
       parked_at: new Date().toISOString(),
     })
     .eq('id', ticketId);
@@ -467,6 +479,10 @@ export async function parkTicket(ticketId: string) {
 }
 
 // ── Resume Parked Ticket (call to desk) ──────────────────────────
+// Station parity: if the ticket had serving_started_at set when it was parked,
+// it was previously being served. We MUST go through 'called' first (the
+// transition validator forbids waiting → serving directly), then immediately
+// chain to 'serving' to restore the serving state.
 export async function resumeParkedTicket(
   ticketId: string,
   deskId: string,
@@ -484,17 +500,44 @@ export async function resumeParkedTicket(
     throw new Error('Desk already has an active ticket. Complete or park it first.');
   }
 
-  const { error } = await supabase
+  // Read the parked ticket to check if it was previously serving
+  const { data: parked } = await supabase
+    .from('tickets')
+    .select('serving_started_at')
+    .eq('id', ticketId)
+    .single();
+
+  const wasServing = !!parked?.serving_started_at;
+  const now = new Date().toISOString();
+
+  // Step 1: transition waiting → called (always valid)
+  const { error: callErr } = await supabase
     .from('tickets')
     .update({
       status: 'called',
       desk_id: deskId,
       called_by_staff_id: staffId,
-      called_at: new Date().toISOString(),
+      called_at: now,
       parked_at: null,
     })
     .eq('id', ticketId);
-  if (error) throw new Error(error.message);
+  if (callErr) throw new Error(callErr.message);
+
+  // Step 2: if ticket was previously serving, chain called → serving immediately
+  if (wasServing) {
+    const { error: serveErr } = await supabase
+      .from('tickets')
+      .update({
+        status: 'serving',
+        // Restore original serving_started_at so elapsed timer is accurate
+        serving_started_at: parked!.serving_started_at,
+      })
+      .eq('id', ticketId);
+    if (serveErr) throw new Error(serveErr.message);
+    triggerNotification(ticketId, 'serving').catch(() => {});
+  } else {
+    triggerNotification(ticketId, 'called').catch(() => {});
+  }
 }
 
 // ── Unpark Ticket (send back to queue) ───────────────────────────

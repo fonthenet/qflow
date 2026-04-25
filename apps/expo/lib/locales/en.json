@@ -436,7 +436,18 @@
     "newest": "Newest",
     "oldest": "Oldest",
     "queueOverview": "Queue Overview",
-    "offlineMsg": "Connection lost — working offline. Actions will sync when restored."
+    "offlineMsg": "Connection lost — working offline. Actions will sync when restored.",
+    "upcoming": "Upcoming today",
+    "viewQueue": "Queue",
+    "viewTables": "Tables"
+  },
+
+  "floorMap": {
+    "waitingInQueue": "{{count}} waiting",
+    "seats": "seats",
+    "free": "Free",
+    "occupied": "Occupied",
+    "onHold": "On hold"
   },
 
   "operatorQueue": {
@@ -505,7 +516,13 @@
     "offline": "Offline",
     "view": "View",
     "displayUnavailable": "Display not available",
-    "kioskUnavailable": "Kiosk not available"
+    "kioskUnavailable": "Kiosk not available",
+    "tabletMode": "Tablet mode",
+    "tabletModeHelp": "Optimizes layout for tablets — two-pane view, larger targets, bigger typography.",
+    "tabletModeAuto": "Auto (based on device)",
+    "tabletModeOn": "Enabled",
+    "tabletModeOff": "Disabled",
+    "displayPreferences": "Display preferences"
   },
 
   "customer": {

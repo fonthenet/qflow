@@ -106,7 +106,26 @@ export function App() {
     apply();
     const handler = () => apply();
     window.addEventListener('qflo:touch-mode-changed', handler);
-    return () => window.removeEventListener('qflo:touch-mode-changed', handler);
+    // Keyboard escape hatch — Ctrl+Shift+T toggles touch mode globally.
+    // Critical: if touch CSS ever hides the Settings entry point, the
+    // operator must still be able to disable it without editing files.
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+        e.preventDefault();
+        try {
+          const cur = localStorage.getItem('qflo_touch_mode') === 'true';
+          const next = !cur;
+          localStorage.setItem('qflo_touch_mode', next ? 'true' : 'false');
+          window.dispatchEvent(new CustomEvent('qflo:touch-mode-changed'));
+          (window as any).qf?.touchMode?.setEnabled?.(next);
+        } catch {}
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('qflo:touch-mode-changed', handler);
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   // Load saved session on mount

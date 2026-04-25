@@ -29,6 +29,9 @@ import { supabase } from '@/lib/supabase';
 import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { TableSuggestion } from '@/components/TableSuggestion';
+import { FloorMap } from '@/components/FloorMap';
+import { useTabletMode } from '@/lib/use-tablet-mode';
+import { useFloorView } from '@/lib/use-floor-view';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,13 +70,13 @@ function useTimer(running: boolean) {
   return tick;
 }
 
-function useScreenWidth() {
-  const [width, setWidth] = useState(Dimensions.get('window').width);
+function useScreenDimensions() {
+  const [dims, setDims] = useState(Dimensions.get('window'));
   useEffect(() => {
-    const sub = Dimensions.addEventListener('change', ({ window }) => setWidth(window.width));
+    const sub = Dimensions.addEventListener('change', ({ window }) => setDims(window));
     return () => sub.remove();
   }, []);
-  return width;
+  return dims;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +310,14 @@ export default function DeskScreen() {
   const [upcomingAppts, setUpcomingAppts] = useState<any[]>([]);
   const [businessCategory, setBusinessCategory] = useState<string | null>(null);
 
-  // Pull org business_category once so TableSuggestion knows whether
+  // Tablet mode detection (hardware + user override)
+  const { isTablet } = useTabletMode();
+
+  // Floor view toggle (restaurant/cafe only)
+  const { supportsFloorView, mode: floorViewMode, toggle: toggleFloorView } = useFloorView(businessCategory);
+  const isFloorView = supportsFloorView && floorViewMode === 'floor';
+
+  // Pull org business_category once so TableSuggestion and FloorView know whether
   // to render at all.
   useEffect(() => {
     if (!orgId) return;
@@ -320,8 +330,9 @@ export default function DeskScreen() {
     return () => { cancelled = true; };
   }, [orgId]);
 
-  const screenWidth = useScreenWidth();
-  const isWide = screenWidth > 768;
+  const screenDims = useScreenDimensions();
+  // Two-pane layout when tablet mode is on OR when the screen is inherently wide (>=768)
+  const isWide = isTablet || screenDims.width >= 768;
 
   // ── Offline detection ────────────────────────────────────────────
   const [isOffline, setIsOffline] = useState(false);
@@ -714,7 +725,7 @@ export default function DeskScreen() {
     setSwitchLoading(false);
   };
 
-  // ── Header: Switch Desk (left) + title with desk name + pause/local (right) ───
+  // ── Header: Switch Desk (left) + title with desk name + pause/floor-toggle/local (right) ───
   const navigation = useNavigation();
   const connectionStatus = useLocalConnectionStore((s) => s.connectionStatus);
   const isLocalMode = localMode === 'local';
@@ -735,6 +746,31 @@ export default function DeskScreen() {
       ),
       headerRight: () => (
         <View style={styles.headerRightRow}>
+          {/* Restaurant/cafe floor ↔ queue toggle */}
+          {supportsFloorView ? (
+            <View style={styles.floorTogglePills}>
+              <TouchableOpacity
+                style={[styles.floorPill, floorViewMode === 'queue' && styles.floorPillActive]}
+                onPress={() => floorViewMode !== 'queue' && toggleFloorView()}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="list-outline" size={13} color={floorViewMode === 'queue' ? '#fff' : '#86efac'} />
+                <Text style={[styles.floorPillText, floorViewMode === 'queue' && styles.floorPillTextActive]}>
+                  {t('desk.viewQueue')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.floorPill, floorViewMode === 'floor' && styles.floorPillActive]}
+                onPress={() => floorViewMode !== 'floor' && toggleFloorView()}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="grid-outline" size={13} color={floorViewMode === 'floor' ? '#fff' : '#86efac'} />
+                <Text style={[styles.floorPillText, floorViewMode === 'floor' && styles.floorPillTextActive]}>
+                  {t('desk.viewTables')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
           {showPauseInHeader ? (
             <TouchableOpacity
               style={styles.headerPauseChip}
@@ -774,6 +810,9 @@ export default function DeskScreen() {
     isLocalMode,
     connectionStatus,
     router,
+    supportsFloorView,
+    floorViewMode,
+    toggleFloorView,
   ]);
 
   // ── Guards ───────────────────────────────────────────────────────
@@ -875,7 +914,13 @@ export default function DeskScreen() {
       {/* Header: ticket # + status capsule (with service timer stacked below on serving) */}
       <View style={styles.ticketHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap', flex: 1 }}>
-          <Text style={styles.ticketNumber}>{activeTicket.ticket_number}</Text>
+          <Text style={[
+            styles.ticketNumber,
+            isTablet && !isFloorView && styles.ticketNumberTablet,
+            isFloorView && styles.ticketNumberCompact,
+          ]}>
+            {activeTicket.ticket_number}
+          </Text>
         </View>
         <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
           <View
@@ -1305,6 +1350,34 @@ export default function DeskScreen() {
   // Quick Links removed — queue tab handles this
 
   // ── Layout ───────────────────────────────────────────────────────
+  // Right-pane content: either Floor Map or Waiting Queue List
+  const RightPaneContent = isFloorView ? (
+    <View style={[isWide ? styles.rightColumn : styles.floorMapPhone]}>
+      <FloorMap
+        officeId={officeId}
+        waitingCount={queue.waiting.length}
+        activeTickets={[...queue.called, ...queue.serving] as any}
+        parkedTickets={queue.parked as any}
+        compact={hasActive}
+        onSelectOccupied={(ticket) => {
+          // Tapping an occupied table scrolls focus to that ticket — for now
+          // we surface the same confirmAction call as calling a specific ticket.
+          if (deskId && staffId && !hasActive) {
+            handleCallSpecific(ticket as any);
+          }
+        }}
+        onSeatNext={(_tableLabel) => {
+          // Seat the next waiting customer
+          handleCallNext();
+        }}
+      />
+    </View>
+  ) : (
+    <View style={isWide ? styles.rightColumn : undefined}>
+      {WaitingQueueList}
+    </View>
+  );
+
   const leftColumn = (
     <View style={isWide ? styles.leftColumn : undefined}>
       {OnBreakBanner}
@@ -1315,11 +1388,7 @@ export default function DeskScreen() {
     </View>
   );
 
-  const rightColumn = (
-    <View style={isWide ? styles.rightColumn : undefined}>
-      {WaitingQueueList}
-    </View>
-  );
+  const rightColumn = RightPaneContent;
 
   const OfflineBanner = isOffline ? (
     <View style={styles.offlineBanner}>
@@ -1363,8 +1432,9 @@ export default function DeskScreen() {
             {CurrentTicketCard}
             {CallNextButton}
             {ParkedSection}
-            {WaitingQueueList}
-            {RecentlyServedSection}
+            {/* Phone: show floor map OR waiting queue based on toggle */}
+            {RightPaneContent}
+            {!isFloorView && RecentlyServedSection}
           </>
         )}
       </ScrollView>
@@ -1628,6 +1698,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
     marginTop: spacing.xs,
+  },
+  // Tablet: bigger ticker number (128pt)
+  ticketNumberTablet: {
+    fontSize: 128,
+    lineHeight: 132,
+  },
+  // Compact: smaller ticket number when in floor/table view alongside the map
+  ticketNumberCompact: {
+    fontSize: 36,
+    lineHeight: 40,
+    marginTop: 0,
   },
   statusBadge: {
     paddingHorizontal: spacing.md,
@@ -2008,6 +2089,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginRight: spacing.sm,
+  },
+  // Floor/Queue toggle pills in header
+  floorTogglePills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: borderRadius.full,
+    padding: 2,
+    gap: 2,
+  },
+  floorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+  },
+  floorPillActive: {
+    backgroundColor: colors.primary,
+  },
+  floorPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#86efac',
+  },
+  floorPillTextActive: {
+    color: '#fff',
+  },
+  // Phone floor map wrapper — full-width below the active ticket panel
+  floorMapPhone: {
+    minHeight: 280,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
   },
   headerPauseChip: {
     flexDirection: 'row',

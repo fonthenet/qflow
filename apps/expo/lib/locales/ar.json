@@ -436,7 +436,18 @@
     "newest": "الأحدث",
     "oldest": "الأقدم",
     "queueOverview": "نظرة عامة على الطابور",
-    "offlineMsg": "انقطع الاتصال — وضع غير متصل. سيتم مزامنة الإجراءات عند العودة."
+    "offlineMsg": "انقطع الاتصال — وضع غير متصل. سيتم مزامنة الإجراءات عند العودة.",
+    "upcoming": "مواعيد اليوم",
+    "viewQueue": "الطابور",
+    "viewTables": "الطاولات"
+  },
+
+  "floorMap": {
+    "waitingInQueue": "{{count}} في الانتظار",
+    "seats": "مقاعد",
+    "free": "متاح",
+    "occupied": "مشغول",
+    "onHold": "قيد الانتظار"
   },
 
   "operatorQueue": {
@@ -505,7 +516,13 @@
     "offline": "غير متصل",
     "view": "عرض",
     "displayUnavailable": "الشاشة غير متاحة",
-    "kioskUnavailable": "الكشك غير متاح"
+    "kioskUnavailable": "الكشك غير متاح",
+    "tabletMode": "وضع الجهاز اللوحي",
+    "tabletModeHelp": "يُحسّن التخطيط للأجهزة اللوحية — عرض لوحة مزدوجة، أهداف أكبر، طباعة أوضح.",
+    "tabletModeAuto": "تلقائي (حسب الجهاز)",
+    "tabletModeOn": "مفعّل",
+    "tabletModeOff": "معطّل",
+    "displayPreferences": "تفضيلات العرض"
   },
 
   "customer": {
