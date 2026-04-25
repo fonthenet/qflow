@@ -38,6 +38,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/lifecycle', () => ({
   transitionAppointment: transitionAppointmentMock,
+  onTicketTerminal: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/actions/appointment-actions', () => ({
@@ -277,8 +278,14 @@ describe('POST /api/moderate-appointment', () => {
     updateChain.in = vi.fn().mockResolvedValue({ error: null });
     updateChain.then = (fn: any) => Promise.resolve({ error: null }).then(fn);
 
+    const selectChain: any = {};
+    selectChain.eq = vi.fn().mockReturnValue(selectChain);
+    selectChain.in = vi.fn().mockResolvedValue({ data: [], error: null });
+    selectChain.single = vi.fn().mockResolvedValue({ data: null, error: null });
+
     mockAdminSupabase.from.mockImplementation((table: string) => ({
       update: vi.fn().mockReturnValue(updateChain),
+      select: vi.fn().mockReturnValue(selectChain),
     }));
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'complete' });

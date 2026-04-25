@@ -126,6 +126,44 @@ export async function updateOrganizationProfile(data: {
   const context = await getStaffContext();
   await requireOrganizationAdmin(context);
 
+  if (data.timezone != null && data.timezone !== '') {
+    if (data.timezone.length > 64) {
+      return { error: 'Timezone must not exceed maximum length of 64 characters' };
+    }
+    const supported = Intl.supportedValuesOf('timeZone');
+    if (!supported.includes(data.timezone)) {
+      return { error: 'Invalid timezone' };
+    }
+  }
+
+  if (data.locale_primary != null && data.locale_primary !== '') {
+    if (data.locale_primary.length > 64) {
+      return { error: 'locale_primary must not exceed maximum length of 64 characters' };
+    }
+    const resolvedCountry = data.country ??
+      (await context.supabase
+        .from('organizations')
+        .select('country')
+        .eq('id', context.staff.organization_id)
+        .single()
+      ).data?.country;
+
+    if (resolvedCountry) {
+      const { data: config } = await context.supabase
+        .from('country_config')
+        .select('locale_default, locale_fallbacks')
+        .eq('country', resolvedCountry)
+        .maybeSingle();
+
+      if (config) {
+        const allowed = [config.locale_default, ...(config.locale_fallbacks ?? [])];
+        if (!allowed.includes(data.locale_primary)) {
+          return { error: `locale_primary '${data.locale_primary}' is not allowed for country '${resolvedCountry}'` };
+        }
+      }
+    }
+  }
+
   const { error } = await context.supabase
     .from('organizations')
     .update({

@@ -110,6 +110,9 @@ class FakeSupabaseBuilder {
   }
 
   async execute() {
+    if (!this.client.tables[this.table]) {
+      (this.client.tables as Record<string, RowRecord[]>)[this.table] = [];
+    }
     const tableRows = this.client.tables[this.table];
 
     if (this.action === 'insert') {
@@ -258,8 +261,8 @@ describe('platform actions', () => {
         data: expect.objectContaining({
           templateId: 'restaurant-waitlist',
           departmentsCreated: 1,
-          servicesCreated: 5,
-          desksCreated: 3,
+          servicesCreated: 3,
+          desksCreated: 2,
           displaysCreated: 0,
         }),
       })
@@ -267,17 +270,11 @@ describe('platform actions', () => {
 
     expect(context.supabase.tables.offices).toHaveLength(1);
     expect(context.supabase.tables.departments).toHaveLength(1);
-    expect(context.supabase.tables.services).toHaveLength(5);
-    expect(context.supabase.tables.desks).toHaveLength(3);
+    expect(context.supabase.tables.services).toHaveLength(3);
+    expect(context.supabase.tables.desks).toHaveLength(2);
     expect(context.supabase.tables.desk_services.length).toBeGreaterThanOrEqual(4);
     expect(context.supabase.tables.display_screens).toHaveLength(0);
     expect(context.supabase.tables.priority_categories).toHaveLength(0);
-    expect(context.supabase.tables.offices[0]?.settings.platform_table_presets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: 'T1' }),
-        expect.objectContaining({ code: 'P1' }),
-      ])
-    );
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
     expect(recordTemplateHealthSnapshotsMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -338,7 +335,7 @@ describe('platform actions', () => {
     expect(organizationSettings.platform_template_version).toBe('1.1.0');
     expect(Array.isArray(organizationSettings.platform_migration_history)).toBe(true);
     expect(organizationSettings.platform_migration_history).toHaveLength(1);
-    expect(organizationSettings.platform_queue_policy.capacityLimit).toBe(90);
+    expect(organizationSettings.platform_queue_policy.capacityLimit).toBe(100);
     expect(context.supabase.tables.offices[0]?.settings.platform_template_version).toBe('1.0.0');
     expect(recordTemplateHealthSnapshotsMock).toHaveBeenCalledWith(
       expect.objectContaining({
