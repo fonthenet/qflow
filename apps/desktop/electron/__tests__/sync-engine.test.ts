@@ -4,6 +4,10 @@ import { createTestDB } from './helpers';
 
 // Mock electron safeStorage
 vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: () => '/tmp/test',
+  },
   safeStorage: {
     isEncryptionAvailable: () => false,
     decryptString: () => '',
@@ -13,6 +17,7 @@ vi.mock('electron', () => ({
 // Mock logTicketEvent from db module
 vi.mock('../db', () => ({
   logTicketEvent: vi.fn(),
+  setSyncNotifier: vi.fn(),
 }));
 
 // Import after mocks are set up

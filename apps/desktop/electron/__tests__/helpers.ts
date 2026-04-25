@@ -29,7 +29,8 @@ export function createTestDB(): Database.Database {
       is_remote INTEGER DEFAULT 0,
       is_offline INTEGER DEFAULT 0,
       appointment_id TEXT,
-      synced_at TEXT
+      synced_at TEXT,
+      organization_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS offices (
@@ -48,6 +49,7 @@ export function createTestDB(): Database.Database {
       name TEXT NOT NULL,
       code TEXT,
       office_id TEXT,
+      organization_id TEXT,
       updated_at TEXT
     );
 
@@ -55,6 +57,7 @@ export function createTestDB(): Database.Database {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       department_id TEXT,
+      organization_id TEXT,
       estimated_service_time INTEGER DEFAULT 10,
       updated_at TEXT
     );
@@ -79,7 +82,8 @@ export function createTestDB(): Database.Database {
       attempts INTEGER DEFAULT 0,
       last_error TEXT,
       synced_at TEXT,
-      next_retry_at TEXT
+      next_retry_at TEXT,
+      organization_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS session (
@@ -101,6 +105,56 @@ export function createTestDB(): Database.Database {
       counter INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT,
       PRIMARY KEY (office_id, dept_code)
+    );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      settings TEXT DEFAULT '{}',
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      id TEXT PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      organization_id TEXT,
+      office_id TEXT,
+      role TEXT DEFAULT 'operator',
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS menu_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      organization_id TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      organization_id TEXT,
+      category_id TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS broadcast_templates (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT,
+      title TEXT NOT NULL,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_signups (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'queued',
+      payload TEXT NOT NULL,
+      attempt_count INTEGER DEFAULT 0,
+      synced_org_id TEXT,
+      error_message TEXT,
+      last_attempted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_tickets_office_status ON tickets(office_id, status);
