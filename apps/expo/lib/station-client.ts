@@ -183,6 +183,45 @@ export async function stationUpdateTicket(
   return res.json();
 }
 
+export async function stationUpdateTable(
+  baseUrl: string,
+  payload: {
+    officeId: string;
+    tableId?: string;
+    tableLabel?: string;
+    ticketId: string | null;
+    status?: 'occupied' | 'available' | 'on_hold' | 'reserved';
+  },
+) {
+  const res = await authedFetch(baseUrl, `/api/station/update-table`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = await res.json();
+      if (body && typeof body.error === 'string') detail = `: ${body.error}`;
+    } catch { /* ignore */ }
+    throw new Error(`Update table failed (${res.status})${detail}`);
+  }
+  return res.json();
+}
+
+export async function stationReleaseTableForTicket(
+  baseUrl: string,
+  payload: { officeId: string; ticketId: string },
+) {
+  const res = await authedFetch(baseUrl, `/api/station/release-table`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Release table failed: ${res.status}`);
+  return res.json() as Promise<{ released: number }>;
+}
+
 export async function stationCallNext(
   baseUrl: string,
   officeId: string,
@@ -202,7 +241,7 @@ export async function stationCallNext(
 
 export async function stationQuery(
   baseUrl: string,
-  table: 'departments' | 'services' | 'desks',
+  table: 'departments' | 'services' | 'desks' | 'restaurant_tables',
   officeIds: string[],
 ) {
   const params = new URLSearchParams({

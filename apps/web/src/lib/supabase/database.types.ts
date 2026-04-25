@@ -2690,6 +2690,8 @@ export type Database = {
           added_at: string
           added_by: string | null
           id: string
+          kitchen_status: string
+          kitchen_status_at: string | null
           menu_item_id: string | null
           name: string
           note: string | null
@@ -2702,6 +2704,8 @@ export type Database = {
           added_at?: string
           added_by?: string | null
           id?: string
+          kitchen_status?: string
+          kitchen_status_at?: string | null
           menu_item_id?: string | null
           name: string
           note?: string | null
@@ -2714,6 +2718,8 @@ export type Database = {
           added_at?: string
           added_by?: string | null
           id?: string
+          kitchen_status?: string
+          kitchen_status_at?: string | null
           menu_item_id?: string | null
           name?: string
           note?: string | null

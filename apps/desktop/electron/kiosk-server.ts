@@ -505,6 +505,15 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
         }
       } else if (path === '/display' && req.method === 'GET') {
         void serveDisplayPage(url, res);
+      } else if (path === '/kitchen' && req.method === 'GET') {
+        // Kitchen Display lives in the Next.js web app (full KDS with
+        // realtime + mutating buttons). The local Station HTTP server
+        // can't render Next.js routes, so we 302 the kitchen tablet to
+        // the cloud short alias /kd/<officeToken>. If the tablet is
+        // offline the redirect will fail and the browser shows its
+        // standard "no internet" page — kitchens are expected to have
+        // wifi to the same router as Station, so this works in practice.
+        serveKitchenRedirect(url, res);
       } else if (path.startsWith('/track/') && req.method === 'GET') {
         const ticketNumber = decodeURIComponent(path.replace('/track/', ''));
         serveTrackingPage(ticketNumber, res);
@@ -577,6 +586,10 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
           handleStationBody(req, res, handleStationUpdateTicket);
         } else if (path === '/api/station/update-desk' && req.method === 'POST') {
           handleStationBody(req, res, handleStationUpdateDesk);
+        } else if (path === '/api/station/update-table' && req.method === 'POST') {
+          handleStationBody(req, res, handleStationUpdateTable);
+        } else if (path === '/api/station/release-table' && req.method === 'POST') {
+          handleStationBody(req, res, handleStationReleaseTableForTicket);
         } else if (path === '/api/station/call-next' && req.method === 'POST') {
           handleStationBody(req, res, handleStationCallNext);
         } else if (path === '/api/station/query' && req.method === 'GET') {
@@ -2052,6 +2065,51 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
 }
 
 // ── Display Page (Waiting Room TV) ────────────────────────────────
+
+// Kitchen Display redirect — sends the kitchen tablet to the cloud
+// /kd/<officeToken> short URL where the full Next.js KDS lives. The
+// local server doesn't host the KDS itself because it requires the
+// Next.js app for realtime mutations + RLS-validated server actions.
+// Resolves the office from the optional ?officeId= query (mirrors how
+// the kiosk/display URLs work) or falls back to the current Station
+// session's office. Renders a tiny offline-friendly landing page if
+// no office can be resolved so the operator gets a clear message
+// rather than a confusing redirect to a 404.
+function serveKitchenRedirect(url: URL, res: http.ServerResponse) {
+  try {
+    const queryOfficeId = url.searchParams.get('officeId');
+    let officeId: string | null = queryOfficeId && queryOfficeId.length > 0 ? queryOfficeId : null;
+
+    if (!officeId) {
+      const db = getDB();
+      const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+      officeId =
+        typeof session?.office_id === 'string' && session.office_id.length > 0
+          ? session.office_id
+          : Array.isArray(session?.office_ids) && typeof session.office_ids[0] === 'string'
+            ? session.office_ids[0]
+            : null;
+    }
+
+    if (!officeId) {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><meta charset="utf-8"><title>Qflo Kitchen</title><body style="font-family:system-ui;padding:40px;text-align:center;background:#0f172a;color:#fff"><h1>Kitchen Display unavailable</h1><p>No office bound to this Station yet. Sign in on the Station first.</p></body>');
+      return;
+    }
+
+    const officeToken = officeId.replace(/-/g, '').slice(0, 16);
+    const target = `${CLOUD_URL}/kd/${officeToken}`;
+    res.writeHead(302, {
+      Location: target,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    });
+    res.end();
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Kitchen redirect failed');
+  }
+}
 
 async function serveDisplayPage(url: URL, res: http.ServerResponse) {
   const ip = getLocalIP();
@@ -3696,6 +3754,13 @@ function handleStationQuery(url: URL, res: http.ServerResponse) {
       });
       break;
     }
+    case 'restaurant_tables': {
+      result = db.prepare(
+        `SELECT id, office_id, code, label, zone, capacity, min_party_size, max_party_size, reservable, status, current_ticket_id, assigned_at
+         FROM restaurant_tables WHERE office_id IN (${ph}) ORDER BY code`
+      ).all(...officeIds);
+      break;
+    }
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(result));
@@ -4199,6 +4264,147 @@ function handleStationUpdateDesk(body: any, res: http.ServerResponse) {
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ id: deskId, ...safe }));
+}
+
+// ── Update Restaurant Table (seat / move / release) ─────────────────
+// Body shape: { officeId, tableLabel?: string, tableId?: string,
+//               ticketId: string | null,  // null = release
+//               status?: 'occupied'|'available'|'on_hold'|'reserved' }
+// Either tableId or tableLabel must be provided. tableLabel matches against
+// label OR code. When ticketId is null, the row is released (status=available,
+// current_ticket_id=null, assigned_at=null) and any other row currently
+// holding the same ticket is also released to avoid duplicates.
+function handleStationUpdateTable(body: any, res: http.ServerResponse) {
+  const db = getDB();
+  const { officeId, tableId, tableLabel, ticketId, status } = body || {};
+  if (!officeId || (!tableId && !tableLabel && ticketId === undefined)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing officeId and (tableId|tableLabel|ticketId)' }));
+    return;
+  }
+
+  try {
+    // Pure release path: caller passed ticketId=null with no table — clear any
+    // table linked to this ticket (used when a ticket terminates).
+    if (ticketId === null && !tableId && !tableLabel) {
+      const rows = db.prepare(
+        'SELECT id FROM restaurant_tables WHERE office_id = ? AND current_ticket_id IS NOT NULL'
+      ).all(officeId) as any[];
+      // We can't filter on current_ticket_id without it. Caller needs to pass
+      // the ticketId in the WHERE — so do that explicitly.
+      // (Above query is just a no-op safety; real release uses next branch.)
+      void rows;
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Release requires tableId, tableLabel, or pass ticketId in releaseByTicket flow' }));
+      return;
+    }
+
+    // Find target row
+    let row: any = null;
+    if (tableId) {
+      row = db.prepare('SELECT id, office_id FROM restaurant_tables WHERE id = ?').get(tableId);
+    } else if (tableLabel) {
+      row = db.prepare(
+        'SELECT id, office_id FROM restaurant_tables WHERE office_id = ? AND (label = ? OR code = ?) LIMIT 1'
+      ).get(officeId, tableLabel, tableLabel);
+    }
+    if (!row) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Table not found' }));
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const isRelease = ticketId === null;
+    const nextStatus = status ?? (isRelease ? 'available' : 'occupied');
+    const nextAssignedAt = isRelease ? null : now;
+
+    // If we're seating a ticket, first release any other row that currently
+    // holds the same ticket — a ticket can only be at one table at a time.
+    if (!isRelease && ticketId) {
+      db.prepare(
+        `UPDATE restaurant_tables
+            SET status = 'available', current_ticket_id = NULL, assigned_at = NULL, updated_at = ?
+          WHERE current_ticket_id = ? AND id != ?`
+      ).run(now, ticketId, row.id);
+    }
+
+    db.prepare(
+      `UPDATE restaurant_tables
+          SET status = ?, current_ticket_id = ?, assigned_at = ?, updated_at = ?
+        WHERE id = ?`
+    ).run(nextStatus, isRelease ? null : ticketId, nextAssignedAt, now, row.id);
+
+    // Enqueue sync to cloud
+    const syncId = enqueueSync({
+      id: `table-${row.id}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'restaurant_tables',
+      recordId: row.id,
+      payload: {
+        status: nextStatus,
+        current_ticket_id: isRelease ? null : ticketId,
+        assigned_at: nextAssignedAt,
+        updated_at: now,
+      },
+    });
+    onTicketCreated?.(syncId);
+
+    notifyStationClients({ type: 'tickets_changed' });
+
+    const updated = db.prepare(
+      `SELECT id, office_id, code, label, status, current_ticket_id, assigned_at
+         FROM restaurant_tables WHERE id = ?`
+    ).get(row.id);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(updated));
+  } catch (err: any) {
+    logger.error('KioskServer', 'Table update failed', { body, error: err?.message });
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err?.message ?? 'Table update failed' }));
+  }
+}
+
+// Release any restaurant_tables row currently linked to this ticket. Used
+// when a ticket terminates (served/no_show/cancelled/parked/requeued) so the
+// floor map updates instantly without waiting for a sync round-trip.
+function handleStationReleaseTableForTicket(body: any, res: http.ServerResponse) {
+  const db = getDB();
+  const { ticketId, officeId } = body || {};
+  if (!ticketId || !officeId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing ticketId or officeId' }));
+    return;
+  }
+  try {
+    const now = new Date().toISOString();
+    const rows = db.prepare(
+      'SELECT id FROM restaurant_tables WHERE office_id = ? AND current_ticket_id = ?'
+    ).all(officeId, ticketId) as any[];
+    for (const r of rows) {
+      db.prepare(
+        `UPDATE restaurant_tables
+            SET status = 'available', current_ticket_id = NULL, assigned_at = NULL, updated_at = ?
+          WHERE id = ?`
+      ).run(now, r.id);
+      const syncId = enqueueSync({
+        id: `table-${r.id}-${Date.now()}`,
+        operation: 'UPDATE',
+        table: 'restaurant_tables',
+        recordId: r.id,
+        payload: { status: 'available', current_ticket_id: null, assigned_at: null, updated_at: now },
+      });
+      onTicketCreated?.(syncId);
+    }
+    notifyStationClients({ type: 'tickets_changed' });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ released: rows.length }));
+  } catch (err: any) {
+    logger.error('KioskServer', 'Table release failed', { body, error: err?.message });
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err?.message ?? 'Table release failed' }));
+  }
 }
 
 async function handleStationCallNext(body: any, res: http.ServerResponse) {

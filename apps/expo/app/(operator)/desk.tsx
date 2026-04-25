@@ -30,6 +30,14 @@ import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { TableSuggestion } from '@/components/TableSuggestion';
 import { FloorMap } from '@/components/FloorMap';
+import { ClientPickerModal } from '@/components/ClientPickerModal';
+import { TableActionSheet } from '@/components/TableActionSheet';
+import { TablePickerModal } from '@/components/TablePickerModal';
+import { OrderPad } from '@/components/OrderPad';
+import { fetchTicketItems, updateTicketItem, deleteTicketItem, fetchTicketPayments, fetchTicketIdsWithItems } from '@/lib/data-adapter';
+import type { TicketItem, TicketPayment } from '@qflo/shared';
+import { CashPaymentSheet } from '@/components/CashPaymentSheet';
+import { parsePartySize, type RestaurantTable } from '@qflo/shared';
 import { useTabletMode } from '@/lib/use-tablet-mode';
 import { useFloorView } from '@/lib/use-floor-view';
 
@@ -307,6 +315,43 @@ export default function DeskScreen() {
   const [switchDeskVisible, setSwitchDeskVisible] = useState(false);
   const [availableDesks, setAvailableDesks] = useState<any[]>([]);
   const [switchLoading, setSwitchLoading] = useState(false);
+  // Client picker modal — opened when an empty table on the FloorMap is tapped
+  // so the operator can choose which waiting customer to seat there.
+  const [clientPickerTable, setClientPickerTable] = useState<string | null>(null);
+  const [clientPickerBusy, setClientPickerBusy] = useState(false);
+  // Table action sheet — opened when an occupied/on-hold table is tapped on
+  // the FloorMap. Holds the selected table + its current ticket so the sheet
+  // can surface status-aware controls (Mark served / Move / Release / etc).
+  const [tableSheetTable, setTableSheetTable] = useState<any | null>(null);
+  const [tableSheetTicket, setTableSheetTicket] = useState<QueueTicket | null>(null);
+  // Move flow — when the operator chooses "Move" inside the action sheet we
+  // open the full TablePickerModal scoped to the active ticket so they can
+  // pick the destination. Tracks the ticket being moved.
+  const [moveTicket, setMoveTicket] = useState<QueueTicket | null>(null);
+  const [allTables, setAllTables] = useState<RestaurantTable[]>([]);
+  // Counter we bump after a seat / release action so the FloorMap
+  // re-fetches `restaurant_tables` immediately instead of waiting on its
+  // 4s poll. Gives the operator instant visual feedback on the floor.
+  const [floorRefreshKey, setFloorRefreshKey] = useState(0);
+  const [tableSheetBusy, setTableSheetBusy] = useState(false);
+  // Order flow state. The action sheet renders an inline editable
+  // summary of ticket_items; tapping "Add items" opens the OrderPad,
+  // which is a sibling modal (iOS can't stack RN Modals — same caveat
+  // as moveTicket). When the OrderPad closes, we restore the action
+  // sheet on the same table+ticket so the operator picks up where
+  // they left off, with the items just added now visible inline.
+  const [orderTicket, setOrderTicket] = useState<QueueTicket | null>(null);
+  const [orderTable, setOrderTable] = useState<any | null>(null);
+  const [tableSheetItems, setTableSheetItems] = useState<TicketItem[]>([]);
+  const [tableSheetPayments, setTableSheetPayments] = useState<TicketPayment[]>([]);
+  // Combined Serve sheet (file kept as CashPaymentSheet) — opened from
+  // the action sheet's "Mark served" button. Snapshots items + payments
+  // so the sheet still has data after we close the action sheet (which
+  // clears tableSheetItems / tableSheetPayments).
+  const [cashTicket, setCashTicket] = useState<QueueTicket | null>(null);
+  const [cashTable, setCashTable] = useState<any | null>(null);
+  const [cashItems, setCashItems] = useState<TicketItem[]>([]);
+  const [cashPayments, setCashPayments] = useState<TicketPayment[]>([]);
   const [upcomingAppts, setUpcomingAppts] = useState<any[]>([]);
   const [businessCategory, setBusinessCategory] = useState<string | null>(null);
 
@@ -329,6 +374,47 @@ export default function DeskScreen() {
     });
     return () => { cancelled = true; };
   }, [orgId]);
+
+  // Mirror the FloorMap's table list at desk level so the Move flow's picker
+  // shows the full set with capacity / occupancy hints. Refreshed every 5s
+  // while in floor view (cheap; matches FloorMap's own polling cadence).
+  useEffect(() => {
+    if (!officeId || !supportsFloorView) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await Actions.fetchRestaurantTables(officeId);
+        if (!cancelled) setAllTables((data ?? []) as RestaurantTable[]);
+      } catch {
+        if (!cancelled) setAllTables([]);
+      }
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [officeId, supportsFloorView]);
+
+  // Track which active tickets already have at least one ticket_items row
+  // — surfaces a small "food served" badge on the FloorMap so operators
+  // can spot which tables have already started ordering at a glance.
+  const [ticketsWithItems, setTicketsWithItems] = useState<Set<string>>(new Set());
+  const activeTicketIdsForItems = useMemo(
+    () => [...queue.called, ...queue.serving].map((t) => t.id).sort().join(','),
+    [queue.called, queue.serving],
+  );
+  useEffect(() => {
+    if (!supportsFloorView) return;
+    const ids = activeTicketIdsForItems ? activeTicketIdsForItems.split(',') : [];
+    if (!ids.length) {
+      setTicketsWithItems(new Set());
+      return;
+    }
+    let cancelled = false;
+    fetchTicketIdsWithItems(ids)
+      .then((set) => { if (!cancelled) setTicketsWithItems(set); })
+      .catch(() => { if (!cancelled) setTicketsWithItems(new Set()); });
+    return () => { cancelled = true; };
+  }, [activeTicketIdsForItems, supportsFloorView]);
 
   const screenDims = useScreenDimensions();
   // Two-pane layout when tablet mode is on OR when the screen is inherently wide (>=768)
@@ -481,6 +567,51 @@ export default function DeskScreen() {
   const activeTicket: QueueTicket | null = myServingTickets[0] ?? myCalledTickets[0] ?? null;
   const hasActive = activeTicket !== null;
 
+  // ── Active-ticket kitchen status ───────────────────────────────
+  // Aggregates ticket_items.kitchen_status into a single badge that
+  // sits under "Mark Served" so floor staff know whether the food is
+  // still being prepared, ready to run, or already delivered. Polled
+  // every 6s while the ticket is active; piggybacks on the existing
+  // 'kitchen:order-ready' broadcast for instant flips on "Mark all
+  // ready". Restaurant-only — silent for non-food orgs.
+  const [activeKitchenAgg, setActiveKitchenAgg] = useState<{
+    status: 'new' | 'in_progress' | 'ready' | 'mixed';
+    total: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!activeTicket?.id) {
+      setActiveKitchenAgg(null);
+      return;
+    }
+    let cancelled = false;
+    const compute = (items: any[]) => {
+      const active = items.filter((i) => (i.kitchen_status ?? 'new') !== 'served');
+      if (!active.length) return null;
+      const statuses = new Set(active.map((i) => i.kitchen_status ?? 'new'));
+      let s: 'new' | 'in_progress' | 'ready' | 'mixed';
+      if (statuses.size === 1) {
+        s = (Array.from(statuses)[0] as any);
+      } else {
+        // Worst-case wins: any 'new' → cooking shows "mixed"; if it's
+        // only in_progress + ready, surface "mixed" so staff know some
+        // is still on the pass.
+        s = 'mixed';
+      }
+      return { status: s, total: active.length };
+    };
+    const run = async () => {
+      try {
+        const items = await fetchTicketItems(activeTicket.id);
+        if (!cancelled) setActiveKitchenAgg(compute(items));
+      } catch {
+        if (!cancelled) setActiveKitchenAgg(null);
+      }
+    };
+    run();
+    const id = setInterval(run, 6000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeTicket?.id]);
+
   // Timer ticks for live elapsed display
   useTimer(hasActive);
 
@@ -577,40 +708,71 @@ export default function DeskScreen() {
       .finally(() => setActionLoading(false));
   };
 
+  // Release any restaurant_table currently linked to this ticket. Called
+  // whenever a ticket terminates (served / no-show / cancelled / re-queued)
+  // so the floor map shows the seat as free again. Routes through the
+  // data-adapter so it works in both local (Station bridge → SQLite + sync)
+  // and cloud (Supabase) modes. Best-effort — failures are logged but don't
+  // block the primary action.
+  const releaseTableForTicket = async (ticketId: string) => {
+    if (!officeId) return;
+    try {
+      await Actions.releaseTableForTicket(officeId, ticketId);
+    } catch (e) {
+      console.warn('[desk] releaseTableForTicket failed', e);
+    }
+  };
+
   const handleNoShow = () => {
     if (!activeTicket) return;
+    const id = activeTicket.id;
     confirmAction(
       t('desk.markNoShow'),
       t('adminQueue.noShowMsg', { ticket: activeTicket.ticket_number }),
-      () => Actions.markNoShow(activeTicket.id),
+      async () => {
+        await Actions.markNoShow(id);
+        await releaseTableForTicket(id);
+      },
       true,
     );
   };
 
   const handleBackToQueue = () => {
     if (!activeTicket) return;
+    const id = activeTicket.id;
     confirmAction(
       t('adminQueue.backToQueue'),
       t('adminQueue.backToQueueMsg', { ticket: activeTicket.ticket_number }),
-      () => Actions.resetToQueue(activeTicket.id),
+      async () => {
+        await Actions.resetToQueue(id);
+        await releaseTableForTicket(id);
+      },
     );
   };
 
   const handlePark = () => {
     if (!activeTicket) return;
+    const id = activeTicket.id;
     confirmAction(
       t('desk.parkHold'),
       t('adminQueue.parkMsg', { ticket: activeTicket.ticket_number }),
-      () => Actions.parkTicket(activeTicket.id),
+      async () => {
+        await Actions.parkTicket(id);
+        await releaseTableForTicket(id);
+      },
     );
   };
 
   const handleMarkServed = () => {
     if (!activeTicket) return;
+    const id = activeTicket.id;
     confirmAction(
       t('desk.markServed'),
       t('adminQueue.completeMsg', { ticket: activeTicket.ticket_number }),
-      () => Actions.markServed(activeTicket.id),
+      async () => {
+        await Actions.markServed(id);
+        await releaseTableForTicket(id);
+      },
     );
   };
 
@@ -678,6 +840,347 @@ export default function DeskScreen() {
     );
   };
 
+  // ── Table action sheet handlers ─────────────────────────────────
+  // Unified contract for every sheet button:
+  //   1. Light haptic on tap (selection feedback).
+  //   2. Close the action sheet IMMEDIATELY — RN can't reliably stack
+  //      Alert.alert over an open Modal on iOS, and we don't want the
+  //      sheet sitting visible behind a confirm dialog or while async
+  //      work is in flight.
+  //   3. Optional confirm dialog (destructive ops only).
+  //   4. Run the action, release the table seat if the ticket is
+  //      terminating, and refresh the queue.
+  //   5. Success haptic + Alert on failure.
+  const closeTableSheet = () => {
+    setTableSheetTable(null);
+    setTableSheetTicket(null);
+    setTableSheetBusy(false);
+    setTableSheetItems([]);
+    setTableSheetPayments([]);
+  };
+
+  // Pull order items + payments whenever the action sheet binds to a
+  // ticket so the inline cart, payments list, and Mark Served summary
+  // are all in sync with whatever OrderPad / CashPaymentSheet / Station
+  // wrote. Re-runs after every inline edit so totals stay live.
+  const refreshSheetItems = useCallback(async (ticketId: string) => {
+    try {
+      const [items, payments] = await Promise.all([
+        fetchTicketItems(ticketId),
+        fetchTicketPayments(ticketId).catch(() => [] as TicketPayment[]),
+      ]);
+      setTableSheetItems(items);
+      setTableSheetPayments(payments);
+    } catch (err) {
+      console.warn('[desk] refreshSheetItems failed', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tableSheetTicket?.id) {
+      refreshSheetItems(tableSheetTicket.id);
+    } else {
+      setTableSheetItems([]);
+      setTableSheetPayments([]);
+    }
+  }, [tableSheetTicket?.id, refreshSheetItems]);
+
+  // Live updates while the action sheet is open. Without this the
+  // Order list, totals, and kitchen-status pill stay frozen on the
+  // values fetched at open time — operators had to close + re-tap the
+  // table to see "Preparing → Ready" or new line items added from the
+  // kitchen / OrderPad. Supabase realtime gives instant flips; the
+  // 4s poll is a safety net for offline → online transitions.
+  useEffect(() => {
+    const tid = tableSheetTicket?.id;
+    if (!tid) return;
+    const channel = supabase
+      .channel(`table-sheet-${tid}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'ticket_items', filter: `ticket_id=eq.${tid}` },
+        () => refreshSheetItems(tid))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'ticket_payments', filter: `ticket_id=eq.${tid}` },
+        () => refreshSheetItems(tid))
+      .subscribe();
+    const poll = setInterval(() => refreshSheetItems(tid), 4000);
+    return () => {
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, [tableSheetTicket?.id, refreshSheetItems]);
+
+  type SheetActionOpts = {
+    confirm?: { title: string; message: string; destructive?: boolean };
+  };
+
+  // Single end-to-end runner used by every sheet button. Closes the
+  // sheet first so iOS doesn't have to stack a Modal under an Alert,
+  // then runs the action with full lifecycle handling.
+  const runSheetAction = (fn: () => Promise<void>, opts: SheetActionOpts = {}) => {
+    Haptics.selectionAsync().catch(() => {});
+    closeTableSheet();
+
+    const exec = async () => {
+      setActionLoading(true);
+      try {
+        await fn();
+        await refresh();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      } catch (err: any) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        Alert.alert(t('common.error'), err?.message ?? t('adminQueue.actionFailed'));
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
+    if (opts.confirm) {
+      // Defer the Alert one frame so the sheet's dismiss animation
+      // completes before iOS presents the alert — avoids the rare case
+      // where Alert presentation is dropped while a modal is closing.
+      setTimeout(() => {
+        Alert.alert(opts.confirm!.title, opts.confirm!.message, [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.confirm'),
+            style: opts.confirm!.destructive ? 'destructive' : 'default',
+            onPress: exec,
+          },
+        ]);
+      }, 50);
+    } else {
+      exec();
+    }
+  };
+
+  // ── Primary action: Start serving (called → serving) ────────────
+  const sheetStartServing = (ticket: QueueTicket) => {
+    const id = ticket.id;
+    runSheetAction(() => Actions.startServing(id));
+  };
+
+  // ── Primary action: Mark served (terminate ticket, free table) ──
+  // Opens a combined sheet that shows the order summary, lets the
+  // operator record a cash payment if one's still due, then on Finish
+  // calls markServed which auto-builds the receipt and dispatches it
+  // to the customer (server-side notifyCustomer('served')). This
+  // replaces the previous "Mark Served alert + separate Cash button"
+  // split — one tap, one screen, full visibility into what's being
+  // closed and what will be billed/sent.
+  const sheetMarkServed = async (ticket: QueueTicket) => {
+    Haptics.selectionAsync().catch(() => {});
+    // Snapshot the current items/payments BEFORE closing the action
+    // sheet — closeTableSheet clears tableSheetItems/Payments, and the
+    // combined sheet needs the data immediately on open. Also re-fetch
+    // fresh in case OrderPad just modified them and we have stale state.
+    setCashTable(tableSheetTable);
+    setCashItems(tableSheetItems);
+    setCashPayments(tableSheetPayments);
+    closeTableSheet();
+    setTimeout(() => setCashTicket(ticket), 50);
+    // Fire-and-forget refresh so the sheet shows the freshest data
+    // even if the action sheet closed before refreshSheetItems landed.
+    try {
+      const [items, payments] = await Promise.all([
+        fetchTicketItems(ticket.id),
+        fetchTicketPayments(ticket.id).catch(() => [] as TicketPayment[]),
+      ]);
+      setCashItems(items);
+      setCashPayments(payments);
+    } catch {}
+  };
+
+  // Called when the combined sheet's "Finish & send receipt" button
+  // resolves the (optional) payment. Performs the actual mark-served
+  // + table release, returns a promise so the sheet can show a busy
+  // state and only close on success.
+  const handleServeFinish = async (ticketId: string) => {
+    await Actions.markServed(ticketId);
+    await releaseTableForTicket(ticketId);
+    // Refresh queue immediately — the served ticket should fall out of
+    // active lists and the table should flip to free.
+    refresh();
+  };
+
+  const handleCashSheetClose = () => {
+    setCashTicket(null);
+    setCashTable(null);
+    setCashItems([]);
+    setCashPayments([]);
+    // No restore — once the operator hits Finish (or cancels), they
+    // expect the floor view, not a re-popped action sheet on a now
+    // empty table.
+  };
+
+  // ── Primary action: Resume a parked ticket back to active ───────
+  const sheetResume = (ticket: QueueTicket) => {
+    if (!deskId || !staffId) {
+      Alert.alert(t('common.error'), t('desk.needDeskSession'));
+      return;
+    }
+    if (hasActive) {
+      Alert.alert(t('common.error'), t('desk.needDeskSession'));
+      return;
+    }
+    const id = ticket.id;
+    runSheetAction(() => Actions.resumeParkedTicket(id, deskId, staffId));
+  };
+
+  // ── Recall: re-fire the "your turn" notification, no state change ─
+  const sheetRecall = (ticket: QueueTicket) => {
+    const id = ticket.id;
+    runSheetAction(() => Actions.recallTicket(id));
+  };
+
+  // ── Park: hold this ticket, free the table for someone else ─────
+  const sheetPark = (ticket: QueueTicket) => {
+    const id = ticket.id;
+    runSheetAction(async () => {
+      await Actions.parkTicket(id);
+      await releaseTableForTicket(id);
+    });
+  };
+
+  // ── No-show: terminal, destructive — confirm first ──────────────
+  const sheetNoShow = (ticket: QueueTicket) => {
+    const id = ticket.id;
+    runSheetAction(
+      async () => {
+        await Actions.markNoShow(id);
+        await releaseTableForTicket(id);
+      },
+      {
+        confirm: {
+          title: t('desk.markNoShow'),
+          message: t('adminQueue.noShowMsg', { ticket: ticket.ticket_number }),
+          destructive: true,
+        },
+      },
+    );
+  };
+
+  // ── Requeue: send the ticket back to waiting (reversible) ───────
+  const sheetRequeue = (ticket: QueueTicket) => {
+    const id = ticket.id;
+    runSheetAction(async () => {
+      await Actions.resetToQueue(id);
+      await releaseTableForTicket(id);
+    });
+  };
+
+  // ── Release table: free the seat without touching the ticket ────
+  // (Ticket may already be terminal, or the host wants the row back
+  //  even though the party is still being processed elsewhere.)
+  const sheetReleaseTable = (table: any) => {
+    if (!officeId) return;
+    const tableId = table.id;
+    runSheetAction(
+      async () => {
+        await Actions.clearTableById(officeId, tableId);
+      },
+      {
+        confirm: {
+          title: t('tables.release', { defaultValue: 'Release table' }),
+          message: t('tables.releaseConfirm', {
+            code: table.code || table.label || '—',
+            defaultValue: 'Release table {{code}}? The seat will be marked free.',
+          }),
+          destructive: true,
+        },
+      },
+    );
+  };
+
+  // ── Order / Add items: open OrderPad on the seated ticket ──────
+  // iOS modal-stacking: close the action sheet first, then open the
+  // OrderPad on the next frame. We stash the current table+ticket so
+  // we can re-open the action sheet automatically when the OrderPad
+  // closes — operator never loses context.
+  const sheetOrder = (ticket: QueueTicket) => {
+    Haptics.selectionAsync().catch(() => {});
+    setOrderTable(tableSheetTable);
+    closeTableSheet();
+    setTimeout(() => setOrderTicket(ticket), 50);
+  };
+
+  // ── OrderPad close: restore action sheet on same table+ticket ──
+  const handleOrderPadClose = () => {
+    const ticket = orderTicket;
+    const table = orderTable;
+    setOrderTicket(null);
+    setOrderTable(null);
+    if (ticket && table) {
+      setTimeout(() => {
+        setTableSheetTable(table);
+        setTableSheetTicket(ticket);
+      }, 50);
+    }
+  };
+
+  // ── Inline cart edits from the action sheet ────────────────────
+  const handleSheetItemQty = async (item: TicketItem, nextQty: number) => {
+    if (!tableSheetTicket) return;
+    setTableSheetBusy(true);
+    try {
+      if (nextQty < 1) {
+        await deleteTicketItem(item.id);
+      } else {
+        await updateTicketItem(item.id, { qty: nextQty });
+      }
+      await refreshSheetItems(tableSheetTicket.id);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message ?? t('adminQueue.actionFailed'));
+    } finally {
+      setTableSheetBusy(false);
+    }
+  };
+
+  const handleSheetItemRemove = async (item: TicketItem) => {
+    if (!tableSheetTicket) return;
+    setTableSheetBusy(true);
+    try {
+      await deleteTicketItem(item.id);
+      await refreshSheetItems(tableSheetTicket.id);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message ?? t('adminQueue.actionFailed'));
+    } finally {
+      setTableSheetBusy(false);
+    }
+  };
+
+  // ── Move: hand off to TablePickerModal (no confirm) ─────────────
+  const sheetMove = (ticket: QueueTicket, _fromTable: any) => {
+    // iOS can't stack two RN Modals — opening TablePickerModal while
+    // the TableActionSheet's modal is still visible silently no-ops.
+    // Close the action sheet first, then open the picker on the next
+    // frame so the dismiss animation completes cleanly.
+    Haptics.selectionAsync().catch(() => {});
+    closeTableSheet();
+    setTimeout(() => setMoveTicket(ticket), 50);
+  };
+
+  const handleMoveSelectTable = async (target: RestaurantTable) => {
+    if (!officeId || !moveTicket) {
+      setMoveTicket(null);
+      return;
+    }
+    setActionLoading(true);
+    try {
+      // seatTicketAtTableId auto-releases any other row holding the same
+      // ticket — so a single call moves the seat in one transaction.
+      await Actions.seatTicketAtTableId(officeId, target.id, moveTicket.id);
+      await refresh();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch (e: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert(t('common.error'), e?.message ?? t('adminQueue.actionFailed'));
+    } finally {
+      setActionLoading(false);
+      setMoveTicket(null);
+    }
+  };
+
   const openSwitchDesk = async () => {
     if (!officeId) return;
     setSwitchLoading(true);
@@ -735,53 +1238,35 @@ export default function DeskScreen() {
     navigation.setOptions({
       title: deskLabel,
       headerLeft: () => (
-        <TouchableOpacity
-          onPress={openSwitchDesk}
-          disabled={actionLoading}
-          activeOpacity={0.7}
-          style={styles.headerSwitchBtn}
-        >
-          <Ionicons name="swap-horizontal" size={16} color="#fff" />
-        </TouchableOpacity>
-      ),
-      headerRight: () => (
-        <View style={styles.headerRightRow}>
-          {/* Restaurant/cafe floor ↔ queue toggle */}
-          {supportsFloorView ? (
-            <View style={styles.floorTogglePills}>
-              <TouchableOpacity
-                style={[styles.floorPill, floorViewMode === 'queue' && styles.floorPillActive]}
-                onPress={() => floorViewMode !== 'queue' && toggleFloorView()}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="list-outline" size={13} color={floorViewMode === 'queue' ? '#fff' : '#86efac'} />
-                <Text style={[styles.floorPillText, floorViewMode === 'queue' && styles.floorPillTextActive]}>
-                  {t('desk.viewQueue')}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.floorPill, floorViewMode === 'floor' && styles.floorPillActive]}
-                onPress={() => floorViewMode !== 'floor' && toggleFloorView()}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="grid-outline" size={13} color={floorViewMode === 'floor' ? '#fff' : '#86efac'} />
-                <Text style={[styles.floorPillText, floorViewMode === 'floor' && styles.floorPillTextActive]}>
-                  {t('desk.viewTables')}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
+        <View style={styles.headerLeftRow}>
+          <TouchableOpacity
+            onPress={openSwitchDesk}
+            disabled={actionLoading}
+            activeOpacity={0.7}
+            style={styles.headerSwitchBtn}
+            accessibilityLabel={t('desk.switchDesk')}
+          >
+            <Ionicons name="swap-horizontal" size={16} color="#fff" />
+          </TouchableOpacity>
           {showPauseInHeader ? (
             <TouchableOpacity
-              style={styles.headerPauseChip}
               onPress={handleDeskOnBreak}
               disabled={actionLoading}
               activeOpacity={0.7}
+              style={styles.headerPauseBtn}
+              accessibilityLabel={t('desk.onBreak')}
             >
-              <Ionicons name="cafe-outline" size={14} color="#fbbf24" />
-              <Text style={styles.headerPauseText}>{t('desk.onBreak')}</Text>
+              <Ionicons name="cafe-outline" size={16} color="#fbbf24" />
             </TouchableOpacity>
           ) : null}
+        </View>
+      ),
+      headerRight: () => (
+        <View style={styles.headerRightRow}>
+          {/* Floor toggle moved out of the header to a sub-tab strip below
+              (header was too crowded on phones — title + local badge + 2 pills
+              caused overlap). Toggle now lives just under the header so it has
+              breathing room and tap targets are bigger. */}
           {isLocalMode ? (
             <TouchableOpacity
               style={styles.headerLocalBadge}
@@ -810,9 +1295,6 @@ export default function DeskScreen() {
     isLocalMode,
     connectionStatus,
     router,
-    supportsFloorView,
-    floorViewMode,
-    toggleFloorView,
   ]);
 
   // ── Guards ───────────────────────────────────────────────────────
@@ -906,6 +1388,37 @@ export default function DeskScreen() {
     ? Math.max(0, 1 - calledElapsedSec / CALL_TIMEOUT_SEC)
     : 0;
   const isCallExpiring = activeTicket?.status === 'called' && calledElapsedSec > CALL_TIMEOUT_SEC * 0.75;
+
+  // Kitchen status badge — shared across called + serving branches so
+  // floor staff see the order's state on every active-ticket view, not
+  // just after Start Serving. Sits right under the primary action.
+  // Renders a strong full-width pill so it's impossible to miss.
+  const kitchenStatusBadge = activeKitchenAgg ? (() => {
+    const cfg = activeKitchenAgg.status === 'ready'
+      ? { bg: '#16a34a', fg: '#fff', icon: 'checkmark-done-circle' as const,
+          label: t('desk.kitchenReady', { defaultValue: 'Ready to serve' }) }
+      : activeKitchenAgg.status === 'in_progress'
+        ? { bg: '#f59e0b', fg: '#fff', icon: 'flame' as const,
+            label: t('desk.kitchenPreparing', { defaultValue: 'Preparing' }) }
+        : activeKitchenAgg.status === 'mixed'
+          ? { bg: '#3b82f6', fg: '#fff', icon: 'restaurant' as const,
+              label: t('desk.kitchenPartial', { defaultValue: 'Partially ready' }) }
+          : { bg: '#64748b', fg: '#fff', icon: 'time-outline' as const,
+              label: t('desk.kitchenNew', { defaultValue: 'In queue' }) };
+    return (
+      <View style={[styles.kitchenBadge, { backgroundColor: cfg.bg, borderColor: cfg.bg }]}>
+        <Ionicons name={cfg.icon} size={18} color={cfg.fg} />
+        <Text style={[styles.kitchenBadgeText, { color: cfg.fg }]}>
+          {cfg.label}
+        </Text>
+        <Text style={[styles.kitchenBadgeCount, { color: cfg.fg }]}>
+          · {activeKitchenAgg.total} {activeKitchenAgg.total === 1
+            ? t('kitchen.itemSingular', { defaultValue: 'item' })
+            : t('kitchen.itemPlural', { defaultValue: 'items' })}
+        </Text>
+      </View>
+    );
+  })() : null;
 
   const CurrentTicketCard = activeTicket ? (
     <View
@@ -1082,6 +1595,8 @@ export default function DeskScreen() {
             <Text style={styles.primaryActionText}>{t('desk.startService')}</Text>
           </TouchableOpacity>
 
+          {kitchenStatusBadge}
+
           {/* Secondary actions row */}
           <View style={styles.secondaryRow}>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handleRecall} disabled={actionLoading}>
@@ -1114,6 +1629,8 @@ export default function DeskScreen() {
             <Ionicons name="checkmark-circle" size={28} color="#fff" />
             <Text style={styles.primaryActionText}>{t('desk.markServed')}</Text>
           </TouchableOpacity>
+
+          {kitchenStatusBadge}
 
           {/* Secondary actions row */}
           <View style={styles.secondaryRow}>
@@ -1358,17 +1875,25 @@ export default function DeskScreen() {
         waitingCount={queue.waiting.length}
         activeTickets={[...queue.called, ...queue.serving] as any}
         parkedTickets={queue.parked as any}
-        compact={hasActive}
-        onSelectOccupied={(ticket) => {
-          // Tapping an occupied table scrolls focus to that ticket — for now
-          // we surface the same confirmAction call as calling a specific ticket.
-          if (deskId && staffId && !hasActive) {
-            handleCallSpecific(ticket as any);
-          }
+        ticketsWithItems={ticketsWithItems}
+        refreshKey={floorRefreshKey}
+        // Tables tab is dedicated to the floor — drop compact mode so cards
+        // breathe (the queue/active-ticket panels are not rendered alongside).
+        compact={false}
+        onSelectOccupied={(ticket, table) => {
+          // Tap an occupied / on-hold table → open the Table Action Sheet
+          // (full per-table control surface). The sheet keys off both the
+          // table and its current ticket so operators can mark served,
+          // move, release, recall, etc. without leaving the floor view.
+          setTableSheetTable(table);
+          setTableSheetTicket((ticket as QueueTicket | null) ?? null);
         }}
-        onSeatNext={(_tableLabel) => {
-          // Seat the next waiting customer
-          handleCallNext();
+        onSeatNext={(tableLabel) => {
+          // Always open the client picker so the operator sees the live
+          // waiting list and can choose exactly who to seat. The picker
+          // also exposes a "Call next" shortcut and shows an empty state
+          // if no one is waiting — no need to short-circuit here.
+          setClientPickerTable(tableLabel);
         }}
       />
     </View>
@@ -1399,9 +1924,47 @@ export default function DeskScreen() {
     </View>
   ) : null;
 
+  // Queue/Floor toggle strip — only when the org supports floor view
+  // (restaurant/cafe). Sits below the header so it has room to breathe and
+  // doesn't overlap the title or status badges. Full-width segmented control
+  // with large tap targets that work on phone and tablet alike.
+  const FloorToggleStrip = supportsFloorView ? (
+    <View style={styles.floorToggleStrip}>
+      <TouchableOpacity
+        style={[styles.floorTabBtn, floorViewMode === 'queue' && styles.floorTabBtnActive]}
+        onPress={() => floorViewMode !== 'queue' && toggleFloorView()}
+        activeOpacity={0.85}
+      >
+        <Ionicons
+          name="list-outline"
+          size={16}
+          color={floorViewMode === 'queue' ? colors.primary : colors.textSecondary}
+        />
+        <Text style={[styles.floorTabBtnText, floorViewMode === 'queue' && styles.floorTabBtnTextActive]}>
+          {t('desk.viewQueue')}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.floorTabBtn, floorViewMode === 'floor' && styles.floorTabBtnActive]}
+        onPress={() => floorViewMode !== 'floor' && toggleFloorView()}
+        activeOpacity={0.85}
+      >
+        <Ionicons
+          name="grid-outline"
+          size={16}
+          color={floorViewMode === 'floor' ? colors.primary : colors.textSecondary}
+        />
+        <Text style={[styles.floorTabBtnText, floorViewMode === 'floor' && styles.floorTabBtnTextActive]}>
+          {t('desk.viewTables')}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  ) : null;
+
   return (
     <>
       {OfflineBanner}
+      {FloorToggleStrip}
       <ScrollView
         style={styles.container}
         contentContainerStyle={[
@@ -1418,13 +1981,25 @@ export default function DeskScreen() {
         }
       >
         {isWide ? (
-          <>
-            <View style={styles.wideRow}>
-              {leftColumn}
-              {rightColumn}
-            </View>
-            {RecentlyServedSection}
-          </>
+          isFloorView ? (
+            // Tables tab on tablet/wide — floor map only, full width. The
+            // queue / active-ticket / parked / recently-served panels live
+            // in the Queue tab, so we don't repeat them here.
+            <>{RightPaneContent}</>
+          ) : (
+            <>
+              <View style={styles.wideRow}>
+                {leftColumn}
+                {rightColumn}
+              </View>
+              {RecentlyServedSection}
+            </>
+          )
+        ) : isFloorView ? (
+          // Tables tab on phone — table-focused only. No active ticket,
+          // no waiting queue, no parked, no recently-served. Operators
+          // tap a table to control it via the action sheet.
+          <>{RightPaneContent}</>
         ) : (
           <>
             {OnBreakBanner}
@@ -1432,12 +2007,180 @@ export default function DeskScreen() {
             {CurrentTicketCard}
             {CallNextButton}
             {ParkedSection}
-            {/* Phone: show floor map OR waiting queue based on toggle */}
             {RightPaneContent}
-            {!isFloorView && RecentlyServedSection}
+            {RecentlyServedSection}
           </>
         )}
       </ScrollView>
+
+      {/* Table action sheet — opens when an occupied/on-hold FloorMap table
+          is tapped. Full per-table control surface (mark served / move /
+          release / recall / park / no-show / requeue) so operators can
+          run the floor without bouncing back to the queue list. */}
+      <TableActionSheet
+        visible={tableSheetTable !== null}
+        table={tableSheetTable}
+        ticket={tableSheetTicket as any}
+        busy={actionLoading || tableSheetBusy}
+        onClose={closeTableSheet}
+        onStartServing={(tk) => sheetStartServing(tk as QueueTicket)}
+        onMarkServed={(tk) => sheetMarkServed(tk as QueueTicket)}
+        onResume={(tk) => sheetResume(tk as QueueTicket)}
+        onRecall={(tk) => sheetRecall(tk as QueueTicket)}
+        onMove={(tk, tb) => sheetMove(tk as QueueTicket, tb)}
+        onOrder={(tk) => sheetOrder(tk as QueueTicket)}
+        onPark={(tk) => sheetPark(tk as QueueTicket)}
+        onNoShow={(tk) => sheetNoShow(tk as QueueTicket)}
+        onRequeue={(tk) => sheetRequeue(tk as QueueTicket)}
+        onReleaseTable={(tb) => sheetReleaseTable(tb)}
+        items={tableSheetItems}
+        payments={tableSheetPayments}
+        onItemQty={handleSheetItemQty}
+        onItemRemove={handleSheetItemRemove}
+      />
+
+      {/* Move flow — destination picker for an existing seated ticket.
+          Reuses the same TablePickerModal as the Suggestion bar so capacity
+          / fit / occupancy hints are consistent. seatTicketAtTableId
+          auto-releases the previous row, so a single tap completes the move. */}
+      <TablePickerModal
+        visible={moveTicket !== null}
+        tables={allTables}
+        partySize={moveTicket ? parsePartySize((moveTicket.customer_data as any)?.party_size) : null}
+        ticketNumber={moveTicket?.ticket_number}
+        busy={tableSheetBusy}
+        onSelect={handleMoveSelectTable}
+        onClose={() => setMoveTicket(null)}
+      />
+
+      {/* OrderPad — tap "Add items" on the action sheet to open. Restaurant
+          flow: pick categories, add items (snapshot price+name into
+          ticket_items). Closing returns to the action sheet where the
+          items show inline; "Mark Served" triggers the receipt via the
+          existing notifyCustomer('served') path. */}
+      {orgId && orderTicket ? (
+        <OrderPad
+          visible={true}
+          organizationId={orgId}
+          ticketId={orderTicket.id}
+          ticketNumber={orderTicket.ticket_number}
+          tableCode={(orderTicket as any).table_code ?? null}
+          staffId={staffId ?? null}
+          onClose={handleOrderPadClose}
+          onChanged={() => {
+            refresh();
+            if (orderTicket) refreshSheetItems(orderTicket.id);
+          }}
+        />
+      ) : null}
+
+      {/* Combined Serve sheet (file kept as CashPaymentSheet) — opened
+          from "Mark served". Shows order summary + cash recorder + a
+          single "Finish & send receipt" button that records the
+          payment (if tendered) then marks served, which auto-builds
+          the receipt block server-side and notifies the customer. */}
+      {orgId && cashTicket ? (
+        <CashPaymentSheet
+          visible={true}
+          organizationId={orgId}
+          ticketId={cashTicket.id}
+          ticketNumber={cashTicket.ticket_number}
+          tableCode={(cashTicket as any).table_code ?? null}
+          staffId={staffId ?? null}
+          items={cashItems}
+          payments={cashPayments}
+          onClose={handleCashSheetClose}
+          onFinish={handleServeFinish}
+        />
+      ) : null}
+
+      {/* Client picker — opens when an empty FloorMap table is tapped.
+          Shows BOTH still-waiting tickets AND already-notified ones
+          (status='called' without a desk binding). Without this, a
+          ticket vanishes from the picker the moment the operator taps
+          Notify, leaving them unable to seat the customer when they
+          arrive. */}
+      <ClientPickerModal
+        visible={clientPickerTable !== null}
+        tickets={[
+          ...queue.waiting,
+          ...queue.called.filter((t) => !(t as any).desk_id),
+        ] as any}
+        tableLabel={clientPickerTable ?? undefined}
+        busy={clientPickerBusy}
+        onCallNext={() => {
+          setClientPickerTable(null);
+          handleCallNext();
+        }}
+        onNotify={async (tk) => {
+          if (!staffId) return;
+          setClientPickerBusy(true);
+          try {
+            // Pings the customer over their existing channel
+            // (WhatsApp / Messenger / push). Status flips to 'called'
+            // but no desk_id is set — multi-party safe.
+            await Actions.notifyTableReady(tk.id, staffId);
+            await refresh();
+          } catch (e: any) {
+            Alert.alert(t('common.error'), e?.message ?? t('adminQueue.actionFailed'));
+          } finally {
+            setClientPickerBusy(false);
+          }
+        }}
+        onSelect={async (tk) => {
+          if (!staffId) {
+            setClientPickerTable(null);
+            return;
+          }
+          setClientPickerBusy(true);
+          try {
+            // Restaurant / cafe (floor view): a single host seats many parties
+            // in parallel. We promote the ticket straight to 'serving' WITHOUT
+            // setting desk_id so the DB's 1-active-per-desk trigger doesn't
+            // fire. The party is owned by the floor, not a single desk.
+            //
+            // Non-tables verticals: keep the old "call to my desk" semantics
+            // since only one customer is in front of the operator at a time.
+            if (isFloorView && clientPickerTable && officeId) {
+              await Actions.seatPartyAtTable(officeId, clientPickerTable, tk.id, staffId);
+            } else if (deskId) {
+              // 1) Call the ticket to this desk so it shows up in active state
+              await Actions.callSpecificTicket(tk.id, deskId, staffId);
+              // 2) Bind the ticket to the chosen table (still useful in
+              //    non-floor-view orgs that opt-in to table_label tracking).
+              if (clientPickerTable && officeId) {
+                await Actions.seatTicketAtTable(officeId, clientPickerTable, tk.id);
+              }
+            }
+            // Optimistic local update so the cell flips to occupied INSTANTLY
+            // — don't wait for the next FloorMap poll or queue refresh round-trip.
+            // Match by label or code (`seatTicketAtTable` accepts either).
+            if (clientPickerTable) {
+              setAllTables((prev) =>
+                prev.map((row: any) =>
+                  row.label === clientPickerTable || row.code === clientPickerTable || row.id === clientPickerTable
+                    ? { ...row, current_ticket_id: tk.id, status: 'occupied' }
+                    : row,
+                ),
+              );
+            }
+            // Bump the FloorMap refresh key so it re-reads restaurant_tables
+            // from the server right away — closes the gap before the queue
+            // realtime / poll catches up.
+            setFloorRefreshKey((n) => n + 1);
+            // Refresh the queue so the freshly-called ticket appears in
+            // active-ticket card right away (especially in local mode where
+            // realtime isn't available).
+            await refresh();
+          } catch (e: any) {
+            Alert.alert(t('common.error'), e?.message ?? t('adminQueue.actionFailed'));
+          } finally {
+            setClientPickerBusy(false);
+            setClientPickerTable(null);
+          }
+        }}
+        onClose={() => setClientPickerTable(null)}
+      />
 
       {/* Switch Desk Modal */}
       <Modal
@@ -1537,6 +2280,27 @@ export default function DeskScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  kitchenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  kitchenBadgeText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  kitchenBadgeCount: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    opacity: 0.85,
+  },
   offlineBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2074,15 +2838,31 @@ const styles = StyleSheet.create({
   },
 
   // Header Switch Desk button (sits on the nav bar, left of title)
+  headerLeftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: spacing.sm,
+  },
   headerSwitchBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     width: 32,
     height: 32,
-    marginLeft: spacing.sm,
     borderRadius: borderRadius.full,
     backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  headerPauseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(251, 191, 36, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.40)',
   },
   headerRightRow: {
     flexDirection: 'row',
@@ -2090,33 +2870,41 @@ const styles = StyleSheet.create({
     gap: 6,
     marginRight: spacing.sm,
   },
-  // Floor/Queue toggle pills in header
-  floorTogglePills: {
+  // Floor/Queue toggle strip — sits below the header (replaces the cramped
+  // pill toggle that used to live in the header right and overlapped on phone).
+  floorToggleStrip: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  floorTabBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: borderRadius.full,
-    padding: 2,
-    gap: 2,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  floorPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
+  floorTabBtnActive: {
+    backgroundColor: colors.primary + '15',
+    borderColor: colors.primary,
   },
-  floorPillActive: {
-    backgroundColor: colors.primary,
-  },
-  floorPillText: {
-    fontSize: 11,
+  floorTabBtnText: {
+    fontSize: fontSize.sm,
     fontWeight: '700',
-    color: '#86efac',
+    color: colors.textSecondary,
   },
-  floorPillTextActive: {
-    color: '#fff',
+  floorTabBtnTextActive: {
+    color: colors.primary,
   },
   // Phone floor map wrapper — full-width below the active ticket panel
   floorMapPhone: {
@@ -2124,22 +2912,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
     backgroundColor: colors.surface,
-  },
-  headerPauseChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(251, 191, 36, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.40)',
-  },
-  headerPauseText: {
-    color: '#fbbf24',
-    fontSize: 11,
-    fontWeight: '700',
+    width: '100%',
   },
   headerLocalBadge: {
     flexDirection: 'row',

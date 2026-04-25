@@ -193,7 +193,14 @@ export async function createInHouseTicket(params: {
   if (error) throw new Error(error.message);
 
   // Auto-create WhatsApp notification session if customer has a phone
-  let whatsappStatus: { sent: boolean; error?: string } | undefined;
+  let whatsappStatus: {
+    sent: boolean;
+    error?: string;
+    metaErrorCode?: number;
+    metaErrorSubcode?: number;
+    metaErrorMessage?: string;
+    attempted?: ('text' | 'template')[];
+  } | undefined;
   if (data && customerData.phone) {
     try {
       const { data: officeRow } = await supabase
@@ -225,23 +232,41 @@ export async function createInHouseTicket(params: {
           const trackUrl = `${API_BASE_URL}/q/${data.qr_token}`;
 
           const edgeUrl = `${supabase.supabaseUrl}/functions/v1/notify-ticket`;
-          const res = await fetch(edgeUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ticketId: data.id,
-              event: 'joined',
-              phone: normalizedPhone,
-              ticketNumber: data.ticket_number,
-              officeName: officeInfo?.name ?? '',
-              position: posCount ?? 1,
-              trackUrl,
-              locale: i18next.language?.substring(0, 2) || 'fr',
-            }),
-            signal: AbortSignal.timeout(10000),
-          });
+          // RN / Hermes doesn't ship AbortSignal.timeout() (added in
+          // node 17 / browsers 2022+). Roll our own with AbortController
+          // + setTimeout so the request still has a hard 10s ceiling
+          // without crashing the page.
+          const ctrl = new AbortController();
+          const timeoutId = setTimeout(() => ctrl.abort(), 10000);
+          let res: Response;
+          try {
+            res = await fetch(edgeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ticketId: data.id,
+                event: 'joined',
+                phone: normalizedPhone,
+                ticketNumber: data.ticket_number,
+                officeName: officeInfo?.name ?? '',
+                position: posCount ?? 1,
+                trackUrl,
+                locale: i18next.language?.substring(0, 2) || 'fr',
+              }),
+              signal: ctrl.signal,
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
           const result = await res.json().catch(() => ({}));
-          whatsappStatus = { sent: Boolean(result.sent), error: result.sent ? undefined : (result.reason ?? result.error ?? 'Send failed') };
+          whatsappStatus = {
+            sent: Boolean(result.sent),
+            error: result.sent ? undefined : (result.reason ?? result.error ?? 'Send failed'),
+            metaErrorCode: result.metaErrorCode,
+            metaErrorSubcode: result.metaErrorSubcode,
+            metaErrorMessage: result.metaErrorMessage,
+            attempted: result.attempted,
+          };
         } catch (err: any) {
           whatsappStatus = { sent: false, error: err?.message ?? 'Send failed' };
         }

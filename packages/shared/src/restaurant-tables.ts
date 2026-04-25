@@ -1,3 +1,21 @@
+// ── Restaurant vertical gate ───────────────────────────────────────
+/**
+ * Business category values that qualify as the restaurant/cafe vertical.
+ * Used by web KDS, Station KDS, and Expo to gate kitchen-only features
+ * without hardcoding country or locale logic.
+ */
+export const RESTAURANT_CATEGORIES: ReadonlySet<string> = new Set(['restaurant', 'cafe']);
+
+/**
+ * Returns true when the given business_category string belongs to the
+ * restaurant/cafe vertical. Pass either the column value from
+ * `organizations.business_category` or `settings.business_category`.
+ */
+export function isRestaurantVertical(category: string | null | undefined): boolean {
+  if (!category) return false;
+  return RESTAURANT_CATEGORIES.has(category);
+}
+
 // ── Restaurant table matching + occupancy helpers ─────────────────
 // Shared logic for matching a party size to the best-available table
 // and for computing a live occupancy summary. Used by every client

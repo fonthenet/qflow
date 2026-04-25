@@ -33,6 +33,20 @@ export default async function DisplaysAdminPage() {
         .order('sort_order')
     : { data: [] };
 
+  // Fetch the org's business_category to conditionally surface the Kitchen
+  // Display link for restaurant/cafe accounts. The column is stored either as
+  // settings.business_category (setup wizard path) or can be inferred from
+  // organizations.vertical.
+  const { data: org } = await context.supabase
+    .from('organizations')
+    .select('vertical, settings')
+    .eq('id', context.staff.organization_id)
+    .maybeSingle();
+  const businessCategory: string | null =
+    ((org as any)?.settings as any)?.business_category ??
+    (org as any)?.vertical ??
+    null;
+
   return (
     <>
       <PageTabs tabs={PUBLIC_SCREEN_TABS} />
@@ -40,6 +54,7 @@ export default async function DisplaysAdminPage() {
         screens={screens ?? []}
         offices={offices ?? []}
         departments={departments ?? []}
+        businessCategory={businessCategory}
       />
     </>
   );

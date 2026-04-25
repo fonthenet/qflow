@@ -4,6 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/lib/auth-context';
 import { useLocalConnectionStore } from '@/lib/local-connection-store';
+import { useOrg } from '@/lib/use-org';
+import { useBusinessCategory } from '@/lib/use-business-category';
+import KitchenAlertBanner from '@/components/KitchenAlertBanner';
 import { colors, fontSize, spacing, borderRadius } from '@/lib/theme';
 
 export default function OperatorLayout() {
@@ -14,6 +17,13 @@ export default function OperatorLayout() {
   const connectionStatus = useLocalConnectionStore((s) => s.connectionStatus);
   const isLocal = localMode === 'local';
   const isAdmin = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin';
+  // Kitchen Display tab is restaurant/café-only AND cloud-only — gate
+  // it on the org's business_category so non-food orgs don't see a
+  // useless tab (and so the tab never appears in local-Station mode,
+  // where the KDS data path isn't wired yet).
+  const { orgId } = useOrg();
+  const { isRestaurantVertical } = useBusinessCategory(orgId);
+  const showKitchenTab = isRestaurantVertical && !isLocal;
 
   // In local mode: no back-to-admin (there is no admin in local mode)
   const headerLeft = !isLocal && isAdmin
@@ -29,6 +39,7 @@ export default function OperatorLayout() {
     : () => null;
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#fff',
@@ -85,6 +96,20 @@ export default function OperatorLayout() {
         }}
       />
       <Tabs.Screen
+        name="kitchen"
+        options={{
+          title: t('kitchen.title', { defaultValue: 'Kitchen' }),
+          // Hide entirely for non-food verticals + local mode by setting
+          // href: null. Expo Router skips it from the tab bar but the
+          // screen file still needs to exist so the route resolves if
+          // someone deep-links into it.
+          href: showKitchenTab ? '/(operator)/kitchen' : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="restaurant-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: t('settings.title', { defaultValue: 'Settings' }),
@@ -96,6 +121,10 @@ export default function OperatorLayout() {
         }}
       />
     </Tabs>
+    {/* Cross-device "order ready" alert overlay — only renders when an
+        alert is active. Restaurant + cloud-only (gated inside). */}
+    <KitchenAlertBanner />
+    </View>
   );
 }
 

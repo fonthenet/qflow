@@ -40,8 +40,34 @@ function renderJoined(locale: Locale, vars: Record<string, string>): string {
 const WA_TEMPLATE_NAME = Deno.env.get("WHATSAPP_TEMPLATE_NAME") ?? "qflo_queue_update";
 const WA_TEMPLATE_LANG = Deno.env.get("WHATSAPP_TEMPLATE_LANG") ?? "en";
 
-async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>): Promise<{ ok: boolean; errorCode?: number }> {
-  if (!WA_ACCESS_TOKEN || !WA_PHONE_NUMBER_ID) return { ok: false };
+/** Translate Meta WhatsApp error codes into a short operator-facing hint.
+ *  Codes ref: https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes */
+function hintForCode(code?: number): string {
+  switch (code) {
+    case 131030: return "Recipient not in test allow-list (sandbox mode)";
+    case 131026: return "Message undeliverable (number not on WhatsApp or blocked)";
+    case 131047: return "Outside 24h window — template required";
+    case 131051: return "Unsupported message type for this contact";
+    case 132000: return "Template parameter mismatch";
+    case 132001: return "Template not found or not approved";
+    case 132005: return "Template language mismatch";
+    case 132007: return "Template paused (low quality rating)";
+    case 132012: return "Template parameter format invalid";
+    case 132015: return "Template paused";
+    case 132016: return "Template disabled";
+    case 100:    return "Invalid parameter (check phone or template)";
+    case 190:    return "Access token expired or invalid";
+    case 80007:  return "Rate limit hit — try again";
+    case 130429: return "Rate limit hit — try again";
+    case 0:      return "Network or transport error";
+    default:     return code ? `Meta error ${code}` : "Send failed";
+  }
+}
+
+async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>): Promise<{ ok: boolean; errorCode?: number; errorMessage?: string; errorSubcode?: number }> {
+  if (!WA_ACCESS_TOKEN || !WA_PHONE_NUMBER_ID) {
+    return { ok: false, errorMessage: "WhatsApp not configured (missing access token or phone number id)" };
+  }
 
   try {
     const res = await fetch(
@@ -59,14 +85,17 @@ async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>):
     const data = await res.json();
     if (!res.ok) {
       const code = data?.error?.code ?? 0;
-      console.error("[notify-ticket:whatsapp] Failed:", data?.error?.message ?? res.status, `(code=${code})`);
-      return { ok: false, errorCode: code };
+      const subcode = data?.error?.error_subcode ?? data?.error?.error_data?.details ?? undefined;
+      const msg = data?.error?.message ?? `HTTP ${res.status}`;
+      console.error("[notify-ticket:whatsapp] Failed:", msg, `(code=${code}, subcode=${subcode ?? '-'})`);
+      return { ok: false, errorCode: code, errorMessage: msg, errorSubcode: typeof subcode === "number" ? subcode : undefined };
     }
     console.log("[notify-ticket:whatsapp] Sent to ***" + phone.slice(-4));
     return { ok: true };
   } catch (err) {
-    console.error("[notify-ticket:whatsapp] Error:", err);
-    return { ok: false };
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[notify-ticket:whatsapp] Error:", msg);
+    return { ok: false, errorMessage: msg };
   }
 }
 
@@ -83,17 +112,31 @@ function normalizePhoneForMeta(phone: string, countryDialCode?: string): string 
   return digits;
 }
 
-async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
+type SendResult = {
+  ok: boolean;
+  errorCode?: number;
+  errorMessage?: string;
+  errorSubcode?: number;
+  attempted?: ("text" | "template")[];
+};
+
+async function sendWhatsApp(phone: string, body: string): Promise<SendResult> {
   const digits = normalizePhoneForMeta(phone);
-  if (digits.length < 7) return false;
+  if (digits.length < 7) {
+    return { ok: false, errorMessage: "Phone too short after normalization" };
+  }
+
+  const attempted: SendResult["attempted"] = [];
 
   // Try free-form text first (works if customer messaged us within 24h)
+  attempted.push("text");
   const textResult = await sendWhatsAppRaw(digits, { type: "text", text: { body } });
-  if (textResult.ok) return true;
+  if (textResult.ok) return { ok: true, attempted };
 
   // If outside 24h window, retry with approved template
   if (textResult.errorCode === 131047 || textResult.errorCode === 131030 || textResult.errorCode === 130429) {
     console.log("[notify-ticket:whatsapp] Outside 24h window, retrying with template...");
+    attempted.push("template");
     const templateResult = await sendWhatsAppRaw(digits, {
       type: "template",
       template: {
@@ -102,10 +145,23 @@ async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
         components: [{ type: "body", parameters: [{ type: "text", text: body }] }],
       },
     });
-    return templateResult.ok;
+    if (templateResult.ok) return { ok: true, attempted };
+    return {
+      ok: false,
+      errorCode: templateResult.errorCode,
+      errorMessage: templateResult.errorMessage,
+      errorSubcode: templateResult.errorSubcode,
+      attempted,
+    };
   }
 
-  return false;
+  return {
+    ok: false,
+    errorCode: textResult.errorCode,
+    errorMessage: textResult.errorMessage,
+    errorSubcode: textResult.errorSubcode,
+    attempted,
+  };
 }
 
 // ── Push notification (forwarded to Vercel) ──────────────────────────
@@ -134,7 +190,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 // The old trigger-based WhatsApp path has been removed to prevent
 // duplicate messages. To restore it, check git history.
 
-const VERSION = "20";
+const VERSION = "21";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -190,9 +246,20 @@ Deno.serve(async (req) => {
         wait: String(waitMinutes ?? 1),
         url: trackUrl ?? "",
       });
-      const sent = await sendWhatsApp(normalizedPhone, message);
-      console.log(`[notify-ticket v${VERSION}] joined: phone=***${normalizedPhone.slice(-4)} sent=${sent}`);
-      return Response.json({ sent, version: VERSION });
+      const result = await sendWhatsApp(normalizedPhone, message);
+      console.log(`[notify-ticket v${VERSION}] joined: phone=***${normalizedPhone.slice(-4)} sent=${result.ok} code=${result.errorCode ?? '-'}`);
+      return Response.json({
+        sent: result.ok,
+        version: VERSION,
+        ...(result.ok ? {} : {
+          metaErrorCode: result.errorCode,
+          metaErrorSubcode: result.errorSubcode,
+          metaErrorMessage: result.errorMessage,
+          attempted: result.attempted,
+          // Operator-facing hint translated from Meta error codes
+          reason: hintForCode(result.errorCode),
+        }),
+      });
     }
 
     // ── All other events — push only, WhatsApp handled by notifyCustomer() ──

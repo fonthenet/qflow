@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { BrowserWindow } from 'electron';
 import { CONFIG } from './config';
 import { logTicketEvent, setSyncNotifier, enqueueSync, deriveOrgIdForSyncItem } from './db';
 import { logger } from './logger';
@@ -314,6 +315,8 @@ export class SyncEngine {
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
       // Debounce pull calls — multiple changes within 500ms trigger only one pull
       let pullDebounce: ReturnType<typeof setTimeout> | null = null;
+      // Captured at open-time so onmessage can filter notifications safely.
+      const sessionOrgId: string | null = session?.organization_id ?? null;
 
       ws.onopen = () => {
         logger.info('realtime', 'Connected to Supabase Realtime');
@@ -325,12 +328,26 @@ export class SyncEngine {
           ref: 'auth',
         }));
 
-        // Join the tickets channel for our offices
+        // Join the tickets channel for our offices.
+        // Also subscribe to ticket_items so the Kitchen Display picks up
+        // items added on Expo / web instantly (org-scoped — RLS narrows
+        // further). Without this, ticket_items only refresh on the 5s
+        // pull tick, which feels laggy in a live kitchen.
+        const orgId: string | null = session?.organization_id ?? null;
+        const ticketItemsChange = orgId
+          ? [{ event: '*', schema: 'public', table: 'ticket_items', filter: `organization_id=eq.${orgId}` }]
+          : [];
+        // Subscribe to notifications too — used for cross-device kitchen
+        // alerts ("Order ready: Table 1 — ..."). RLS already scopes per
+        // org; we filter client-side by office_id from the payload.
+        const notificationsChange = [{ event: 'INSERT', schema: 'public', table: 'notifications' }];
         const joinMsg = JSON.stringify({
           topic: `realtime:public:tickets`,
           event: 'phx_join',
           payload: { config: { broadcast: { self: false }, postgres_changes: [
-            { event: '*', schema: 'public', table: 'tickets', filter: `office_id=in.(${session.office_ids.join(',')})` }
+            { event: '*', schema: 'public', table: 'tickets', filter: `office_id=in.(${session.office_ids.join(',')})` },
+            ...ticketItemsChange,
+            ...notificationsChange,
           ] } },
           ref: '1',
         });
@@ -348,6 +365,7 @@ export class SyncEngine {
             { event: '*', schema: 'public', table: 'desks', filter: `office_id=in.(${session.office_ids.join(',')})` },
             { event: '*', schema: 'public', table: 'offices', filter: `id=in.(${session.office_ids.join(',')})` },
             { event: '*', schema: 'public', table: 'office_holidays', filter: `office_id=in.(${session.office_ids.join(',')})` },
+            { event: '*', schema: 'public', table: 'restaurant_tables', filter: `office_id=in.(${session.office_ids.join(',')})` },
           ] } },
           ref: '2',
         });
@@ -371,6 +389,26 @@ export class SyncEngine {
             msg.event === 'postgres_changes' ||
             msg.event === 'INSERT' || msg.event === 'UPDATE' || msg.event === 'DELETE' ||
             msg.payload?.data?.type === 'INSERT' || msg.payload?.data?.type === 'UPDATE' || msg.payload?.data?.type === 'DELETE';
+
+          // Intercept kitchen-ready notifications and forward to renderer
+          // for an immediate toast — no need to wait for the pull tick.
+          // Filter on office to avoid cross-org leakage despite RLS.
+          try {
+            const data = msg.payload?.data;
+            const isInsert = data?.type === 'INSERT' || msg.event === 'INSERT';
+            const tbl = data?.table;
+            const rec = data?.record;
+            if (isInsert && tbl === 'notifications' && rec?.type === 'kitchen_ready') {
+              const inner = rec.payload || {};
+              const officeOk = !inner.office_id || session.office_ids.includes(inner.office_id);
+              const orgOk = !inner.organization_id || (sessionOrgId && inner.organization_id === sessionOrgId);
+              if (officeOk && orgOk) {
+                for (const win of BrowserWindow.getAllWindows()) {
+                  if (!win.isDestroyed()) win.webContents.send('kitchen:order-ready', inner);
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
 
           if (isChange) {
             logger.info('realtime', 'Ticket change detected — pulling immediately');
@@ -1844,13 +1882,14 @@ export class SyncEngine {
       const officeFilter = officeIds.map((id: string) => `id.eq.${id}`).join(',');
       const officeInFilter = officeIds.map((id: string) => `office_id.eq.${id}`).join(',');
 
-      // Pull offices, departments, services, desks, holidays in parallel
-      const [officesRes, deptsRes, svcsRes, desksRes, holidaysRes] = await Promise.all([
+      // Pull offices, departments, services, desks, holidays, restaurant_tables in parallel
+      const [officesRes, deptsRes, svcsRes, desksRes, holidaysRes, tablesRes] = await Promise.all([
         fetch(`${this.supabaseUrl}/rest/v1/offices?or=(${officeFilter})&select=id,name,address,organization_id,settings,operating_hours,timezone`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/departments?or=(${officeInFilter})&select=id,name,code,office_id`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/services?select=id,name,department_id,estimated_service_time`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/desks?or=(${officeInFilter})&select=id,name,display_name,department_id,office_id,is_active,current_staff_id,status`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/office_holidays?or=(${officeInFilter})&select=id,office_id,holiday_date,name,is_full_day,open_time,close_time`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+        fetch(`${this.supabaseUrl}/rest/v1/restaurant_tables?or=(${officeInFilter})&select=id,office_id,code,label,zone,capacity,min_party_size,max_party_size,reservable,status,current_ticket_id,assigned_at,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
       ]);
 
       const now = new Date().toISOString();
@@ -1937,6 +1976,50 @@ export class SyncEngine {
         }
       }
 
+      // ── Restaurant tables ────────────────────────────────────────
+      // Cloud → SQLite mirror so the floor map renders in local mode
+      // (Expo via /api/station/query) and offline on Station itself.
+      if (tablesRes && tablesRes.ok) {
+        try {
+          const rows = await tablesRes.json();
+          const stmt = this.db.prepare(
+            `INSERT OR REPLACE INTO restaurant_tables
+             (id, office_id, code, label, zone, capacity, min_party_size, max_party_size, reservable, status, current_ticket_id, assigned_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          const remoteIds = new Set<string>();
+          for (const r of rows) {
+            remoteIds.add(r.id);
+            stmt.run(
+              r.id,
+              r.office_id,
+              r.code ?? null,
+              r.label ?? null,
+              r.zone ?? null,
+              typeof r.capacity === 'number' ? r.capacity : 4,
+              r.min_party_size ?? null,
+              r.max_party_size ?? null,
+              r.reservable === false ? 0 : 1,
+              r.status ?? null,
+              r.current_ticket_id ?? null,
+              r.assigned_at ?? null,
+              r.created_at ?? null,
+              r.updated_at ?? null,
+            );
+          }
+          // Cascade-delete: drop local rows in our offices that no longer exist remotely
+          const localRows = this.db.prepare(
+            `SELECT id FROM restaurant_tables WHERE office_id IN (${officeIds.map(() => '?').join(',')})`
+          ).all(...officeIds) as Array<{ id: string }>;
+          const del = this.db.prepare(`DELETE FROM restaurant_tables WHERE id = ?`);
+          for (const row of localRows) {
+            if (!remoteIds.has(row.id)) del.run(row.id);
+          }
+        } catch (e: any) {
+          logger.warn('sync', 'restaurant_tables pull failed', { error: e?.message });
+        }
+      }
+
       // Fire config-changed callback if any reference table changed
       try {
         const depRows = this.db.prepare(`SELECT id, name, code, office_id FROM departments ORDER BY id`).all() as any[];
@@ -1959,7 +2042,7 @@ export class SyncEngine {
             fetch(`${this.supabaseUrl}/rest/v1/menu_categories?organization_id=eq.${orgId}&select=id,organization_id,name,sort_order,color,icon,active,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
             fetch(`${this.supabaseUrl}/rest/v1/menu_items?organization_id=eq.${orgId}&select=id,organization_id,category_id,name,price,discount_percent,sort_order,active,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
             // Ticket items are scoped to the org; we pull for tickets the station already has.
-            fetch(`${this.supabaseUrl}/rest/v1/ticket_items?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,menu_item_id,name,price,qty,note,added_at,added_by`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+            fetch(`${this.supabaseUrl}/rest/v1/ticket_items?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,menu_item_id,name,price,qty,note,added_at,added_by,kitchen_status,kitchen_status_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
             fetch(`${this.supabaseUrl}/rest/v1/ticket_payments?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,method,amount,tendered,change_given,note,paid_at,paid_by`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
           ]);
 
@@ -1990,11 +2073,28 @@ export class SyncEngine {
             const pendingIds = new Set((this.db.prepare(
               "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'ticket_items'"
             ).all() as any[]).map((r: any) => r.record_id));
-            const stmt = this.db.prepare(`INSERT OR REPLACE INTO ticket_items (id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const stmt = this.db.prepare(`INSERT OR REPLACE INTO ticket_items (id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at, added_by, kitchen_status, kitchen_status_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
             for (const r of rows) {
               if (pendingIds.has(r.id)) continue;
-              stmt.run(r.id, r.ticket_id, r.organization_id, r.menu_item_id ?? null, r.name, r.price ?? null, r.qty ?? 1, r.note ?? null, r.added_at, r.added_by ?? null);
+              stmt.run(r.id, r.ticket_id, r.organization_id, r.menu_item_id ?? null, r.name, r.price ?? null, r.qty ?? 1, r.note ?? null, r.added_at, r.added_by ?? null, r.kitchen_status ?? 'new', r.kitchen_status_at ?? null);
             }
+            // Reconcile deletes — sync only does INSERT OR REPLACE, so rows
+            // deleted on Expo / web would otherwise linger locally and keep
+            // showing on the Kitchen Display. Delete any local row for this
+            // org that no longer exists in the cloud snapshot, except those
+            // pending push (we still own them locally).
+            try {
+              const cloudIds = new Set<string>(rows.map((r: any) => String(r.id)));
+              const localIds = this.db.prepare(
+                `SELECT id FROM ticket_items WHERE organization_id = ?`
+              ).all(orgId) as any[];
+              const del = this.db.prepare(`DELETE FROM ticket_items WHERE id = ?`);
+              for (const row of localIds) {
+                if (!cloudIds.has(row.id) && !pendingIds.has(row.id)) {
+                  del.run(row.id);
+                }
+              }
+            } catch { /* non-fatal */ }
           }
           if (ticketPaymentsRes?.ok) {
             const rows = await ticketPaymentsRes.json();

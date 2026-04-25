@@ -9,6 +9,7 @@ import { QRHubModal } from '../components/QRHubModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { TableSuggestionBar } from '../components/TableSuggestionBar';
 import { FloorMap } from '../components/FloorMap';
+import { KitchenDisplay } from '../components/KitchenDisplay';
 import { MenuEditor } from '../components/MenuEditor';
 import { getCountryConfig, getOrgCountryConfig, type CountryConfig } from '../lib/country-config';
 import { useConfirmDialog } from '../components/ConfirmDialog';
@@ -1693,11 +1694,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       return url;
     }
   };
-  const getFriendlyPublicUrlLabel = (url: string, type: 'kiosk' | 'display') => {
+  const getFriendlyPublicUrlLabel = (url: string, type: 'kiosk' | 'display' | 'kitchen') => {
     try {
       const parsed = new URL(url);
       const token = parsed.pathname.split('/').filter(Boolean).at(-1) ?? '';
-      return `${parsed.origin}/${type === 'kiosk' ? 'k' : 'd'}/${token}`;
+      const slug = type === 'kiosk' ? 'k' : type === 'kitchen' ? 'kd' : 'd';
+      return `${parsed.origin}/${slug}/${token}`;
     } catch {
       return getDisplayUrlLabel(url);
     }
@@ -1842,8 +1844,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
-  // Main view: 'queue' shows active ticket/idle, 'calendar' shows embedded calendar, 'customers' shows embedded customer list
-  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers'>('calendar');
+  // Main view: 'queue' shows active ticket/idle, 'calendar' shows embedded calendar,
+  // 'customers' shows embedded customer list, 'kitchen' shows KDS (restaurant/café only).
+  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers' | 'kitchen'>('calendar');
   // Clear the "jump to appointment" target whenever we leave the calendar, so the
   // next Details click from the queue always triggers a fresh scroll/highlight
   // even when the same appointment is selected twice in a row.
@@ -1935,6 +1938,46 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     setToast({ message, type });
     toastTimerRef.current = setTimeout(() => setToast(null), type === 'error' ? 5000 : 3500);
   }, []);
+
+  // ── Kitchen "order ready" alert ────────────────────────────────
+  // Fires whenever any Station/Expo client (including this one) marks
+  // a ticket ready. Shows a toast with table label + items so floor
+  // staff know which order to run. Dedupe by ticket_id within 10s to
+  // tolerate Meta-style duplicate webhook delivery.
+  const recentReadyRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const off = (window as any).qf?.ticketItems?.onOrderReady?.((payload: any) => {
+      if (!payload?.ticket_id) return;
+      const now = Date.now();
+      const last = recentReadyRef.current.get(payload.ticket_id) ?? 0;
+      if (now - last < 10_000) return;
+      recentReadyRef.current.set(payload.ticket_id, now);
+      // Trim old entries
+      for (const [k, t] of recentReadyRef.current) {
+        if (now - t > 60_000) recentReadyRef.current.delete(k);
+      }
+      const tableLbl = payload.table_label
+        ? (locale === 'fr' ? `Table ${payload.table_label}` : locale === 'ar' ? `طاولة ${payload.table_label}` : `Table ${payload.table_label}`)
+        : (payload.ticket_number || '');
+      const itemsList = Array.isArray(payload.items) && payload.items.length
+        ? payload.items.map((i: any) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join(', ')
+        : '';
+      const headline = locale === 'fr' ? `Commande prête : ${tableLbl}`
+        : locale === 'ar' ? `الطلب جاهز: ${tableLbl}`
+        : `Order ready: ${tableLbl}`;
+      showToast(itemsList ? `${headline} — ${itemsList}` : headline, 'success');
+      // Audible cue (best-effort; ignore if blocked).
+      try {
+        const ctx = new (window as any).AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = 880; gain.gain.value = 0.1;
+        osc.start(); osc.stop(ctx.currentTime + 0.18);
+      } catch { /* */ }
+    });
+    return () => { off?.(); };
+  }, [locale, showToast]);
 
   // ── Fetch Messenger Page ID from org branding ───────────────────
   useEffect(() => {
@@ -4008,6 +4051,22 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   </svg>
                   {t('Customers')}
                 </button>
+                {/* Kitchen Display — restaurant/café only */}
+                {isRestaurantFloor && (
+                  <button
+                    onClick={() => setMainView('kitchen')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
+                      background: mainView === 'kitchen' ? 'rgba(239,68,68,0.18)' : 'transparent',
+                      cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      color: mainView === 'kitchen' ? '#ef4444' : 'var(--text3, #64748b)',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }}
+                  >
+                    &#127859; {t('Kitchen')}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -4064,6 +4123,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 initialPhone={customerPhoneToOpen}
                 embedded
                 refreshKey={customersRefreshKey}
+              />
+            </div>
+          )}
+
+          {/* Kitchen Display System — restaurant/café only, full-height panel */}
+          {isRestaurantFloor && mainView === 'kitchen' && session.organization_id && (
+            <div style={{ flex: 1, overflow: 'hidden', width: '100%', marginTop: 42, display: 'flex', flexDirection: 'column' }}>
+              <KitchenDisplay
+                orgId={session.organization_id}
+                locale={locale}
               />
             </div>
           )}
@@ -5612,15 +5681,39 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               icon: '🎫',
               device: findDevice(['local_kiosk', 'kiosk'], 'kiosk'),
             },
-            {
-              label: t('Display'),
-              subtitle: t('waiting room TV'),
-              localUrl: kioskUrl.replace('/kiosk', '/display'),
-              publicUrl: publicLinks.displayUrl,
-              publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
-              icon: '📺',
-              device: findDevice(['waiting_room_display', 'display'], 'display'),
-            },
+            // Display entry: for restaurants/cafés, the operator's
+            // primary "Display" mounting point is the back-of-house
+            // Kitchen pass (KDS), not the lobby customer board. Reuses
+            // the same screen_token — /kitchen/<token> renders the
+            // operator KDS, /display/<token> still renders the lobby
+            // board for any customer-facing TV the venue chooses to
+            // also mount. For non-restaurant verticals, this remains
+            // the classic waiting-room display.
+            isRestaurantFloor
+              ? {
+                  label: t('Kitchen Display'),
+                  subtitle: t('back-of-house pass'),
+                  localUrl: kioskUrl.replace('/kiosk', '/kitchen'),
+                  // Cloud uses short /d/<token> slug for displays; the
+                  // kitchen short alias is /kd/<token> (registered in
+                  // apps/web/src/app/(public)/kd/[screenToken]/page.tsx
+                  // which re-exports the full /kitchen/<token> page).
+                  publicUrl: publicLinks.displayUrl ? publicLinks.displayUrl.replace('/d/', '/kd/') : null,
+                  publicLabel: publicLinks.displayUrl
+                    ? getFriendlyPublicUrlLabel(publicLinks.displayUrl.replace('/d/', '/kd/'), 'kitchen')
+                    : null,
+                  icon: '👨‍🍳',
+                  device: findDevice(['kitchen_display', 'kitchen', 'waiting_room_display', 'display'], 'kitchen'),
+                }
+              : {
+                  label: t('Display'),
+                  subtitle: t('waiting room TV'),
+                  localUrl: kioskUrl.replace('/kiosk', '/display'),
+                  publicUrl: publicLinks.displayUrl,
+                  publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
+                  icon: '📺',
+                  device: findDevice(['waiting_room_display', 'display'], 'display'),
+                },
           ];
           const visibleItems = isRemote ? items.filter((item) => item.publicUrl) : items;
           if (visibleItems.length === 0) return null;

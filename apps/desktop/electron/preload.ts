@@ -109,6 +109,25 @@ contextBridge.exposeInMainWorld('qf', {
     add: (orgId: string, ticketId: string, item: any) => ipcRenderer.invoke('ticket-items:add', orgId, ticketId, item),
     update: (orgId: string, id: string, updates: any) => ipcRenderer.invoke('ticket-items:update', orgId, id, updates),
     delete: (orgId: string, id: string) => ipcRenderer.invoke('ticket-items:delete', orgId, id),
+    // KDS handlers — scalar string args only (IPC serialization rule).
+    listKitchen: (orgId: string) => ipcRenderer.invoke('ticket-items:list-kitchen', orgId),
+    updateKitchenStatus: (itemId: string, orgId: string, status: string) =>
+      ipcRenderer.invoke('ticket-items:update-kitchen-status', itemId, orgId, status),
+    bumpTicketKitchen: (ticketId: string, orgId: string, status: string) =>
+      ipcRenderer.invoke('ticket-items:bump-ticket-kitchen', ticketId, orgId, status),
+    onChange: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('ticketItems:changed', handler);
+      return () => ipcRenderer.removeListener('ticketItems:changed', handler);
+    },
+    // Cross-device kitchen alert: fires when any Station/Expo client
+    // (including this one) marks a ticket "ready". Payload includes
+    // table_label, ticket_number, items[], party_size, customer_name.
+    onOrderReady: (callback: (payload: any) => void) => {
+      const handler = (_e: any, payload: any) => callback(payload);
+      ipcRenderer.on('kitchen:order-ready', handler);
+      return () => ipcRenderer.removeListener('kitchen:order-ready', handler);
+    },
   },
 
   // POS: payments, printers, receipts, reports, staff

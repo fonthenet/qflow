@@ -360,7 +360,9 @@ export function initDB() {
       qty INTEGER NOT NULL DEFAULT 1,
       note TEXT,
       added_at TEXT NOT NULL,
-      added_by TEXT
+      added_by TEXT,
+      kitchen_status TEXT NOT NULL DEFAULT 'new',
+      kitchen_status_at TEXT NULL
     );
 
     -- Payments captured at checkout. Cash-only for now; schema keeps
@@ -396,7 +398,27 @@ export function initDB() {
       updated_at TEXT
     );
 
+    -- Restaurant tables (floor map). Synced from Supabase. Column set
+    -- mirrors the canonical schema used by Station's FloorMap component.
+    CREATE TABLE IF NOT EXISTS restaurant_tables (
+      id TEXT PRIMARY KEY,
+      office_id TEXT NOT NULL,
+      code TEXT,
+      label TEXT,
+      zone TEXT,
+      capacity INTEGER NOT NULL DEFAULT 4,
+      min_party_size INTEGER,
+      max_party_size INTEGER,
+      reservable INTEGER NOT NULL DEFAULT 1,
+      status TEXT,
+      current_ticket_id TEXT,
+      assigned_at TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
     -- Indexes (only on columns guaranteed to exist in CREATE TABLE above)
+    CREATE INDEX IF NOT EXISTS idx_restaurant_tables_office ON restaurant_tables(office_id);
     CREATE INDEX IF NOT EXISTS idx_broadcast_templates_org ON broadcast_templates(organization_id);
     CREATE INDEX IF NOT EXISTS idx_office_holidays_lookup ON office_holidays(office_id, holiday_date);
     CREATE INDEX IF NOT EXISTS idx_tickets_office_status ON tickets(office_id, status);
@@ -632,8 +654,21 @@ export function initDB() {
     qty INTEGER NOT NULL DEFAULT 1,
     note TEXT,
     added_at TEXT NOT NULL,
-    added_by TEXT
+    added_by TEXT,
+    kitchen_status TEXT NOT NULL DEFAULT 'new',
+    kitchen_status_at TEXT NULL
   )`);
+  // KDS columns — add to existing databases that pre-date this migration.
+  // SQLite's ALTER TABLE ADD COLUMN with NOT NULL DEFAULT only backfills
+  // rows when run as a single statement on an empty/new column; if a
+  // prior partial run added the column without the default (or pulled
+  // rows from cloud sync that left kitchen_status NULL), we must backfill
+  // explicitly. Otherwise `kitchen_status != 'served'` filters NULL rows
+  // out (NULL != 'served' is NULL, not TRUE) and the KDS shows nothing.
+  try { db.exec(`ALTER TABLE ticket_items ADD COLUMN kitchen_status TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE ticket_items ADD COLUMN kitchen_status_at TEXT NULL`); } catch { /* already exists */ }
+  try { db.exec(`UPDATE ticket_items SET kitchen_status = 'new' WHERE kitchen_status IS NULL OR kitchen_status = ''`); } catch { /* */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_ticket_items_kitchen ON ticket_items(organization_id, kitchen_status, added_at) WHERE kitchen_status != 'served'`); } catch { /* */ }
   db.exec(`CREATE TABLE IF NOT EXISTS ticket_payments (
     id TEXT PRIMARY KEY,
     ticket_id TEXT NOT NULL,
@@ -657,6 +692,25 @@ export function initDB() {
     created_at TEXT,
     updated_at TEXT
   )`);
+  // Restaurant tables — synced from Supabase, used by the floor map on
+  // Station + Expo (via the /api/station/query bridge in local mode).
+  db.exec(`CREATE TABLE IF NOT EXISTS restaurant_tables (
+    id TEXT PRIMARY KEY,
+    office_id TEXT NOT NULL,
+    code TEXT,
+    label TEXT,
+    zone TEXT,
+    capacity INTEGER NOT NULL DEFAULT 4,
+    min_party_size INTEGER,
+    max_party_size INTEGER,
+    reservable INTEGER NOT NULL DEFAULT 1,
+    status TEXT,
+    current_ticket_id TEXT,
+    assigned_at TEXT,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_restaurant_tables_office ON restaurant_tables(office_id)`); } catch { /* */ }
 
   // Drop legacy payment methods cache (org_payment_methods table was removed from Supabase).
   db.exec(`DROP TABLE IF EXISTS org_payment_methods_cache`);

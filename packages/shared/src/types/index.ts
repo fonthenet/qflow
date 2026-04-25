@@ -213,3 +213,4 @@ export interface VirtualQueueCode {
 }
 
 export * from './platform';
+export * from './menu';

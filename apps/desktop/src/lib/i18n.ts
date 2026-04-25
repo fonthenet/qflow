@@ -1553,6 +1553,16 @@ const FR: Messages = {
   'Mobile money': 'Paiement mobile',
   'QR payment': 'Paiement QR',
   'Scan to pay': 'Scannez pour payer',
+  // ── Kitchen Display System ──
+  'Kitchen': 'Cuisine',
+  'Kitchen Display': 'Affichage cuisine',
+  'All caught up': 'Tout est servi',
+  'No active orders right now.': 'Aucune commande active en ce moment.',
+  'Mark all ready': 'Tout marquer prêt',
+  'Mark all served': 'Tout marquer servi',
+  'New (status)': 'Nouveau',
+  'Cooking': 'En préparation',
+  'Preparing': 'En préparation',
 };
 
 const AR: Messages = {
@@ -3099,6 +3109,16 @@ const AR: Messages = {
   'Mobile money': 'دفع عبر الهاتف',
   'QR payment': 'دفع QR',
   'Scan to pay': 'امسح للدفع',
+  // ── Kitchen Display System ──
+  'Kitchen': 'المطبخ',
+  'Kitchen Display': 'شاشة المطبخ',
+  'All caught up': 'كل الطلبات منجزة',
+  'No active orders right now.': 'لا توجد طلبات نشطة الآن.',
+  'Mark all ready': 'تحديد الكل جاهزًا',
+  'Mark all served': 'تحديد الكل مُقدَّمًا',
+  'New (status)': 'جديد',
+  'Cooking': 'قيد التحضير',
+  'Preparing': 'قيد التحضير',
 };
 
 const EN: Messages = {

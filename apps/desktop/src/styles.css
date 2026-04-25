@@ -19,6 +19,11 @@
   /* Closed/unavailable calendar cells — diagonal stripe pattern */
   --cell-closed-a: rgba(100,116,139,0.08);
   --cell-closed-b: rgba(100,116,139,0.18);
+  /* KDS status colours — semantic aliases used by KitchenDisplay */
+  --kds-new: #94a3b8;
+  --kds-warn: #f59e0b;
+  --kds-ready: #22c55e;
+  --kds-err: #ef4444;
 }
 
 /* Light theme overrides (if applied) */

@@ -2348,6 +2348,176 @@ function setupIPC() {
     return { ok: true };
   });
 
+  // ── Kitchen Display System (KDS) — restaurant/café only ─────────
+  // Returns active tickets (called/serving) that have at least one
+  // non-served item, grouped as KitchenTicket cards sorted oldest-first.
+  // orgId is passed as a plain string arg — never as part of an object
+  // (IPC serialization drops nested fields).
+  ipcMain.handle('ticket-items:list-kitchen', (_e, orgId: string) => {
+    if (!orgId) return [];
+    // Local `tickets` table has no organization_id column — only office_id —
+    // and no table_label column. Join via offices for the org scope, and
+    // LEFT JOIN restaurant_tables on current_ticket_id to recover the table
+    // label for KDS card headers.
+    const tickets = db.prepare(
+      `SELECT t.id, t.ticket_number, rt.label AS table_label, t.customer_data, t.status
+       FROM tickets t
+       INNER JOIN offices o ON o.id = t.office_id
+       LEFT JOIN restaurant_tables rt ON rt.current_ticket_id = t.id
+       WHERE o.organization_id = ? AND t.status IN ('called', 'serving')
+       ORDER BY t.created_at ASC`
+    ).all(orgId) as any[];
+    if (!tickets.length) return [];
+    const ids = tickets.map((t: any) => t.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const items = db.prepare(
+      // COALESCE protects against NULL kitchen_status on rows pulled from
+      // cloud sync where the column may not have been populated. Treat
+      // NULL as 'new' so freshly-synced items still surface in the KDS.
+      `SELECT id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at, added_by,
+              COALESCE(kitchen_status, 'new') AS kitchen_status, kitchen_status_at
+       FROM ticket_items
+       WHERE ticket_id IN (${placeholders}) AND COALESCE(kitchen_status, 'new') != 'served'
+       ORDER BY added_at ASC`
+    ).all(...ids) as any[];
+    // Group items by ticket.
+    const byTicket = new Map<string, any[]>();
+    for (const it of items) {
+      const arr = byTicket.get(it.ticket_id) ?? [];
+      arr.push(it);
+      byTicket.set(it.ticket_id, arr);
+    }
+    const cards: any[] = [];
+    for (const tk of tickets) {
+      const its = byTicket.get(tk.id);
+      if (!its || its.length === 0) continue;
+      let customerData: any = {};
+      try { customerData = typeof tk.customer_data === 'string' ? JSON.parse(tk.customer_data) : (tk.customer_data ?? {}); } catch { /* */ }
+      const oldest = its.reduce((acc: string, it: any) => (it.added_at < acc ? it.added_at : acc), its[0].added_at);
+      cards.push({
+        ticket_id: tk.id,
+        ticket_number: tk.ticket_number,
+        table_label: tk.table_label ?? null,
+        party_size: customerData.party_size ?? null,
+        customer_name: customerData.name ?? null,
+        ticket_status: tk.status,
+        oldest_item_at: oldest,
+        items: its,
+      });
+    }
+    cards.sort((a: any, b: any) => a.oldest_item_at.localeCompare(b.oldest_item_at));
+    return cards;
+  });
+
+  // Advance a single item's kitchen status. Idempotent — safe to replay.
+  // Stamps kitchen_status_at = now ISO. Enqueues an UPDATE to Supabase.
+  ipcMain.handle('ticket-items:update-kitchen-status', (_e, itemId: string, orgId: string, status: string) => {
+    if (!itemId || !orgId || !status) return { error: 'missing_args' };
+    const VALID = new Set(['new', 'in_progress', 'ready', 'served']);
+    if (!VALID.has(status)) return { error: 'invalid_status' };
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE ticket_items SET kitchen_status = ?, kitchen_status_at = ? WHERE id = ? AND organization_id = ?`
+    ).run(status, now, itemId, orgId);
+    const syncId = enqueueSync({
+      id: `ticket_item-kds-${itemId}-${Date.now()}`,
+      operation: 'UPDATE',
+      table: 'ticket_items',
+      recordId: itemId,
+      payload: { id: itemId, kitchen_status: status, kitchen_status_at: now },
+      organizationId: orgId,
+    });
+    syncEngine?.pushImmediate(syncId);
+    broadcast('ticketItems:changed');
+    return { ok: true };
+  });
+
+  // Bulk-advance all non-served items on a ticket to `status`.
+  // Powers "Mark all ready" / "Mark all served" card actions.
+  ipcMain.handle('ticket-items:bump-ticket-kitchen', (_e, ticketId: string, orgId: string, status: string) => {
+    if (!ticketId || !orgId || !status) return { error: 'missing_args' };
+    const VALID = new Set(['in_progress', 'ready', 'served']);
+    if (!VALID.has(status)) return { error: 'invalid_status' };
+    const now = new Date().toISOString();
+    const rows = db.prepare(
+      `SELECT id FROM ticket_items WHERE ticket_id = ? AND organization_id = ? AND kitchen_status != 'served'`
+    ).all(ticketId, orgId) as any[];
+    const update = db.prepare(
+      `UPDATE ticket_items SET kitchen_status = ?, kitchen_status_at = ? WHERE id = ? AND organization_id = ?`
+    );
+    for (const row of rows) {
+      update.run(status, now, row.id, orgId);
+      const syncId = enqueueSync({
+        id: `ticket_item-kds-bump-${row.id}-${Date.now()}`,
+        operation: 'UPDATE',
+        table: 'ticket_items',
+        recordId: row.id,
+        payload: { id: row.id, kitchen_status: status, kitchen_status_at: now },
+        organizationId: orgId,
+      });
+      syncEngine?.pushImmediate(syncId);
+    }
+    broadcast('ticketItems:changed');
+
+    // ── Order-ready alert ──────────────────────────────────────────
+    // When the kitchen marks the whole ticket "ready", broadcast a
+    // toast locally AND write a `kitchen_ready` row to public.notifications
+    // so other Stations / Expo operators in the same org get the alert
+    // via realtime. Idempotent: each call gets a fresh notif id but
+    // payload carries ticket_id so receivers can dedupe.
+    if (status === 'ready' && rows.length > 0) {
+      try {
+        const tk = db.prepare(
+          `SELECT t.id, t.ticket_number, t.customer_data, t.office_id, rt.label AS table_label
+           FROM tickets t
+           LEFT JOIN restaurant_tables rt ON rt.current_ticket_id = t.id
+           WHERE t.id = ?`
+        ).get(ticketId) as any;
+        const items = db.prepare(
+          `SELECT name, qty FROM ticket_items WHERE ticket_id = ? AND organization_id = ? ORDER BY added_at ASC`
+        ).all(ticketId, orgId) as any[];
+        let customer: any = {};
+        try { customer = typeof tk?.customer_data === 'string' ? JSON.parse(tk.customer_data) : (tk?.customer_data ?? {}); } catch { /* */ }
+        const payload = {
+          ticket_id: ticketId,
+          ticket_number: tk?.ticket_number ?? null,
+          table_label: tk?.table_label ?? null,
+          office_id: tk?.office_id ?? null,
+          organization_id: orgId,
+          party_size: customer.party_size ?? null,
+          customer_name: customer.name ?? null,
+          items: items.map((i: any) => ({ name: i.name, qty: i.qty })),
+          ready_at: now,
+        };
+        // Local toast — same window that triggered the bump still gets
+        // confirmation feedback, and any other Station window in this
+        // process tree picks it up too.
+        broadcast('kitchen:order-ready', payload);
+        // Cloud-side notification for cross-device delivery.
+        const notifId = randomUUID();
+        const notifSyncId = enqueueSync({
+          id: `notif-kr-${notifId}`,
+          operation: 'INSERT',
+          table: 'notifications',
+          recordId: notifId,
+          payload: {
+            id: notifId,
+            ticket_id: ticketId,
+            type: 'kitchen_ready',
+            channel: 'in_app',
+            payload,
+            sent_at: now,
+            created_at: now,
+          },
+          organizationId: orgId,
+        });
+        syncEngine?.pushImmediate(notifSyncId);
+      } catch { /* non-fatal — toast is best-effort */ }
+    }
+
+    return { ok: true };
+  });
+
   // ── POS: payments ───────────────────────────────────────────────
   // Cash capture at checkout. Amount is the total charged (derived
   // by the renderer from ticket_items). Tendered/change_given are

@@ -19,6 +19,7 @@ import {
   deleteDisplayScreen,
 } from '@/lib/actions/admin-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { isRestaurantVertical } from '@qflo/shared';
 
 interface Office {
   id: string;
@@ -48,9 +49,12 @@ interface DisplaysManagerProps {
   screens: DisplayScreen[];
   offices: Office[];
   departments: Department[];
+  /** business_category from organizations.business_category or settings.business_category.
+   *  Used to surface the Kitchen Display link for restaurant/cafe accounts. */
+  businessCategory?: string | null;
 }
 
-export function DisplaysManager({ screens: initialScreens, offices, departments }: DisplaysManagerProps) {
+export function DisplaysManager({ screens: initialScreens, offices, departments, businessCategory }: DisplaysManagerProps) {
   const { t } = useI18n();
   const [isPending, startTransition] = useTransition();
   const { confirm: styledConfirm } = useConfirmDialog();
@@ -275,6 +279,18 @@ export function DisplaysManager({ screens: initialScreens, offices, departments 
                   <ExternalLink className="h-4 w-4" />
                   {t('Preview')}
                 </a>
+                {/* Kitchen Display link — restaurant/cafe vertical only */}
+                {isRestaurantVertical(businessCategory) && (
+                  <a
+                    href={`/kitchen/${screen.screen_token}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100 transition-colors dark:border-orange-800 dark:bg-orange-950/30 dark:text-orange-400 dark:hover:bg-orange-950/50"
+                  >
+                    <Monitor className="h-4 w-4" />
+                    {t('Kitchen Display')}
+                  </a>
+                )}
                 <button
                   onClick={() => copyUrl(screen.screen_token, screen.id)}
                   className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"

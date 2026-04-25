@@ -69,7 +69,14 @@ interface CreatedTicket {
   qr_data_url?: string | null;
   position?: number;
   estimated_wait?: number;
-  whatsappStatus?: { sent: boolean; error?: string };
+  whatsappStatus?: {
+    sent: boolean;
+    error?: string;
+    metaErrorCode?: number;
+    metaErrorSubcode?: number;
+    metaErrorMessage?: string;
+    attempted?: ('text' | 'template')[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -232,11 +239,32 @@ function SuccessView({
                 {ticket.whatsappStatus.sent ? t('booking.whatsappSent') : t('booking.whatsappFailed')}
               </Text>
               {!ticket.whatsappStatus.sent && (
-                <Text style={[styles.waStatusSub, { color: '#b45309' }]}>
-                  {ticket.whatsappStatus.error === 'Invalid phone number'
-                    ? t('booking.invalidPhone')
-                    : t('booking.whatsappFailedHint')}
-                </Text>
+                <>
+                  <Text style={[styles.waStatusSub, { color: '#b45309' }]}>
+                    {ticket.whatsappStatus.error === 'Invalid phone number'
+                      ? t('booking.invalidPhone')
+                      : (ticket.whatsappStatus.error || t('booking.whatsappFailedHint'))}
+                  </Text>
+                  {/* Diagnostic detail — Meta error code + raw message.
+                      Always shown when present so operators (and dev) can
+                      distinguish "number not in test list" vs "template
+                      not approved" vs "token expired" without digging
+                      into edge logs. Truncated to a single line. */}
+                  {ticket.whatsappStatus.metaErrorCode != null ? (
+                    <Text style={[styles.waStatusSub, { color: '#92400e', fontSize: 11, fontFamily: 'monospace' }]} numberOfLines={2}>
+                      Meta {ticket.whatsappStatus.metaErrorCode}
+                      {ticket.whatsappStatus.metaErrorSubcode != null
+                        ? `/${ticket.whatsappStatus.metaErrorSubcode}`
+                        : ''}
+                      {ticket.whatsappStatus.metaErrorMessage
+                        ? ` · ${ticket.whatsappStatus.metaErrorMessage}`
+                        : ''}
+                      {ticket.whatsappStatus.attempted?.length
+                        ? ` · tried: ${ticket.whatsappStatus.attempted.join('+')}`
+                        : ''}
+                    </Text>
+                  ) : null}
+                </>
               )}
             </View>
           </View>
