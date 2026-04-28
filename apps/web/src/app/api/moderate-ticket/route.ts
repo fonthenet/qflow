@@ -111,8 +111,12 @@ export async function POST(request: NextRequest) {
         resolvedServiceName = svc.name;
         if (orgCategory && /restaurant|cafe|café|food|resto|bistro/i.test(orgCategory)) {
           // resolveRestaurantServiceType returns 'dine_in' | 'takeout'
-          // | 'delivery' | null based on the service name.
-          serviceTypeHint = resolveRestaurantServiceType(svc.name) ?? null;
+          // | 'delivery' | 'other'. Treat 'other' as null so the vocab
+          // helper falls back to the dine-in / reservation copy.
+          const resolved = resolveRestaurantServiceType(svc.name);
+          serviceTypeHint = (resolved === 'dine_in' || resolved === 'takeout' || resolved === 'delivery')
+            ? resolved
+            : null;
         }
       }
     } catch { /* ignore — vocab will use the default reservation/appointment branch */ }

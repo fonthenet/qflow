@@ -18,6 +18,10 @@ import type { Locale, SendFn } from '@/lib/messaging-commands';
  *   pending_order_review   — bot showed running cart summary, awaiting
  *                            NAME <name>, ADD, CANCEL, or more codes
  *   pending_order_address  — delivery only: awaiting street/instructions
+ *   pending_order_notes    — awaiting an optional free-text instruction
+ *                            for the kitchen (e.g. "no onions, extra
+ *                            cheese", "ring the bell twice"). Customer
+ *                            can type "-" / "skip" / "no" to bypass.
  *   pending_order_confirm  — final YES / NO before the ticket lands
  *
  * The order is created directly via Supabase (no HTTP hop to /api/orders/place)
@@ -53,6 +57,12 @@ interface OrderSessionPayload {
     lat?: number;
     lng?: number;
   };
+  /**
+   * Free-text instruction for the kitchen / operator. Persisted to
+   * `tickets.notes` when the order is placed so it shows up on the
+   * Station card the operator already reads. Capped at 500 chars.
+   */
+  customer_notes?: string;
 }
 
 // ── Templates ────────────────────────────────────────────────────────
@@ -208,13 +218,64 @@ function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: s
   const itemCount = Object.values(payload.cart).reduce((s, c) => s + c.qty, 0);
   const svc = payload.service === 'delivery' ? (locale === 'ar' ? 'توصيل' : locale === 'en' ? 'Delivery' : 'Livraison')
     : (locale === 'ar' ? 'استلام' : locale === 'en' ? 'Takeout' : 'À emporter');
+  // Notes preview — only render the line when the customer actually
+  // entered something. Trim quoted display to keep the summary compact.
+  const noteText = payload.customer_notes?.trim();
+  const notesPreview = noteText
+    ? (locale === 'ar' ? `\n📝 ملاحظة: _${noteText}_`
+       : locale === 'en' ? `\n📝 Note: _${noteText}_`
+       : `\n📝 Note : _${noteText}_`)
+    : '';
   if (locale === 'ar') {
-    return `✅ هل تؤكد؟\n\nاسم: *${payload.customer_name}*\n${itemCount} منتج · ${total.toFixed(2)} ${currency} · ${svc} في *${orgName}*\n\nأرسل *نعم* للتأكيد، *لا* للإلغاء.`;
+    return `✅ هل تؤكد؟\n\nاسم: *${payload.customer_name}*\n${itemCount} منتج · ${total.toFixed(2)} ${currency} · ${svc} في *${orgName}*${notesPreview}\n\nأرسل *نعم* للتأكيد، *لا* للإلغاء.`;
   }
   if (locale === 'en') {
-    return `✅ Confirm order?\n\nName: *${payload.customer_name}*\n${itemCount} items · ${total.toFixed(2)} ${currency} · ${svc} at *${orgName}*\n\nReply *YES* to send, *NO* to cancel.`;
+    return `✅ Confirm order?\n\nName: *${payload.customer_name}*\n${itemCount} items · ${total.toFixed(2)} ${currency} · ${svc} at *${orgName}*${notesPreview}\n\nReply *YES* to send, *NO* to cancel.`;
   }
-  return `✅ Confirmer la commande ?\n\nNom : *${payload.customer_name}*\n${itemCount} articles · ${total.toFixed(2)} ${currency} · ${svc} chez *${orgName}*\n\nRépondez *OUI* pour envoyer, *NON* pour annuler.`;
+  return `✅ Confirmer la commande ?\n\nNom : *${payload.customer_name}*\n${itemCount} articles · ${total.toFixed(2)} ${currency} · ${svc} chez *${orgName}*${notesPreview}\n\nRépondez *OUI* pour envoyer, *NON* pour annuler.`;
+}
+
+/**
+ * Notes step prompt — last input before the YES/NO confirm. Kept short
+ * because a long prompt right before the confirm summary makes the
+ * customer scroll a lot. The skip option is explicit so people who
+ * don't want to type anything aren't trapped.
+ */
+function tplAskNotes(locale: Locale): string {
+  if (locale === 'ar') {
+    return [
+      '📝 *ملاحظات للمطعم؟*',
+      '(مثل: بدون بصل، جرس مرتين، إلخ)',
+      '',
+      '✏️ اكتب ملاحظتك، أو أرسل *تخطي* للمتابعة بدونها.',
+    ].join('\n');
+  }
+  if (locale === 'en') {
+    return [
+      '📝 *Any note for the restaurant?*',
+      '(e.g. no onions, ring the bell twice, allergies)',
+      '',
+      '✏️ Type your note, or send *SKIP* to continue without one.',
+    ].join('\n');
+  }
+  return [
+    '📝 *Une note pour le restaurant ?*',
+    '(ex : sans oignons, sonner deux fois, allergies)',
+    '',
+    '✏️ Tapez votre note, ou envoyez *PASSER* pour continuer sans.',
+  ].join('\n');
+}
+
+/**
+ * Skip detector for the notes step. Accepts the obvious bypass words
+ * across all three locales plus a bare dash so terse customers can
+ * just type "-".
+ */
+function isSkipNotes(input: string): boolean {
+  const s = input.trim().toLowerCase();
+  if (!s) return false;
+  if (s === '-' || s === 'no' || s === 'non' || s === 'لا') return true;
+  return /^(skip|passer|sauter|none|aucune|aucun|tx?aty|tjaa?wa?z|تخطي|تجاوز|بدون)$/i.test(s);
 }
 
 function tplOrderPlaced(ticketNumber: string, eta: number, locale: Locale, orgName: string): string {
@@ -381,7 +442,7 @@ export async function startWhatsappOrderFlow(
   const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
   await supabase.from('whatsapp_sessions').delete()
     .eq(identCol, identifier)
-    .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_confirm'])
+    .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_notes', 'pending_order_confirm'])
     .eq('channel', channel);
 
   await supabase.from('whatsapp_sessions').insert({
@@ -618,11 +679,13 @@ export async function handleOrderReviewInput(
       });
       return;
     }
+    // Takeout: skip the address step entirely and go straight to the
+    // notes prompt. Notes is always asked before the final confirm so
+    // the summary card can include any kitchen instructions.
     await supabase.from('whatsapp_sessions')
-      .update({ custom_intake_data: payload, state: 'pending_order_confirm' })
+      .update({ custom_intake_data: payload, state: 'pending_order_notes' })
       .eq('id', session.id);
-    const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
-    await sendMessage({ to: identifier, body: tplAskConfirm(payload, locale, currency, orgName) });
+    await sendMessage({ to: identifier, body: tplAskNotes(locale) });
     return;
   }
 
@@ -702,8 +765,10 @@ export async function handleOrderAddressInput(
     (payload as any).delivery_address.lng = longitude;
     if (resolvedCity) (payload as any).delivery_address.city = resolvedCity;
 
+    // Address captured (pin path) → ask for kitchen notes before the
+    // final confirm. Notes is the last input step in every order flow.
     await supabase.from('whatsapp_sessions')
-      .update({ custom_intake_data: payload, state: 'pending_order_confirm' })
+      .update({ custom_intake_data: payload, state: 'pending_order_notes' })
       .eq('id', session.id);
 
     // Echo back so the customer can sanity-check before confirming.
@@ -715,8 +780,7 @@ export async function handleOrderAddressInput(
         : `📍 Position reçue.\n${echoStreet}`;
     await sendMessage({ to: identifier, body: echo });
 
-    const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
-    await sendMessage({ to: identifier, body: tplAskConfirm(payload, locale, currency, orgName) });
+    await sendMessage({ to: identifier, body: tplAskNotes(locale) });
     return;
   }
 
@@ -732,6 +796,66 @@ export async function handleOrderAddressInput(
     return;
   }
   payload.delivery_address = { street: trimmed };
+
+  // Text address captured → ask for kitchen notes before confirming.
+  await supabase.from('whatsapp_sessions')
+    .update({ custom_intake_data: payload, state: 'pending_order_notes' })
+    .eq('id', session.id);
+
+  await sendMessage({ to: identifier, body: tplAskNotes(locale) });
+}
+
+/**
+ * Notes step: capture an optional free-text instruction for the
+ * kitchen / operator, then move to the final confirm. The customer can
+ * either type a note or send "skip" / "-" to bypass. Cancel still works.
+ */
+export async function handleOrderNotesInput(
+  session: any, input: string, identifier: string, sendMessage: SendFn,
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+  const locale: Locale = (session.locale as Locale) || 'fr';
+  const payload = session.custom_intake_data as OrderSessionPayload;
+
+  if (isCancel(input)) {
+    await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+    await sendMessage({ to: identifier, body: tplCancelled(locale) });
+    return;
+  }
+
+  // Stray global commands (JOIN, STATUS) at this step — refuse politely
+  // so we don't half-cancel mid-order. Same pattern as other steps.
+  if (detectGlobalCommand(input)) {
+    const hint = locale === 'ar'
+      ? '👉 أنت في وسط طلب. اكتب ملاحظتك للمطعم أو أرسل *تخطي*.'
+      : locale === 'en'
+        ? "👉 You're in the middle of an order. Type a note for the restaurant or send *SKIP*."
+        : '👉 Vous êtes au milieu d\'une commande. Tapez une note ou envoyez *PASSER*.';
+    await sendMessage({ to: identifier, body: hint });
+    return;
+  }
+
+  // Skip path — proceed without a note. customer_notes stays undefined
+  // so the confirm summary doesn't show a 📝 line.
+  if (isSkipNotes(input)) {
+    await supabase.from('whatsapp_sessions')
+      .update({ state: 'pending_order_confirm' })
+      .eq('id', session.id);
+    const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
+    await sendMessage({ to: identifier, body: tplAskConfirm(payload, locale, currency, orgName) });
+    return;
+  }
+
+  // Capture path — trim and cap at 500 chars. The cap prevents abuse
+  // and matches the trim we apply to text addresses.
+  const note = input.trim().slice(0, 500);
+  if (note.length === 0) {
+    // Empty after trim — re-prompt rather than treating it as skip,
+    // since the customer may have hit send by accident.
+    await sendMessage({ to: identifier, body: tplAskNotes(locale) });
+    return;
+  }
+  payload.customer_notes = note;
 
   await supabase.from('whatsapp_sessions')
     .update({ custom_intake_data: payload, state: 'pending_order_confirm' })
@@ -848,6 +972,12 @@ export async function handleOrderConfirmInput(
       }
     : null;
 
+  // Customer note → tickets.notes so it surfaces on the Station card
+  // alongside operator-set notes. Empty string would still satisfy
+  // schema; we leave the column null when nothing was supplied so the
+  // UI can hide the row entirely.
+  const customerNotes = payload.customer_notes?.trim() || null;
+
   // Insert ticket as pending_approval — operator on Station accepts/declines.
   const { data: ticket, error: tkErr } = await supabase
     .from('tickets')
@@ -861,6 +991,7 @@ export async function handleOrderConfirmInput(
       status: 'pending_approval',
       customer_data: customerData,
       delivery_address: deliveryAddress as any,
+      notes: customerNotes,
       is_remote: true,
       source: 'whatsapp',
       locale,
@@ -938,7 +1069,7 @@ export async function tryHandleWhatsappOrderState(
     .select('id, organization_id, locale, channel, office_id, department_id, service_id, custom_intake_data, state, created_at')
     .eq(identCol, identifier)
     .eq('channel', channel)
-    .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_confirm'])
+    .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_notes', 'pending_order_confirm'])
     .gte('created_at', ttlCutoff)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -949,7 +1080,7 @@ export async function tryHandleWhatsappOrderState(
     // don't pile up in the table.
     await supabase.from('whatsapp_sessions').delete()
       .eq(identCol, identifier).eq('channel', channel)
-      .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_confirm'])
+      .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_notes', 'pending_order_confirm'])
       .lt('created_at', ttlCutoff);
     return false;
   }
@@ -974,6 +1105,9 @@ export async function tryHandleWhatsappOrderState(
       return true;
     case 'pending_order_address':
       await handleOrderAddressInput(session, rawInput, identifier, send, locationData);
+      return true;
+    case 'pending_order_notes':
+      await handleOrderNotesInput(session, rawInput, identifier, send);
       return true;
     case 'pending_order_confirm':
       await handleOrderConfirmInput(session, rawInput, identifier, send);
