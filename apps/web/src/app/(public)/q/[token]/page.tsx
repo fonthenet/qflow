@@ -1,14 +1,15 @@
-import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CheckInForm } from '@/components/queue/check-in-form';
 import { QueueStatus } from '@/components/queue/queue-status';
 import { GroupStatus } from '@/components/queue/group-status';
+import OrderStatus from '@/components/queue/order-status';
 import { getPriorityAlertConfig } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured } from '@/lib/sms';
 import { getServerI18n } from '@/lib/i18n';
 import { LanguageSwitcher } from '@/components/shared/language-switcher';
 import { getCountryConfig, resolveLocale } from '@/lib/country';
+import { resolveRestaurantServiceType } from '@qflo/shared';
 
 interface PageProps {
   params: Promise<{ token: string }>;
@@ -147,6 +148,84 @@ export default async function TicketStatusPage({ params }: PageProps) {
   const customerPickedLocale = (ticket.customer_data as Record<string, unknown> | null)?.locale as string | undefined;
   const countryConfig = orgCountry ? await getCountryConfig(supabase as any, orgCountry).catch(() => null) : null;
   const ticketLocale: string = resolveLocale(customerPickedLocale, orgLocalePrimary, countryConfig);
+
+  // ── Online restaurant orders get the delivery / takeout tracking UI ──
+  // Filter: source = whatsapp / web (means customer ordered through the
+  // public surface, not a walk-in) AND the resolved service type is
+  // takeout or delivery. Anything else (queue tickets, dine-in, kiosk,
+  // appointments) falls through to the existing QueueStatus component.
+  const restaurantServiceType = resolveRestaurantServiceType(service?.name ?? '');
+  const isOnlineOrder = ticket.source === 'whatsapp' || ticket.source === 'web';
+  const isOrderTracking = isOnlineOrder
+    && (restaurantServiceType === 'takeout' || restaurantServiceType === 'delivery');
+
+  if (isOrderTracking) {
+    // Pull items + assigned rider for the rich tracking page. Pricing is
+    // server-rendered as a string so the locale/currency formatting is
+    // consistent and the client component stays free of i18n money logic.
+    const [{ data: itemRows }, riderResult] = await Promise.all([
+      supabase
+        .from('ticket_items')
+        .select('id, name, qty, price, added_at')
+        .eq('ticket_id', ticket.id)
+        .order('added_at', { ascending: true }),
+      ticket.assigned_rider_id
+        ? supabase.from('staff').select('full_name, phone').eq('id', ticket.assigned_rider_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    const items = (itemRows ?? []) as Array<{ id: string; name: string; qty: number; price: number | null }>;
+    const currency: string = (typeof orgCountry === 'string' && orgCountry === 'DZ') ? 'DA' : 'DA';
+    let total = 0;
+    const renderedItems = items.map((it) => {
+      const lineTotal = (it.price ?? 0) * (it.qty ?? 0);
+      total += lineTotal;
+      return {
+        id: it.id,
+        name: it.name,
+        qty: it.qty,
+        line_total: typeof it.price === 'number' ? `${lineTotal.toFixed(2)} ${currency}` : null,
+      };
+    });
+
+    const itemCount = items.reduce((s, it) => s + (it.qty ?? 0), 0);
+    const totalDisplay = items.length > 0 ? `${total.toFixed(2)} ${currency}` : null;
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+    return renderWithLanguageSwitcher(
+      <OrderStatus
+        initialTicket={{
+          id: ticket.id,
+          ticket_number: ticket.ticket_number,
+          status: ticket.status,
+          qr_token: ticket.qr_token,
+          created_at: ticket.created_at ?? null,
+          completed_at: ticket.completed_at ?? null,
+          // No `cancelled_at` column in cloud; cancelled state is derived
+          // from status === 'cancelled' inside the client component.
+          cancelled_at: null,
+          dispatched_at: (ticket as any).dispatched_at ?? null,
+          delivered_at: (ticket as any).delivered_at ?? null,
+          notes: ticket.notes ?? null,
+          customer_data: (ticket.customer_data as Record<string, any>) ?? null,
+          delivery_address: (ticket as any).delivery_address ?? null,
+          assigned_rider_id: (ticket as any).assigned_rider_id ?? null,
+        }}
+        serviceMode={restaurantServiceType as 'takeout' | 'delivery'}
+        locale={(ticketLocale.slice(0, 2) === 'ar' ? 'ar' : ticketLocale.slice(0, 2) === 'fr' ? 'fr' : 'en') as 'ar' | 'fr' | 'en'}
+        organizationName={contextInfo.organizationName}
+        officeName={contextInfo.officeName}
+        totalDisplay={totalDisplay}
+        itemCount={itemCount}
+        items={renderedItems}
+        rider={riderResult.data ? { full_name: (riderResult.data as any).full_name ?? null, phone: (riderResult.data as any).phone ?? null } : null}
+        supabaseUrl={supabaseUrl}
+        supabaseAnonKey={supabaseAnonKey}
+      />,
+    );
+  }
 
   // Status: issued with no customer data -> show check-in form
   if (ticket.status === 'issued' && !ticket.customer_data) {
