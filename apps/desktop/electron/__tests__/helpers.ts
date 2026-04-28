@@ -29,7 +29,10 @@ export function createTestDB(): Database.Database {
       is_remote INTEGER DEFAULT 0,
       is_offline INTEGER DEFAULT 0,
       appointment_id TEXT,
-      synced_at TEXT
+      synced_at TEXT,
+      organization_id TEXT,
+      source TEXT,
+      delivery_address TEXT
     );
 
     CREATE TABLE IF NOT EXISTS offices (
@@ -48,6 +51,7 @@ export function createTestDB(): Database.Database {
       name TEXT NOT NULL,
       code TEXT,
       office_id TEXT,
+      organization_id TEXT,
       updated_at TEXT
     );
 
@@ -55,6 +59,7 @@ export function createTestDB(): Database.Database {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       department_id TEXT,
+      organization_id TEXT,
       estimated_service_time INTEGER DEFAULT 10,
       updated_at TEXT
     );
@@ -64,9 +69,74 @@ export function createTestDB(): Database.Database {
       name TEXT NOT NULL,
       department_id TEXT,
       office_id TEXT,
+      organization_id TEXT,
       is_active INTEGER DEFAULT 1,
       current_staff_id TEXT,
       updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      id TEXT PRIMARY KEY,
+      full_name TEXT,
+      organization_id TEXT,
+      office_id TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS menu_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      organization_id TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      organization_id TEXT,
+      category_id TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS broadcast_templates (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT,
+      title TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS restaurant_tables (
+      id TEXT PRIMARY KEY,
+      office_id TEXT,
+      code TEXT,
+      label TEXT,
+      zone TEXT,
+      capacity INTEGER,
+      min_party_size INTEGER,
+      max_party_size INTEGER,
+      reservable INTEGER DEFAULT 1,
+      status TEXT DEFAULT 'available',
+      current_ticket_id TEXT,
+      assigned_at TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_signups (
+      id TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      status TEXT NOT NULL DEFAULT 'queued',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_attempted_at TEXT,
+      error_message TEXT,
+      synced_org_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sync_queue (
@@ -79,7 +149,8 @@ export function createTestDB(): Database.Database {
       attempts INTEGER DEFAULT 0,
       last_error TEXT,
       synced_at TEXT,
-      next_retry_at TEXT
+      next_retry_at TEXT,
+      organization_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS session (

@@ -8,11 +8,18 @@ vi.mock('electron', () => ({
     isEncryptionAvailable: () => false,
     decryptString: () => '',
   },
+  app: {
+    isPackaged: false,
+    getPath: () => '/tmp',
+  },
 }));
 
-// Mock logTicketEvent from db module
+// Mock db module
 vi.mock('../db', () => ({
   logTicketEvent: vi.fn(),
+  setSyncNotifier: vi.fn(),
+  enqueueSync: vi.fn(),
+  deriveOrgIdForSyncItem: vi.fn(),
 }));
 
 // Import after mocks are set up
@@ -519,15 +526,15 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/office_holidays')) {
           return { ok: true, json: async () => [] };
         }
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('waiting,called,serving')) {
           return { ok: true, json: async () => [
-            { id: 't-1', ticket_number: 'GEN-001', office_id: 'office-1', department_id: 'dept-1', service_id: 'svc-1', desk_id: null, status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', called_at: null, called_by_staff_id: null, serving_started_at: null, completed_at: null, cancelled_at: null, parked_at: null, recall_count: 0, notes: null, is_remote: false, appointment_id: null, source: 'walk_in' },
+            { id: 't-1', ticket_number: 'GEN-001', office_id: 'office-1', department_id: 'dept-1', service_id: 'svc-1', desk_id: null, status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', called_at: null, called_by_staff_id: null, serving_started_at: null, completed_at: null, cancelled_at: null, parked_at: null, recall_count: 0, notes: null, is_remote: false, appointment_id: null, source: 'walk_in', delivery_address: null },
           ] };
         }
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(served,no_show,cancelled)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('served,no_show,cancelled')) {
           return { ok: true, json: async () => [] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.pullLatest();
@@ -571,16 +578,16 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/services')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/desks')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/office_holidays')) return { ok: true, json: async () => [] };
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('waiting,called,serving')) {
           // Cloud says ticket is still 'waiting'
           return { ok: true, json: async () => [
-            { id: 't-1', ticket_number: 'GEN-001', office_id: 'office-1', department_id: 'dept-1', service_id: null, desk_id: null, status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', called_at: null, called_by_staff_id: null, serving_started_at: null, completed_at: null, cancelled_at: null, parked_at: null, recall_count: 0, notes: null, is_remote: false, appointment_id: null, source: 'walk_in' },
+            { id: 't-1', ticket_number: 'GEN-001', office_id: 'office-1', department_id: 'dept-1', service_id: null, desk_id: null, status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', called_at: null, called_by_staff_id: null, serving_started_at: null, completed_at: null, cancelled_at: null, parked_at: null, recall_count: 0, notes: null, is_remote: false, appointment_id: null, source: 'walk_in', delivery_address: null },
           ] };
         }
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(served,no_show,cancelled)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('served,no_show,cancelled')) {
           return { ok: true, json: async () => [] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.pullLatest();
@@ -615,15 +622,15 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/services')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/desks')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/office_holidays')) return { ok: true, json: async () => [] };
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('waiting,called,serving')) {
           return { ok: true, json: async () => [
-            { id: 't-new', ticket_number: 'CS-001', office_id: 'office-1', department_id: 'd1', status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', is_remote: false, source: 'walk_in' },
+            { id: 't-new', ticket_number: 'CS-001', office_id: 'office-1', department_id: 'd1', status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', is_remote: false, source: 'walk_in', delivery_address: null },
           ] };
         }
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(served,no_show,cancelled)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('served,no_show,cancelled')) {
           return { ok: true, json: async () => [] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.pullLatest();
