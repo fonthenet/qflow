@@ -44,13 +44,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Ticket is not pending approval (current status: ${ticket.status})` }, { status: 409 });
   }
 
-  // Fetch office + org for branding/name used in notifications
+  // Fetch office + org for branding/name used in notifications. We
+  // also pull settings.business_category so the approval / declined
+  // templates can swap their vocabulary (restaurant → "réservation"
+  // + table-ready copy; default → "rendez-vous" + ticket copy).
   const { data: office } = await supabase
     .from('offices')
-    .select('id, organization_id, organization:organizations(id, name)')
+    .select('id, organization_id, organization:organizations(id, name, settings)')
     .eq('id', ticket.office_id)
     .single();
   const orgName: string = office?.organization?.name ?? '';
+  const orgCategory: string | null = (office?.organization as any)?.settings?.business_category ?? null;
+  const { getApptVocabVars: _getApptVocabVarsModerate } = await import('@/lib/appointment-vocabulary');
+  // apptVocabModerate computed lazily below (after `locale` is declared);
+  // we capture orgCategory here so we don't re-query the office row.
 
   // Find the channel session (if ticket came through WhatsApp/Messenger).
   // We don't filter by state — even if the session was already moved to
@@ -83,6 +90,11 @@ export async function POST(request: NextRequest) {
     || (sessionRow?.locale as Locale)
     || (cd.locale as Locale)
     || 'fr';
+
+  // Resolved here, after `locale` exists. Substituted into the approve /
+  // declined templates so restaurants get "réservation" + table-ready
+  // copy and salons get "rendez-vous" + ✂️ instead of the default.
+  const apptVocabModerate = _getApptVocabVarsModerate(orgCategory, locale);
 
   if (action === 'approve') {
     const { error: updErr } = await supabase
@@ -123,6 +135,7 @@ export async function POST(request: NextRequest) {
       const apprWhenDt = (ticket as any).checked_in_at ? new Date((ticket as any).checked_in_at) : new Date();
       const approvedTime = apprWhenDt.toLocaleTimeString(apprLocTag, { hour: '2-digit', minute: '2-digit', hour12: false });
       const approvedHeader = tMsg('approval_approved_sameday', locale, {
+        ...apptVocabModerate,
         name: orgName,
         time: approvedTime,
         service: approvedServiceName,
@@ -202,6 +215,7 @@ export async function POST(request: NextRequest) {
     const declinedDate = whenDt.toLocaleDateString(locTag, { day: '2-digit', month: '2-digit', year: 'numeric' });
     const declinedTime = whenDt.toLocaleTimeString(locTag, { hour: '2-digit', minute: '2-digit', hour12: false });
     const declinedBody = tMsg('approval_declined', locale, {
+      ...apptVocabModerate,
       name: orgName,
       date: declinedDate,
       time: declinedTime,

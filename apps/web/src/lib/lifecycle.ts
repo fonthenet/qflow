@@ -269,7 +269,7 @@ export async function transitionAppointment(
   // 6. Resolve notification channel
   const { data: office } = await sb
     .from('offices')
-    .select('organization_id, organization:organizations(id, name, timezone)')
+    .select('organization_id, organization:organizations(id, name, timezone, settings)')
     .eq('id', appt.office_id)
     .single();
 
@@ -277,6 +277,10 @@ export async function transitionAppointment(
   const orgId: string | null = office?.organization_id ?? (office?.organization as any)?.id ?? null;
   // Use org-level timezone as single source of truth
   const officeTz: string = opts.officeTz ?? (office?.organization as any)?.timezone ?? 'Africa/Algiers';
+  // Resolve category for vocabulary substitution — restaurants render
+  // "réservation" + table-ready copy instead of the default "rendez-vous"
+  // + ticket copy. See appointment-vocabulary.ts.
+  const orgCategory: string | null = (office?.organization as any)?.settings?.business_category ?? null;
 
   if (opts.skipNotify) {
     return { ok: true, status: newStatus, notified: false, channel: null, notifyError: null };
@@ -304,7 +308,12 @@ export async function transitionAppointment(
     } catch { /* ignore */ }
   }
 
-  const templateParams: Record<string, string> = { name: orgName, date: apptDate, time: apptTime, service: serviceName };
+  const { getApptVocabVars } = await import('@/lib/appointment-vocabulary');
+  const apptVocabVars = getApptVocabVars(orgCategory, (loc as 'ar' | 'fr' | 'en'));
+  const templateParams: Record<string, string> = {
+    ...apptVocabVars,
+    name: orgName, date: apptDate, time: apptTime, service: serviceName,
+  };
 
   switch (newStatus) {
     case 'confirmed': {
@@ -405,13 +414,14 @@ export async function notifyAppointmentRescheduled(
   // 2. Get org name + timezone
   const { data: office } = await sb
     .from('offices')
-    .select('organization_id, organization:organizations(id, name, timezone)')
+    .select('organization_id, organization:organizations(id, name, timezone, settings)')
     .eq('id', appt.office_id)
     .single();
 
   const orgName: string = (office?.organization as any)?.name ?? '';
   const orgId: string | null = office?.organization_id ?? (office?.organization as any)?.id ?? null;
   const tz: string = (office?.organization as any)?.timezone ?? 'Africa/Algiers';
+  const orgCategoryRescheduled: string | null = (office?.organization as any)?.settings?.business_category ?? null;
 
   // 3. Format new date/time in org timezone
   const dt = new Date(newScheduledAt);
@@ -421,7 +431,10 @@ export async function notifyAppointmentRescheduled(
 
   // 4. Resolve channel + send
   const resolved = await resolveNotificationChannel(sb, appt.customer_phone, orgId, appt.locale);
+  const { getApptVocabVars: getApptVocabVarsR } = await import('@/lib/appointment-vocabulary');
+  const apptVocabRescheduled = getApptVocabVarsR(orgCategoryRescheduled, (resolved.locale as 'ar' | 'fr' | 'en'));
   const msgBody = tMsg('appointment_rescheduled', resolved.locale, {
+    ...apptVocabRescheduled,
     name: orgName,
     new_date: newDate,
     new_time: newTime,
