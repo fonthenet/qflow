@@ -61,24 +61,33 @@ function tplMenuFooter(locale: Locale): string {
   if (locale === 'ar') {
     return [
       '',
-      'أرسل أرقام المنتجات لإضافتها للسلة.',
-      'مثال: `1 3 5x2` — يضيف ١، ٣، و٥ بكمية ٢',
-      'أرسل *إلغاء* للإلغاء.',
+      '👉 *أرسل رقم الصنف الذي تريد*',
+      '   • رقم واحد: `4`',
+      '   • عدة أرقام: `4 7 11`',
+      '   • مع كمية: `4x2 7`',
+      '',
+      'أرسل *إلغاء* في أي وقت للإلغاء.',
     ].join('\n');
   }
   if (locale === 'en') {
     return [
       '',
-      'Reply with item numbers to add to cart.',
-      'Example: `1 3 5x2` — adds items 1, 3, and 5 with qty 2',
-      'Send *CANCEL* to abort.',
+      '👉 *Reply with the item number(s) you want*',
+      '   • One item: `4`',
+      '   • Several items: `4 7 11`',
+      '   • With quantity: `4x2 7`',
+      '',
+      'Send *CANCEL* anytime to stop.',
     ].join('\n');
   }
   return [
     '',
-    'Répondez avec les numéros pour ajouter au panier.',
-    'Exemple : `1 3 5x2` — ajoute 1, 3 et 5 avec qté 2',
-    'Envoyez *ANNULER* pour annuler.',
+    '👉 *Répondez avec le(s) numéro(s) que vous voulez*',
+    '   • Un article : `4`',
+    '   • Plusieurs : `4 7 11`',
+    '   • Avec quantité : `4x2 7`',
+    '',
+    'Envoyez *ANNULER* à tout moment pour arrêter.',
   ].join('\n');
 }
 
@@ -97,28 +106,36 @@ function tplNoCodesParsed(locale: Locale): string {
 function tplCart(payload: OrderSessionPayload, locale: Locale, currency: string): string {
   const lines: string[] = [];
   lines.push(locale === 'ar' ? '🛒 *سلتك*' : locale === 'en' ? '🛒 *Your cart*' : '🛒 *Votre panier*');
+  lines.push('');
   let total = 0;
   for (const itemId of Object.keys(payload.cart)) {
     const it = payload.cart[itemId];
     const lineTotal = it.unit_price * it.qty;
     total += lineTotal;
-    lines.push(`• ${it.name} × ${it.qty} — ${lineTotal.toFixed(2)} ${currency}`);
+    lines.push(`• ${it.qty}× ${it.name} — ${lineTotal.toFixed(2)} ${currency}`);
   }
-  const prepTimes = Object.values(payload.cart).map((c) => c.prep_time_minutes);
-  const eta = computeOrderEtaMinutes(prepTimes, 0);
   lines.push('');
   if (locale === 'ar') {
-    lines.push(`*المجموع: ${total.toFixed(2)} ${currency}* · الوقت المقدر ~${eta} دقيقة`);
+    lines.push(`*المجموع: ${total.toFixed(2)} ${currency}*`);
     lines.push('');
-    lines.push('أرسل *الاسم <اسمك>* للمتابعة، *إضافة* لإضافة المزيد، أو *إلغاء*.');
+    lines.push('👉 *أرسل اسمك* للمتابعة');
+    lines.push('   مثال: `فيصل`');
+    lines.push('');
+    lines.push('أو *أضف* رقمًا آخر للسلة، أو *إلغاء* للإلغاء.');
   } else if (locale === 'en') {
-    lines.push(`*Total: ${total.toFixed(2)} ${currency}* · ETA ~${eta} min`);
+    lines.push(`*Total: ${total.toFixed(2)} ${currency}*`);
     lines.push('');
-    lines.push('Send *NAME <your name>* to continue, *ADD* to add more, or *CANCEL*.');
+    lines.push('👉 *Send your name* to continue');
+    lines.push('   Example: `Faycel`');
+    lines.push('');
+    lines.push('Or send another item number to add to cart, or *CANCEL* to stop.');
   } else {
-    lines.push(`*Total : ${total.toFixed(2)} ${currency}* · ETA ~${eta} min`);
+    lines.push(`*Total : ${total.toFixed(2)} ${currency}*`);
     lines.push('');
-    lines.push("Envoyez *NOM <votre nom>* pour continuer, *AJOUTER* pour ajouter, ou *ANNULER*.");
+    lines.push('👉 *Envoyez votre nom* pour continuer');
+    lines.push('   Exemple : `Faycel`');
+    lines.push('');
+    lines.push("Ou envoyez un autre numéro pour ajouter au panier, ou *ANNULER* pour arrêter.");
   }
   return lines.join('\n');
 }
@@ -216,11 +233,10 @@ function renderMenu(
       lines.push(`*${it.category}*`);
       lastCategory = it.category;
     }
-    const codeStr = String(it.code).padEnd(3, ' ');
-    const prep = typeof it.prep_time_minutes === 'number' && it.prep_time_minutes > 0
-      ? ` · ${it.prep_time_minutes} min`
-      : '';
-    lines.push(`${codeStr} ${it.name} — ${formatMoney(it.unit_price, currency)}${prep}`);
+    // Bold the number for scannability; prep time is intentionally hidden
+    // from the customer-facing menu — it's only used internally to compute
+    // the ETA quoted on Accept. The visual was getting cluttered before.
+    lines.push(`*${it.code}.* ${it.name} — ${formatMoney(it.unit_price, currency)}`);
   }
   lines.push(tplMenuFooter(locale));
   return lines.join('\n');
@@ -333,11 +349,11 @@ export async function startWhatsappOrderFlow(
 // ── State handlers ───────────────────────────────────────────────────
 
 function isCancel(input: string): boolean {
-  return /^(cancel|annuler|annul|إلغاء|الغاء|stop|0)$/i.test(input.trim());
+  return /^(cancel|annuler|annul|إلغاء|الغاء|stop|exit|quit|0)$/i.test(input.trim());
 }
 
 function isAdd(input: string): boolean {
-  return /^(add|ajouter|إضافة|اضافة|more)$/i.test(input.trim());
+  return /^(add|ajouter|ajouter|plus|إضافة|اضافة|more|menu)$/i.test(input.trim());
 }
 
 function isYes(input: string): boolean {
@@ -348,11 +364,49 @@ function isNo(input: string): boolean {
   return /^(no|non|n|لا|annuler|cancel)$/i.test(input.trim());
 }
 
-/** Extract "NAME Faycel" / "NOM Faycel" / "الاسم فيصل" → "Faycel" */
+/**
+ * Detect a global command word the customer might type mid-flow (JOIN,
+ * STATUS, MENU, HELP, AIDE, …). Returns the canonical command string
+ * when matched, null otherwise. Used to refuse those words inside a
+ * review/address/confirm step rather than misinterpreting them as a
+ * name or letting them silently pass through.
+ */
+function detectGlobalCommand(input: string): string | null {
+  const norm = input.trim().toLowerCase();
+  const tokens = norm.split(/\s+/);
+  const first = tokens[0] ?? '';
+  const known = new Set([
+    'join', 'rejoindre', 'انضم',
+    'status', 'statut', 'حالة',
+    'menu', 'help', 'aide', 'مساعدة',
+    'list', 'liste', 'القائمة',
+    'book', 'rdv', 'موعد',
+    'qr',
+  ]);
+  return known.has(first) ? first : null;
+}
+
+/** Extract explicit "NAME Faycel" / "NOM Faycel" / "الاسم فيصل" → "Faycel" */
 function parseNameCommand(input: string): string | null {
   const m = input.trim().match(/^(?:name|nom|الاسم)\s+(.+)$/i);
   if (m) return m[1].trim().slice(0, 200);
   return null;
+}
+
+/**
+ * Heuristic: does this look like a plain name? Used in the review state
+ * so customers can just type "Faycel" without the NAME prefix. We accept
+ * 2–60 chars of letters / spaces / hyphens / apostrophes (Latin + Arabic
+ * + accented Latin), refusing anything containing digits, command words,
+ * or punctuation that suggests it's something else.
+ */
+function looksLikeName(input: string): boolean {
+  const t = input.trim();
+  if (t.length < 2 || t.length > 60) return false;
+  if (/\d/.test(t)) return false;
+  if (detectGlobalCommand(t)) return false;
+  // Letters (Latin/Arabic/diacritics), spaces, hyphens, apostrophes.
+  return /^[\p{L}\s'’\-]+$/u.test(t);
 }
 
 /**
@@ -407,6 +461,15 @@ export async function handleOrderBrowseInput(
     return;
   }
 
+  // Customer types JOIN / STATUS / HELP / MENU mid-flow — give them the
+  // menu again with a hint instead of letting the input fall through.
+  const globalCmd = detectGlobalCommand(input);
+  if (globalCmd) {
+    const { orgName, currency } = await loadOrgCurrency(supabase, payload.organization_id);
+    await sendMessage({ to: identifier, body: renderMenu(orgName, payload.catalog, currency, locale) });
+    return;
+  }
+
   const codes = parseOrderCodes(input);
   if (codes.length === 0) {
     await sendMessage({ to: identifier, body: tplNoCodesParsed(locale) });
@@ -415,7 +478,15 @@ export async function handleOrderBrowseInput(
 
   const result = addCodesToCart(payload, codes);
   if (result.added === 0) {
-    await sendMessage({ to: identifier, body: tplNoCodesParsed(locale) });
+    // All codes were out-of-range. Tell the customer the valid range so
+    // they don't blindly retry.
+    const max = payload.catalog.length;
+    const msg = locale === 'ar'
+      ? `⚠️ تلك الأرقام غير موجودة في القائمة. الأرقام المتاحة من 1 إلى ${max}.`
+      : locale === 'en'
+        ? `⚠️ Those numbers aren't on the menu. Valid numbers are 1 to ${max}.`
+        : `⚠️ Ces numéros ne sont pas au menu. Les numéros valides sont 1 à ${max}.`;
+    await sendMessage({ to: identifier, body: msg });
     return;
   }
 
@@ -449,7 +520,35 @@ export async function handleOrderReviewInput(
     return;
   }
 
-  const name = parseNameCommand(input);
+  // Customer typed YES/OUI too early — they meant "confirm" but we still
+  // need a name. Tell them clearly instead of silently re-rendering the
+  // cart and looking broken.
+  if (isYes(input)) {
+    const hint = locale === 'ar'
+      ? '👉 رجاءً أرسل اسمك أولاً (مثال: `فيصل`).'
+      : locale === 'en'
+        ? '👉 Please send your name first (e.g. `Faycel`).'
+        : "👉 Veuillez envoyer votre nom d'abord (ex : `Faycel`).";
+    await sendMessage({ to: identifier, body: hint });
+    return;
+  }
+
+  // Stray global command (JOIN, STATUS, HELP…) — refuse politely so
+  // we don't half-cancel the order or treat it as a name.
+  const globalCmd = detectGlobalCommand(input);
+  if (globalCmd) {
+    const hint = locale === 'ar'
+      ? `👉 أنت في وسط طلب جارٍ. أرسل اسمك للمتابعة، أو *إلغاء* للتخلي عن السلة.`
+      : locale === 'en'
+        ? `👉 You're in the middle of an order. Send your name to continue, or *CANCEL* to drop the cart.`
+        : `👉 Vous êtes au milieu d'une commande. Envoyez votre nom pour continuer, ou *ANNULER* pour abandonner.`;
+    await sendMessage({ to: identifier, body: hint });
+    return;
+  }
+
+  // Explicit "NAME Faycel" still works for power users / docs.
+  const explicitName = parseNameCommand(input);
+  const name = explicitName ?? (looksLikeName(input) ? input.trim() : null);
   if (name) {
     payload.customer_name = name;
     if (payload.service === 'delivery') {
@@ -523,6 +622,16 @@ export async function handleOrderConfirmInput(
   if (isNo(input) || isCancel(input)) {
     await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
     await sendMessage({ to: identifier, body: tplCancelled(locale) });
+    return;
+  }
+  // Stray global command at the confirm step — tell them clearly.
+  if (detectGlobalCommand(input)) {
+    const hint = locale === 'ar'
+      ? '👉 أنت على وشك إرسال طلبك. أرسل *نعم* للتأكيد أو *لا* للإلغاء.'
+      : locale === 'en'
+        ? '👉 You\'re about to send your order. Reply *YES* to confirm or *NO* to cancel.'
+        : "👉 Vous êtes sur le point d'envoyer la commande. Répondez *OUI* pour confirmer ou *NON* pour annuler.";
+    await sendMessage({ to: identifier, body: hint });
     return;
   }
   if (!isYes(input)) {
@@ -674,17 +783,30 @@ export async function tryHandleWhatsappOrderState(
 ): Promise<boolean> {
   const supabase = createAdminClient() as any;
   const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+  // 30-min TTL — if the customer abandons mid-order and comes back the
+  // next day with "Hi", we want the order session to be considered stale
+  // so the greeting/JOIN dispatcher takes over instead of trapping them.
+  const ttlCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   const { data: session } = await supabase
     .from('whatsapp_sessions')
     .select('id, organization_id, locale, channel, office_id, department_id, service_id, custom_intake_data, state, created_at')
     .eq(identCol, identifier)
     .eq('channel', channel)
     .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_confirm'])
+    .gte('created_at', ttlCutoff)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (!session) return false;
+  if (!session) {
+    // Garbage-collect any stale order sessions for this user so they
+    // don't pile up in the table.
+    await supabase.from('whatsapp_sessions').delete()
+      .eq(identCol, identifier).eq('channel', channel)
+      .in('state', ['pending_order_browse', 'pending_order_review', 'pending_order_address', 'pending_order_confirm'])
+      .lt('created_at', ttlCutoff);
+    return false;
+  }
 
   // Sanity check: payload must be a wa_order with non-empty catalog.
   const payload = (session.custom_intake_data ?? null) as OrderSessionPayload | null;
