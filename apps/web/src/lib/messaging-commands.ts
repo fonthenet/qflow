@@ -8,92 +8,40 @@ import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 import { resolveWilaya, formatWilaya } from '@/lib/wilayas';
 import { APP_BASE_URL } from '@/lib/config';
-import { getOfficePublicSlug } from '@/lib/office-links';
 import { resolveRestaurantServiceType } from '@qflo/shared';
+import { startWhatsappOrderFlow, tryHandleWhatsappOrderState } from '@/lib/whatsapp-ordering';
 
 /**
- * If the org has any active office with at least one takeout or delivery
- * service configured, return the public menu URL for that office. Phone
- * is appended as ?p= so the order page pre-fills the customer's number.
+ * If the picked service is takeout or delivery, kick off the in-WhatsApp
+ * ordering flow (numbered menu, cart in chat, confirm by message) and
+ * skip the queue-intake. Returns true when the routing fired so the
+ * caller stops the standard JOIN-confirmation path.
  *
- * Returns null when no office offers online ordering — used by the WA
- * greeting handler to decide whether to send the menu-link follow-up.
- */
-/**
- * If the picked service is takeout or delivery, send the public menu
- * link instead of running the queue-intake flow (name, party size, …).
- * Returns true when the routing was handled and the caller should NOT
- * fall through to the standard JOIN confirmation. Returns false for
- * dine-in or non-restaurant services.
+ * Pure-WhatsApp by user request: no link is ever sent to the customer.
+ * Dine-in keeps the existing intake flow because party-size + name make
+ * sense for table seating.
  */
 async function routeRestaurantServiceToOrdering(
   serviceName: string,
-  supabase: any,
   organizationId: string,
+  officeId: string,
+  serviceId: string,
+  departmentId: string,
   identifier: string,
+  channel: Channel,
   locale: Locale,
   sendMessage: SendFn,
 ): Promise<boolean> {
   const t = resolveRestaurantServiceType(serviceName);
   if (t !== 'takeout' && t !== 'delivery') return false;
-  const link = await resolvePublicMenuLink(supabase, organizationId, identifier);
-  if (!link) {
-    // Office has the service flagged as takeout/delivery but no slug or
-    // setup yet — fall back to standard intake so the customer isn't
-    // stranded mid-flow with nothing actionable.
-    return false;
-  }
-  const body = locale === 'ar'
-    ? `🍽️ لطلب ${t === 'delivery' ? 'التوصيل' : 'الاستلام'}، اضغط على الرابط واختر الأصناف:\n${link}`
-    : locale === 'fr'
-      ? `🍽️ Pour ${t === 'delivery' ? 'la livraison' : "l'emporter"}, ouvrez le lien et sélectionnez vos articles :\n${link}`
-      : `🍽️ For ${t === 'delivery' ? 'delivery' : 'takeout'}, open the link and pick your items:\n${link}`;
-  await sendMessage({ to: identifier, body });
-  return true;
-}
-
-async function resolvePublicMenuLink(
-  supabase: any,
-  organizationId: string,
-  customerPhone: string,
-): Promise<string | null> {
-  try {
-    // No `slug` column exists on `offices` — the public slug is derived
-    // from name + id by getOfficePublicSlug(). Selecting a phantom column
-    // here was the root cause of the JOIN-flow regression: PostgREST
-    // returned null, the helper bailed, and the JOIN dispatcher fell
-    // back to the default intake (Full name → Party size).
-    const { data: offices } = await supabase
-      .from('offices')
-      .select('id, name, settings, is_active, organization_id')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true);
-    if (!offices?.length) return null;
-
-    // For each office, check whether it has a takeout/delivery service.
-    for (const office of offices) {
-      const { data: depts } = await supabase
-        .from('departments')
-        .select('id, services(id, name, is_active)')
-        .eq('office_id', office.id)
-        .eq('is_active', true);
-      const allServices = (depts ?? []).flatMap((d: any) =>
-        (d.services ?? []).filter((s: any) => s.is_active),
-      );
-      const hasOrderingService = allServices.some((s: any) => {
-        const t = resolveRestaurantServiceType(s.name);
-        return t === 'takeout' || t === 'delivery';
-      });
-      if (!hasOrderingService) continue;
-      const slug = getOfficePublicSlug(office as any);
-      const baseUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
-      const phoneParam = customerPhone ? `?p=${encodeURIComponent(customerPhone)}` : '';
-      return `${baseUrl}/m/${encodeURIComponent(slug)}${phoneParam}`;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  // WhatsApp-only ordering: messenger doesn't have the same template
+  // discipline yet, so for now we only run the in-chat flow on WhatsApp.
+  if (channel !== 'whatsapp') return false;
+  return await startWhatsappOrderFlow(
+    identifier, channel, locale,
+    organizationId, officeId, serviceId, departmentId, serviceName,
+    sendMessage,
+  );
 }
 
 // ── Phone normalization ──────────────────────────────────────────────
@@ -1433,6 +1381,19 @@ export async function handleInboundMessage(
     }
   }
 
+  // ── Active in-WhatsApp ordering session ─────────────────────────
+  // Runs BEFORE the JOIN/booking handlers so cart codes ("1 3 5x2") and
+  // confirm replies ("YES") don't accidentally collide with quick-action
+  // commands or queue intake. tryHandleWhatsappOrderState looks up an
+  // active pending_order_* session for this identifier and dispatches
+  // to the appropriate state handler. Returns true when handled.
+  if (channel === 'whatsapp') {
+    const handledByOrder = await tryHandleWhatsappOrderState(
+      identifier, channel, messageBody, sendMessage,
+    );
+    if (handledByOrder) return;
+  }
+
   // ── Pending join confirmation (YES/OUI/نعم or NO/NON/لا) ──
   // Check DB for a pending_confirmation session for this user
   {
@@ -2215,24 +2176,10 @@ export async function handleInboundMessage(
             code: greet.code ?? '',
           }),
         });
-        // Online ordering follow-up: if this org has at least one office
-        // with a takeout/delivery service configured, send the public
-        // menu link in a separate message. Phone is pre-filled so the
-        // customer's order pre-populates with their WA contact.
-        try {
-          const orderLink = await resolvePublicMenuLink(supabaseGreet, greetOrg.id, identifier);
-          if (orderLink) {
-            const orderHint =
-              greetLocale === 'ar'
-                ? `🍽️ لطلب الاستلام أو التوصيل عبر الإنترنت:\n${orderLink}`
-                : greetLocale === 'fr'
-                  ? `🍽️ Pour commander à emporter ou en livraison :\n${orderLink}`
-                  : `🍽️ To order takeout or delivery online:\n${orderLink}`;
-            await sendMessage({ to: identifier, body: orderHint });
-          }
-        } catch (e) {
-          console.warn('[messaging-commands] menu link follow-up failed', (e as any)?.message);
-        }
+        // Pure-WhatsApp ordering: customers reach the order flow by
+        // sending JOIN <code> and then picking Takeout / Delivery from
+        // the service list. No menu link is sent — the in-chat numbered
+        // menu opens directly from there.
       } else {
         await sendMessage({
           to: identifier,
@@ -2921,9 +2868,15 @@ async function handleDepartmentChoice(
     // else, including dine-in which still uses the queue intake).
     const onlyService = services[0];
     if (await routeRestaurantServiceToOrdering(
-      onlyService.name, supabase, session.organization_id,
-      identifier, locale, sendMessage,
+      onlyService.name,
+      session.organization_id,
+      session.office_id,
+      onlyService.id,
+      dept.id,
+      identifier, channel, locale, sendMessage,
     )) {
+      // Selection-stage session is no longer needed; the order flow
+      // owns its own pending_order_browse session from now on.
       await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
       return;
     }
@@ -2970,13 +2923,17 @@ async function handleServiceChoice(
   const service = services[idx - 1];
 
   // Restaurant short-circuit: takeout/delivery skip the queue-intake
-  // entirely (no name, no party_size — that flow doesn't fit pickup or
-  // delivery). Customer gets the public ordering link, picks items there,
-  // and the order arrives back on Station as a pending_approval ticket.
-  // Dine-in keeps the existing intake flow (party size matters there).
+  // entirely (no name, no party_size). Pure-WhatsApp ordering: the
+  // customer browses a numbered menu in chat, builds a cart by message,
+  // confirms by reply. Dine-in keeps the existing intake (party size
+  // and name make sense for table seating).
   if (await routeRestaurantServiceToOrdering(
-    service.name, supabase, session.organization_id,
-    identifier, locale, sendMessage,
+    service.name,
+    session.organization_id,
+    session.office_id,
+    service.id,
+    session.department_id,
+    identifier, channel, locale, sendMessage,
   )) {
     await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
     return;
