@@ -721,6 +721,15 @@ function ExpandedTicketModal({
                         {da.street}
                       </div>
                       {da.city && <div>{da.city}</div>}
+                      {/* See QueueOrderCard for why we surface "approximate"
+                          when a pin is attached — Nominatim's house-number
+                          mapping isn't reliable enough to trust as a
+                          navigation target. The pin always is. */}
+                      {hasPin && (
+                        <div style={{ marginTop: 3, fontSize: 11, color: 'var(--text3, #94a3b8)', fontStyle: 'italic' }}>
+                          {tl('Address approximate — use pin')}
+                        </div>
+                      )}
                       {da.instructions && (
                         <div style={{ marginTop: 3, fontStyle: 'italic' }}>{da.instructions}</div>
                       )}
@@ -731,15 +740,15 @@ function ExpandedTicketModal({
                           rel="noreferrer"
                           onClick={stop}
                           style={{
-                            display: 'inline-block', marginTop: 8,
-                            padding: '6px 14px', borderRadius: 8,
-                            fontSize: 13, fontWeight: 700,
-                            background: 'rgba(59,130,246,0.18)', color: '#3b82f6',
-                            border: '1px solid rgba(59,130,246,0.45)',
+                            display: 'inline-block', marginTop: 10,
+                            padding: '8px 18px', borderRadius: 8,
+                            fontSize: 14, fontWeight: 700,
+                            background: '#3b82f6', color: '#fff',
+                            border: '1px solid #2563eb',
                             textDecoration: 'none',
                           }}
                         >
-                          🗺️ {tl('Open in Maps')}
+                          📍 {tl('Go to pin')}
                         </a>
                       )}
                     </div>

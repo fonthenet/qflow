@@ -6579,6 +6579,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                                     {da.city ? `, ${da.city}` : ''}
                                     {da.instructions ? ` — ${da.instructions}` : ''}
                                   </span>
+                                  {/* Pin = source of truth; the street text
+                                      from reverse-geocoding can be off by
+                                      a few house numbers. Make that explicit
+                                      so the driver always taps the link. */}
+                                  {hasPin && (
+                                    <div style={{ marginTop: 2, fontSize: 9, color: 'var(--text3, #94a3b8)', fontStyle: 'italic' }}>
+                                      {t('Address approximate — use pin')}
+                                    </div>
+                                  )}
                                   {mapsHref && (
                                     <a
                                       href={mapsHref}
@@ -6586,16 +6595,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                                       rel="noreferrer"
                                       onClick={(e) => e.stopPropagation()}
                                       style={{
-                                        display: 'inline-block', marginTop: 3,
-                                        fontSize: 10, fontWeight: 700,
-                                        padding: '2px 8px', borderRadius: 5,
-                                        background: 'rgba(59,130,246,0.18)',
-                                        color: '#3b82f6',
-                                        border: '1px solid rgba(59,130,246,0.4)',
+                                        display: 'inline-block', marginTop: 4,
+                                        fontSize: 11, fontWeight: 700,
+                                        padding: '3px 10px', borderRadius: 5,
+                                        background: '#3b82f6',
+                                        color: '#fff',
+                                        border: '1px solid #2563eb',
                                         textDecoration: 'none',
                                       }}
                                     >
-                                      🗺️ {t('Open in Maps')}
+                                      📍 {t('Go to pin')}
                                     </a>
                                   )}
                                 </div>

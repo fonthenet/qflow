@@ -413,8 +413,13 @@ export default function OrderStatus(props: OrderStatusProps) {
                 fontWeight: 700, fontSize: 11, textDecoration: 'none',
                 whiteSpace: 'nowrap', flexShrink: 0,
               }}
+              title={tr(locale,
+                'Address text is approximate — this opens the exact pin you shared.',
+                "L'adresse est approximative — ceci ouvre le point exact que vous avez partagé.",
+                'العنوان تقريبي — هذا يفتح الموقع الذي شاركته بالضبط.',
+              )}
             >
-              🗺️ {tr(locale, 'Maps', 'Maps', 'الخرائط')}
+              📍 {tr(locale, 'Pin', 'Épingle', 'الموقع')}
             </a>
           )}
         </section>

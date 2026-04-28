@@ -453,6 +453,15 @@ export function QueueOrderCard({
                 </div>
               )}
               {deliveryAddress?.city && <div>{deliveryAddress.city}</div>}
+              {/* When a customer-shared pin is attached, the street text
+                  is whatever Nominatim snapped to (often the wrong house
+                  number on long blocks). Tell the operator the pin —
+                  not the text — is the navigation source of truth. */}
+              {hasPin && deliveryAddress?.street && (
+                <div style={{ marginTop: 2, fontSize: 10, color: 'var(--text3, #94a3b8)', fontStyle: 'italic' }}>
+                  {tl('Address approximate — use pin')}
+                </div>
+              )}
               {deliveryAddress?.instructions && (
                 <div style={{ marginTop: 2, fontStyle: 'italic' }}>{deliveryAddress.instructions}</div>
               )}
@@ -463,15 +472,15 @@ export function QueueOrderCard({
                   rel="noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   style={{
-                    display: 'inline-block', marginTop: 4,
-                    padding: '2px 8px', borderRadius: 5,
-                    fontSize: 10, fontWeight: 700,
-                    background: 'rgba(59,130,246,0.18)', color: '#3b82f6',
-                    border: '1px solid rgba(59,130,246,0.4)',
+                    display: 'inline-block', marginTop: 6,
+                    padding: '5px 12px', borderRadius: 6,
+                    fontSize: 12, fontWeight: 700,
+                    background: '#3b82f6', color: '#fff',
+                    border: '1px solid #2563eb',
                     textDecoration: 'none',
                   }}
                 >
-                  🗺️ {tl('Open in Maps')}
+                  📍 {tl('Go to pin')}
                 </a>
               )}
             </div>
