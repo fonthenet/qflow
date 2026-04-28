@@ -7056,50 +7056,54 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     </span>
                   ) : null}
                 </div>
-                {ticket.id !== activeTicket?.id ? (
-                  <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
-                    {/* Complete — primary action when a ticket is already
-                        being served. Critical for auto-served dine-in
-                        tickets (restaurants): they don't show on the
-                        QueueOrdersCanvas (canvas filters dine-in) and
-                        don't show on FloorMap until assigned to a table,
-                        so the sidebar is the ONLY place the operator can
-                        end the visit. Without this button such tickets
-                        appear permanently "stuck" in ACTIVE. */}
-                    {ticket.status === 'serving' && (
-                      <button
-                        className="btn-sm"
-                        style={{ background: '#22c55e', color: '#fff', border: 'none' }}
-                        onClick={() => complete(ticket.id)}
-                        aria-label={`${t('Complete')} ${ticket.ticket_number}`}
-                      >
-                        ✓ {t('Complete')}
-                      </button>
-                    )}
+                <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                  {/* Complete — always visible for serving tickets, even
+                      when this is the operator's own activeTicket. The
+                      canvas (where Complete normally lives) filters out
+                      dine-in, so for auto-served dine-in tickets this is
+                      the ONLY exit. Without it the row stays in ACTIVE
+                      forever. */}
+                  {ticket.status === 'serving' && (
                     <button
                       className="btn-sm"
-                      style={{ background: '#3b82f6', color: '#fff', border: 'none' }}
-                      onClick={() => takeOver(ticket.id)}
-                      aria-label={`${t('Take Over')} ${ticket.ticket_number}`}
+                      style={{ background: '#22c55e', color: '#fff', border: 'none' }}
+                      onClick={() => complete(ticket.id)}
+                      aria-label={`${t('Complete')} ${ticket.ticket_number}`}
                     >
-                      {t('Take Over')}
+                      ✓ {t('Complete')}
                     </button>
-                    <button
-                      className="btn-sm btn-outline"
-                      onClick={() => park(ticket.id)}
-                      aria-label={`${t('Park')} ${ticket.ticket_number}`}
-                    >
-                      {t('Park')}
-                    </button>
-                    <button
-                      className="btn-sm btn-outline"
-                      onClick={() => requeue(ticket.id)}
-                      aria-label={`${t('Reset stuck ticket')} ${ticket.ticket_number}`}
-                    >
-                      {t('Reset to Queue')}
-                    </button>
-                  </div>
-                ) : null}
+                  )}
+                  {/* Take Over / Park / Reset only make sense when the
+                      ticket is NOT yours — taking over your own ticket is
+                      a no-op, parking it is fine but redundant with the
+                      main canvas controls. */}
+                  {ticket.id !== activeTicket?.id && (
+                    <>
+                      <button
+                        className="btn-sm"
+                        style={{ background: '#3b82f6', color: '#fff', border: 'none' }}
+                        onClick={() => takeOver(ticket.id)}
+                        aria-label={`${t('Take Over')} ${ticket.ticket_number}`}
+                      >
+                        {t('Take Over')}
+                      </button>
+                      <button
+                        className="btn-sm btn-outline"
+                        onClick={() => park(ticket.id)}
+                        aria-label={`${t('Park')} ${ticket.ticket_number}`}
+                      >
+                        {t('Park')}
+                      </button>
+                      <button
+                        className="btn-sm btn-outline"
+                        onClick={() => requeue(ticket.id)}
+                        aria-label={`${t('Reset stuck ticket')} ${ticket.ticket_number}`}
+                      >
+                        {t('Reset to Queue')}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
             {parked.map((ticket) => (

@@ -9,21 +9,25 @@ import OrderMap from './order-map';
  *
  * Drop-in replacement for QueueStatus when the ticket is an online
  * order (source whatsapp / web) and the resolved service type is
- * takeout or delivery. Renders a status-aware UI:
+ * takeout or delivery. Renders a status-aware UI with phase-specific
+ * micro-animations (Uber Eats-style) so the customer instantly knows
+ * what's happening:
  *
- *   pending_approval     →  ⏳  "Order received — waiting for restaurant"
- *   serving (not dispatched, not delivered)
- *     - delivery         →  👨‍🍳  "Being prepared in the kitchen"
- *     - takeout          →  👨‍🍳  "Being prepared — we'll let you know"
- *   serving + dispatched →  🛵  "Out for delivery"      (driver info)
- *   served (delivered_at set)
- *     - delivery         →  ✅  "Delivered — enjoy!"
- *     - takeout          →  ✅  "Ready for pickup"
- *   cancelled            →  ❌  "Cancelled" + reason from notes
+ *   pending_approval     →  ⏳  pulsing hourglass         "Order received"
+ *   serving (cooking)    →  👨‍🍳  bouncing dots animation   "Being prepared"
+ *   serving + dispatched →  🛵  motorcycle riding L→R     "On the way"
+ *   serving + arrived    →  🚪  pulsing door               "Driver at your door"
+ *   served (delivery)    →  ✅  pop-in checkmark          "Delivered — enjoy!"
+ *   served (takeout)     →  ✅  pop-in checkmark          "Ready for pickup"
+ *   cancelled            →  ❌  static                    "Cancelled"
  *
  * Subscribes to Supabase realtime on `tickets` for the current ticket id
  * so the page flips automatically when the operator dispatches / marks
  * delivered without the customer having to refresh.
+ *
+ * On the Delivered screen we auto-expand the full itemized list — the
+ * customer treats this page as a receipt at that point, so they want to
+ * see what they actually got, not a summary they have to tap to open.
  *
  * Locale: ar / fr / en, derived from server-resolved value passed in.
  */
@@ -123,6 +127,17 @@ export default function OrderStatus(props: OrderStatusProps) {
   const isPending = ticket.status === 'pending_approval';
   const isServing = ticket.status === 'serving';
   const isServed = ticket.status === 'served';
+  // Phase used for the animated hero. Kept as a discriminated string so
+  // the JSX below picks the right animation without re-running checks.
+  const phase: 'pending' | 'preparing' | 'on_the_way' | 'arrived' | 'delivered' | 'pickup_ready' | 'cancelled' | 'unknown' =
+      isCancelled ? 'cancelled'
+    : isPending ? 'pending'
+    : isDelivered && serviceMode === 'delivery' ? 'delivered'
+    : isServed && serviceMode === 'takeout' ? 'pickup_ready'
+    : isArrived && serviceMode === 'delivery' ? 'arrived'
+    : isDispatched && serviceMode === 'delivery' ? 'on_the_way'
+    : isServing ? 'preparing'
+    : 'unknown';
 
   // Map link from delivery_address.lat/lng — same universal Google
   // Maps query URL we use on Station; opens GMaps on Android, Apple
@@ -134,18 +149,15 @@ export default function OrderStatus(props: OrderStatusProps) {
     ? `https://www.google.com/maps/?q=${encodeURIComponent(`${lat},${lng}`)}`
     : null;
 
-  // Tone-aware top banner: which big icon + headline applies right now.
+  // Tone-aware top banner — kept for the title/body/tint values; the
+  // emoji slot is replaced by a phase-specific animated component below.
   const banner = useMemo(() => {
-    if (isCancelled) return {
-      emoji: '❌',
+    if (phase === 'cancelled') return {
       tint: '#ef4444',
       title: tr(locale, 'Order cancelled', 'Commande annulée', 'تم إلغاء الطلب'),
-      body: ticket.notes
-        ? ticket.notes
-        : tr(locale, 'This order was cancelled.', 'Cette commande a été annulée.', 'تم إلغاء هذا الطلب.'),
+      body: ticket.notes || tr(locale, 'This order was cancelled.', 'Cette commande a été annulée.', 'تم إلغاء هذا الطلب.'),
     };
-    if (isPending) return {
-      emoji: '⏳',
+    if (phase === 'pending') return {
       tint: '#f59e0b',
       title: tr(locale, 'Order received', 'Commande reçue', 'تم استلام الطلب'),
       body: tr(locale,
@@ -154,18 +166,16 @@ export default function OrderStatus(props: OrderStatusProps) {
         `${organizationName} يراجع طلبك. سنُعلمك بمجرد قبوله.`,
       ),
     };
-    if (isServed && isDelivered && serviceMode === 'delivery') return {
-      emoji: '✅',
+    if (phase === 'delivered') return {
       tint: '#22c55e',
       title: tr(locale, 'Delivered — enjoy!', 'Livré — bon appétit !', 'تم التوصيل — شهية طيبة!'),
       body: tr(locale,
-        `Your order arrived ${formatTimeAgo(ticket.delivered_at, locale)}.`,
-        `Votre commande est arrivée ${formatTimeAgo(ticket.delivered_at, locale)}.`,
-        `وصل طلبك ${formatTimeAgo(ticket.delivered_at, locale)}.`,
+        `Your order arrived ${formatTimeAgo(ticket.delivered_at, locale)}. Receipt below.`,
+        `Votre commande est arrivée ${formatTimeAgo(ticket.delivered_at, locale)}. Reçu ci-dessous.`,
+        `وصل طلبك ${formatTimeAgo(ticket.delivered_at, locale)}. الإيصال أدناه.`,
       ),
     };
-    if (isServed && serviceMode === 'takeout') return {
-      emoji: '✅',
+    if (phase === 'pickup_ready') return {
       tint: '#22c55e',
       title: tr(locale, 'Ready for pickup', 'Prêt à emporter', 'جاهز للاستلام'),
       body: tr(locale,
@@ -174,133 +184,160 @@ export default function OrderStatus(props: OrderStatusProps) {
         `يمكنك المرور على ${officeName} في أي وقت.`,
       ),
     };
-    if (isArrived && !isDelivered && serviceMode === 'delivery') return {
-      emoji: '🚪',
+    if (phase === 'arrived') return {
       tint: '#22c55e',
-      title: tr(locale, 'Driver has arrived', 'Le livreur est arrivé', 'وصل السائق'),
+      title: tr(locale, 'Driver at your door', 'Le livreur est à votre porte', 'السائق عند بابك'),
       body: rider?.full_name
         ? tr(locale,
             `${rider.full_name} is at your address. Please open the door.`,
             `${rider.full_name} est à votre adresse. Veuillez ouvrir.`,
             `${rider.full_name} في عنوانك. يرجى فتح الباب.`,
           )
-        : tr(locale,
-            'Your driver is at your address.',
-            'Votre livreur est à votre adresse.',
-            'السائق في عنوانك.',
-          ),
+        : tr(locale, 'Your driver is at your address.', 'Votre livreur est à votre adresse.', 'السائق في عنوانك.'),
     };
-    if (isDispatched && serviceMode === 'delivery') return {
-      emoji: '🛵',
+    if (phase === 'on_the_way') return {
       tint: '#3b82f6',
-      title: tr(locale, 'Out for delivery', 'En cours de livraison', 'في الطريق إليك'),
+      title: tr(locale, 'On the way', 'En route', 'في الطريق إليك'),
       body: rider?.full_name
         ? tr(locale,
-            `Your driver ${rider.full_name} is on the way.`,
-            `Votre livreur ${rider.full_name} est en route.`,
-            `السائق ${rider.full_name} في الطريق إليك.`,
+            `${rider.full_name} is heading to your address.`,
+            `${rider.full_name} se dirige vers votre adresse.`,
+            `${rider.full_name} في طريقه إلى عنوانك.`,
           )
-        : tr(locale,
-            'A driver is on the way to you.',
-            'Un livreur est en route.',
-            'السائق في الطريق إليك.',
-          ),
+        : tr(locale, 'A driver is heading to your address.', 'Un livreur se dirige vers vous.', 'السائق في الطريق إليك.'),
     };
-    if (isServing) return {
-      emoji: '👨‍🍳',
+    if (phase === 'preparing') return {
       tint: '#8b5cf6',
-      title: tr(locale, 'Being prepared', 'En préparation', 'قيد التحضير'),
+      title: tr(locale, 'Order being prepared', 'Commande en préparation', 'الطلب قيد التحضير'),
       body: serviceMode === 'delivery'
         ? tr(locale,
-            `${organizationName} is cooking. We'll notify you when it's out for delivery.`,
-            `${organizationName} prépare votre commande. Nous vous préviendrons au départ du livreur.`,
-            `${organizationName} يحضّر طلبك. سنُعلمك عند مغادرة السائق.`,
+            `${organizationName} is cooking. We'll notify you when the driver leaves.`,
+            `${organizationName} cuisine. Nous vous préviendrons au départ du livreur.`,
+            `${organizationName} يطبخ. سنُعلمك عند مغادرة السائق.`,
           )
         : tr(locale,
-            `${organizationName} is preparing your order. We'll notify you when it's ready for pickup.`,
+            `${organizationName} is preparing your order. We'll notify you when it's ready.`,
             `${organizationName} prépare votre commande. Nous vous préviendrons quand elle est prête.`,
             `${organizationName} يحضّر طلبك. سنُعلمك عندما يصبح جاهزًا.`,
           ),
     };
     return {
-      emoji: 'ℹ️',
       tint: '#64748b',
       title: tr(locale, 'Order status', 'Statut de la commande', 'حالة الطلب'),
       body: ticket.status,
     };
-  }, [isCancelled, isPending, isServed, isDelivered, isDispatched, isServing, serviceMode, locale, ticket.notes, organizationName, officeName, rider, ticket.status, ticket.delivered_at]);
+  }, [phase, locale, ticket.notes, organizationName, officeName, rider, ticket.status, ticket.delivered_at, serviceMode]);
 
-  // Lifecycle timeline (tick boxes). Renders a simple vertical step
-  // indicator so the customer can see how far along their order is.
+  // Lifecycle timeline. Each step has a label that's always shown below
+  // the dot — earlier we hid non-active labels to save space, but with
+  // 4-5 steps the customer needs to see the whole journey, not just the
+  // current beat. The dot grows + glows when current.
   const steps = useMemo(() => {
     const isDeliv = serviceMode === 'delivery';
     const arr: Array<{ key: string; label: string; reached: boolean; current: boolean }> = [
-      {
-        key: 'received',
-        label: tr(locale, 'Order received', 'Commande reçue', 'تم استلام الطلب'),
-        reached: true,
-        current: isPending,
-      },
-      {
-        key: 'accepted',
-        label: tr(locale, 'Accepted by restaurant', 'Acceptée par le restaurant', 'قبول من المطعم'),
-        reached: !isPending && !isCancelled,
-        current: isServing && !isDispatched,
-      },
+      { key: 'received', label: tr(locale, 'Received', 'Reçue', 'مستلم'),
+        reached: true, current: phase === 'pending' },
+      { key: 'accepted', label: tr(locale, 'Preparing', 'Préparation', 'تحضير'),
+        reached: phase !== 'pending' && phase !== 'cancelled',
+        current: phase === 'preparing' },
     ];
     if (isDeliv) {
-      arr.push({
-        key: 'dispatched',
-        label: tr(locale, 'Out for delivery', 'En route', 'في الطريق'),
-        reached: isDispatched || isArrived || isDelivered,
-        current: isDispatched && !isArrived && !isDelivered,
-      });
-      arr.push({
-        key: 'arrived',
-        label: tr(locale, 'Driver arrived', 'Livreur arrivé', 'وصل السائق'),
-        reached: isArrived || isDelivered,
-        current: isArrived && !isDelivered,
-      });
-      arr.push({
-        key: 'delivered',
-        label: tr(locale, 'Delivered', 'Livrée', 'تم التوصيل'),
-        reached: isDelivered,
-        current: isDelivered,
-      });
+      arr.push({ key: 'on_the_way', label: tr(locale, 'On the way', 'En route', 'في الطريق'),
+        reached: phase === 'on_the_way' || phase === 'arrived' || phase === 'delivered',
+        current: phase === 'on_the_way' });
+      arr.push({ key: 'arrived', label: tr(locale, 'At your door', 'À la porte', 'عند الباب'),
+        reached: phase === 'arrived' || phase === 'delivered',
+        current: phase === 'arrived' });
+      arr.push({ key: 'delivered', label: tr(locale, 'Delivered', 'Livrée', 'مسلّم'),
+        reached: phase === 'delivered', current: phase === 'delivered' });
     } else {
-      arr.push({
-        key: 'ready',
-        label: tr(locale, 'Ready for pickup', 'Prête à emporter', 'جاهز للاستلام'),
-        reached: isServed,
-        current: isServed,
-      });
+      arr.push({ key: 'ready', label: tr(locale, 'Ready', 'Prête', 'جاهز'),
+        reached: phase === 'pickup_ready', current: phase === 'pickup_ready' });
     }
     return arr;
-  }, [serviceMode, locale, isPending, isCancelled, isServing, isDispatched, isDelivered, isServed]);
+  }, [serviceMode, locale, phase]);
+
+  // On the Delivered / Pickup-Ready screens the items list becomes the
+  // receipt — show it expanded by default. On every other phase the
+  // summary line saves space; the customer can still tap to expand.
+  const itemsExpandedDefault = phase === 'delivered' || phase === 'pickup_ready';
 
   return (
     <main style={pageWrap}>
-      {/* Compact hero — emoji + ticket number + title on one row, body
-          on a second line. Fits a phone viewport without dominating it. */}
+      {/* Inline keyframes for the phase-specific animations. Kept inline
+          so the component is self-contained — no global stylesheet
+          dependency, no Tailwind requirement. Animations are GPU-cheap
+          (transform + opacity only). */}
+      <style>{`
+        @keyframes qfo-pulse-soft {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.65; transform: scale(0.92); }
+        }
+        @keyframes qfo-spin-slow {
+          0% { transform: rotate(0deg); }
+          50% { transform: rotate(180deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes qfo-bounce-dot {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40% { transform: translateY(-7px); opacity: 1; }
+        }
+        @keyframes qfo-ride {
+          0%   { transform: translateX(-30%) rotate(-4deg); }
+          50%  { transform: translateX(45%)  rotate(2deg); }
+          100% { transform: translateX(120%) rotate(-4deg); }
+        }
+        @keyframes qfo-pop-in {
+          0%   { transform: scale(0.4); opacity: 0; }
+          60%  { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes qfo-door-knock {
+          0%, 100% { transform: rotate(0deg); }
+          15% { transform: rotate(-8deg); }
+          30% { transform: rotate(6deg); }
+          45% { transform: rotate(-4deg); }
+          60% { transform: rotate(2deg); }
+        }
+        @keyframes qfo-steam {
+          0%   { transform: translateY(0) scaleX(1); opacity: 0.7; }
+          100% { transform: translateY(-12px) scaleX(0.6); opacity: 0; }
+        }
+        @keyframes qfo-progress-glow {
+          0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+          50%      { box-shadow: 0 0 0 5px transparent; }
+        }
+        .qfo-bounce-dot { animation: qfo-bounce-dot 1.2s infinite ease-in-out; }
+      `}</style>
+
+      {/* Hero — large, animated, status-aware. The icon area is a
+          dedicated 64×64 box so each phase animation has consistent
+          breathing room. The motorcycle in particular needs the box
+          width to ride across; the chef needs vertical space for the
+          bouncing dots. */}
       <div style={{
-        background: '#fff', borderRadius: 12, padding: 12,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.05)',
+        background: '#fff', borderRadius: 14, padding: 16,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
         border: `2px solid ${banner.tint}33`,
-        display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <div style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>{banner.emoji}</div>
+        <PhaseIcon phase={phase} tint={banner.tint} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: 16, color: banner.tint, lineHeight: 1.2 }}>{banner.title}</h1>
+            <h1 style={{ margin: 0, fontSize: 17, color: banner.tint, lineHeight: 1.2, fontWeight: 800 }}>
+              {banner.title}
+            </h1>
             <span style={{
               display: 'inline-block', padding: '2px 8px', borderRadius: 6,
               background: '#eef2ff', color: '#4338ca',
-              fontWeight: 800, fontSize: 12, letterSpacing: 0.5,
+              fontWeight: 800, fontSize: 11, letterSpacing: 0.5,
             }}>
               {ticket.ticket_number}
             </span>
           </div>
-          <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: 12, lineHeight: 1.4 }}>{banner.body}</p>
+          <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 13, lineHeight: 1.4 }}>
+            {banner.body}
+          </p>
         </div>
       </div>
 
@@ -323,8 +360,8 @@ export default function OrderStatus(props: OrderStatusProps) {
           Halves the height vs the previous two-row card and keeps the
           phone-tap-to-call affordance front-and-centre. */}
       {serviceMode === 'delivery' && isDispatched && !isDelivered && rider && (
-        <section style={{ ...card, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 22 }}>🛵</span>
+        <section style={{ ...card, padding: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 24 }}>🛵</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {rider.full_name ?? tr(locale, 'Driver', 'Livreur', 'السائق')}
@@ -337,10 +374,11 @@ export default function OrderStatus(props: OrderStatusProps) {
             <a
               href={`tel:${rider.phone}`}
               style={{
-                padding: '8px 14px', borderRadius: 8,
+                padding: '9px 16px', borderRadius: 8,
                 background: '#22c55e', color: '#fff',
                 fontWeight: 700, fontSize: 13, textDecoration: 'none',
                 whiteSpace: 'nowrap',
+                boxShadow: '0 2px 6px rgba(34,197,94,0.35)',
               }}
             >
               📞 {tr(locale, 'Call', 'Appeler', 'اتصل')}
@@ -349,43 +387,11 @@ export default function OrderStatus(props: OrderStatusProps) {
         </section>
       )}
 
-      {/* Lifecycle timeline — horizontal row of dots so 4 steps fit
-          inline rather than stacking vertically (saves ~80px on phones).
-          Active step's label is shown; reached steps show a check. */}
-      {!isCancelled && (
-        <section style={{ ...card, padding: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {steps.map((s, i) => {
-              const reachedColor = s.current ? '#3b82f6' : '#22c55e';
-              return (
-                <span key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 4, flex: s.current ? 1 : 0 }}>
-                  <span style={{
-                    display: 'inline-flex', width: 18, height: 18, borderRadius: '50%',
-                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    background: s.reached ? reachedColor : '#e2e8f0',
-                    color: s.reached ? '#fff' : '#94a3b8',
-                    fontSize: 10, fontWeight: 800,
-                  }}>
-                    {s.reached ? '✓' : i + 1}
-                  </span>
-                  {s.current && (
-                    <span style={{
-                      fontSize: 12, fontWeight: 700, color: reachedColor,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{s.label}</span>
-                  )}
-                  {i < steps.length - 1 && (
-                    <span style={{
-                      flex: s.current ? 0 : 1, height: 2, minWidth: 10,
-                      background: steps[i + 1].reached ? '#22c55e' : '#e2e8f0',
-                    }} />
-                  )}
-                </span>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      {/* Lifecycle timeline — full-width with labels under each dot so
+          the customer sees the whole journey at a glance. The current
+          step gets a soft glow ring; reached steps fill in green; the
+          connector bar between dots fills as progress moves. */}
+      {!isCancelled && <Timeline steps={steps} tint={banner.tint} />}
 
       {/* Delivery address — single-row when there's a pin: address text on
           one side, Maps button on the other. Shrinks vertically by ~40px. */}
@@ -425,16 +431,17 @@ export default function OrderStatus(props: OrderStatusProps) {
         </section>
       )}
 
-      {/* Items: collapsed-by-default summary line. The customer already
-          saw the cart when they confirmed the order — here we just need
-          a count + total + a way to open the details if they want them.
-          Saves a lot of vertical space on bigger menus. */}
+      {/* Items: collapsed-by-default summary line during the journey,
+          auto-expanded once the order is delivered / ready (the customer
+          uses this page as a receipt at that point). */}
       {items.length > 0 && (
         <ItemsSummary
           items={items}
           itemCount={itemCount}
           totalDisplay={totalDisplay}
           locale={locale}
+          defaultOpen={itemsExpandedDefault}
+          isReceipt={itemsExpandedDefault}
         />
       )}
 
@@ -445,15 +452,189 @@ export default function OrderStatus(props: OrderStatusProps) {
   );
 }
 
+/**
+ * 64×64 animated icon for the hero, switched on the resolved phase.
+ * Each animation is intentionally short and GPU-cheap (transform +
+ * opacity only) so it loops indefinitely without battery cost.
+ */
+function PhaseIcon({ phase, tint }: { phase: string; tint: string }) {
+  const wrap: React.CSSProperties = {
+    width: 64, height: 64, flexShrink: 0,
+    borderRadius: 14,
+    background: `${tint}15`,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    position: 'relative', overflow: 'hidden',
+  };
+
+  if (phase === 'pending') {
+    return (
+      <div style={wrap}>
+        <span style={{
+          fontSize: 34, animation: 'qfo-spin-slow 2.5s ease-in-out infinite',
+          display: 'inline-block',
+        }}>⏳</span>
+      </div>
+    );
+  }
+
+  if (phase === 'preparing') {
+    return (
+      <div style={{ ...wrap, flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 28, lineHeight: 1 }}>👨‍🍳</span>
+        {/* Three bouncing dots beneath the chef — universally readable
+            "thinking / working" indicator regardless of locale. */}
+        <span style={{ display: 'inline-flex', gap: 3, marginTop: -2 }}>
+          <span className="qfo-bounce-dot" style={{
+            width: 5, height: 5, borderRadius: '50%', background: tint,
+            animationDelay: '0s',
+          }} />
+          <span className="qfo-bounce-dot" style={{
+            width: 5, height: 5, borderRadius: '50%', background: tint,
+            animationDelay: '0.18s',
+          }} />
+          <span className="qfo-bounce-dot" style={{
+            width: 5, height: 5, borderRadius: '50%', background: tint,
+            animationDelay: '0.36s',
+          }} />
+        </span>
+      </div>
+    );
+  }
+
+  if (phase === 'on_the_way') {
+    return (
+      <div style={wrap}>
+        {/* Motorcycle riding left → right inside the icon box. The slight
+            tilt on the keyframes simulates the bike leaning into a turn. */}
+        <span style={{
+          fontSize: 30,
+          animation: 'qfo-ride 2.6s linear infinite',
+          display: 'inline-block',
+          willChange: 'transform',
+        }}>🛵</span>
+      </div>
+    );
+  }
+
+  if (phase === 'arrived') {
+    return (
+      <div style={wrap}>
+        <span style={{
+          fontSize: 34,
+          animation: 'qfo-door-knock 1.4s ease-in-out infinite',
+          display: 'inline-block',
+          transformOrigin: '50% 80%',
+        }}>🚪</span>
+      </div>
+    );
+  }
+
+  if (phase === 'delivered' || phase === 'pickup_ready') {
+    return (
+      <div style={wrap}>
+        <span style={{
+          fontSize: 36,
+          // pop-in plays once on mount, then settles on the final scale.
+          animation: 'qfo-pop-in 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both',
+          display: 'inline-block',
+        }}>✅</span>
+      </div>
+    );
+  }
+
+  if (phase === 'cancelled') {
+    return (
+      <div style={{ ...wrap, background: '#ef444415' }}>
+        <span style={{ fontSize: 34 }}>❌</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={wrap}>
+      <span style={{ fontSize: 28 }}>ℹ️</span>
+    </div>
+  );
+}
+
+/**
+ * Horizontal lifecycle timeline. Each step shows: dot + label below.
+ * The current dot pulses and is filled with `tint`; reached dots are
+ * solid green; future dots are gray. Connector bars between dots fill
+ * green when the *next* step is reached.
+ */
+function Timeline({ steps, tint }: {
+  steps: Array<{ key: string; label: string; reached: boolean; current: boolean }>;
+  tint: string;
+}) {
+  return (
+    <section style={{ ...card, padding: '14px 10px 10px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0 }}>
+        {steps.map((s, i) => {
+          const next = steps[i + 1];
+          const dotColor = s.current ? tint : s.reached ? '#22c55e' : '#e2e8f0';
+          const dotTextColor = s.reached || s.current ? '#fff' : '#94a3b8';
+          return (
+            <div key={s.key} style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              minWidth: 0, position: 'relative',
+            }}>
+              {/* Connector to the next step — sits absolutely behind the
+                  next dot's label area so it visually links them without
+                  pushing layout around. */}
+              {next && (
+                <span style={{
+                  position: 'absolute',
+                  top: 11,
+                  insetInlineStart: '50%',
+                  width: '100%',
+                  height: 2,
+                  background: next.reached ? '#22c55e' : '#e2e8f0',
+                  zIndex: 0,
+                }} />
+              )}
+              <span style={{
+                position: 'relative', zIndex: 1,
+                display: 'inline-flex', width: 24, height: 24, borderRadius: '50%',
+                alignItems: 'center', justifyContent: 'center',
+                background: dotColor, color: dotTextColor,
+                fontSize: 11, fontWeight: 800,
+                boxShadow: s.current ? `0 0 0 4px ${tint}33` : 'none',
+                transition: 'box-shadow 0.2s',
+                animation: s.current ? 'qfo-pulse-soft 1.6s ease-in-out infinite' : 'none',
+              }}>
+                {s.reached ? '✓' : i + 1}
+              </span>
+              <span style={{
+                marginTop: 6, fontSize: 10.5, lineHeight: 1.2, textAlign: 'center',
+                color: s.current ? tint : s.reached ? '#0f172a' : '#94a3b8',
+                fontWeight: s.current || s.reached ? 700 : 500,
+                wordBreak: 'break-word',
+                paddingInline: 2,
+              }}>
+                {s.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ItemsSummary({
-  items, itemCount, totalDisplay, locale,
+  items, itemCount, totalDisplay, locale, defaultOpen, isReceipt,
 }: {
   items: Array<{ id: string; name: string; qty: number; line_total: string | null }>;
   itemCount: number;
   totalDisplay: string | null;
   locale: 'ar' | 'fr' | 'en';
+  defaultOpen: boolean;
+  /** When true (delivered / ready), render as a styled receipt: header
+      reads "Receipt", items are dividers, total is bolded at the bottom. */
+  isReceipt: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section style={card}>
       <button
@@ -466,7 +647,9 @@ function ItemsSummary({
         }}
       >
         <span style={{ fontSize: 13, fontWeight: 700 }}>
-          🛒 {tr(locale, `${itemCount} items`, `${itemCount} articles`, `${itemCount} منتجات`)}
+          {isReceipt
+            ? `🧾 ${tr(locale, 'Receipt', 'Reçu', 'الإيصال')}`
+            : `🛒 ${tr(locale, `${itemCount} items`, `${itemCount} articles`, `${itemCount} منتجات`)}`}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {totalDisplay && <span style={{ fontWeight: 800, fontSize: 14 }}>{totalDisplay}</span>}
@@ -480,30 +663,52 @@ function ItemsSummary({
         </span>
       </button>
       {open && (
-        <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
-          {items.map((it) => (
-            <li key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingBlock: 3, fontSize: 13 }}>
-              <span>
-                <span style={{ fontWeight: 700, marginInlineEnd: 6 }}>{it.qty}×</span>
-                <span dir="auto">{it.name}</span>
-              </span>
-              {it.line_total && <span style={{ color: '#475569' }}>{it.line_total}</span>}
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul style={{
+            margin: '10px 0 0', padding: 0, listStyle: 'none',
+            borderTop: '1px solid #e2e8f0', paddingTop: 8,
+          }}>
+            {items.map((it) => (
+              <li key={it.id} style={{
+                display: 'flex', justifyContent: 'space-between', gap: 8,
+                paddingBlock: isReceipt ? 6 : 3, fontSize: 13,
+                borderBottom: isReceipt ? '1px dashed #e2e8f0' : 'none',
+              }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, marginInlineEnd: 6 }}>{it.qty}×</span>
+                  <span dir="auto">{it.name}</span>
+                </span>
+                {it.line_total && <span style={{ color: '#475569', whiteSpace: 'nowrap' }}>{it.line_total}</span>}
+              </li>
+            ))}
+          </ul>
+          {/* Bold total line on the receipt view — feels like a real
+              bill and stops the customer from second-guessing the
+              top-of-card total. */}
+          {isReceipt && totalDisplay && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', gap: 8,
+              marginTop: 8, paddingTop: 8, borderTop: '2px solid #0f172a',
+              fontSize: 14, fontWeight: 800, color: '#0f172a',
+            }}>
+              <span>{tr(locale, 'Total', 'Total', 'الإجمالي')}</span>
+              <span>{totalDisplay}</span>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
 }
 
 const pageWrap: React.CSSProperties = {
-  maxWidth: 480, margin: '0 auto', padding: '12px 12px 16px',
+  maxWidth: 480, margin: '0 auto', padding: '14px 12px 20px',
   fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   color: '#0f172a', background: '#f8fafc', minHeight: '100vh',
-  display: 'flex', flexDirection: 'column', gap: 8,
+  display: 'flex', flexDirection: 'column', gap: 10,
 };
 
 const card: React.CSSProperties = {
-  background: '#fff', borderRadius: 10, padding: 12,
+  background: '#fff', borderRadius: 12, padding: 12,
   border: '1px solid #e2e8f0',
 };
