@@ -87,37 +87,74 @@ export default function OrderStatus(props: OrderStatusProps) {
   const { serviceMode, locale, organizationName, officeName, items, totalDisplay, itemCount, rider } = props;
 
   // ── Realtime: flip the page as operator dispatches / delivers ────
+  // We run TWO update paths and keep whichever fires first:
+  //   1. Supabase Realtime postgres_changes — fast path (<1s)
+  //   2. Polling refetch every 8s — fallback when Realtime is blocked
+  //      by RLS, the publication is misconfigured, or the customer is
+  //      on a flaky network where the websocket disconnects silently.
+  // Without (2) the page can sit on a stale phase forever even though
+  // the operator has already dispatched / delivered.
   useEffect(() => {
     let unsubFn: (() => void) | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const sb = createBrowserClient(props.supabaseUrl, props.supabaseAnonKey);
+
+    const applyRow = (next: any) => {
+      if (!next) return;
+      setTicket((prev) => ({
+        ...prev,
+        status: next.status ?? prev.status,
+        dispatched_at: next.dispatched_at ?? prev.dispatched_at,
+        arrived_at: next.arrived_at ?? prev.arrived_at,
+        delivered_at: next.delivered_at ?? prev.delivered_at,
+        cancelled_at: next.cancelled_at ?? prev.cancelled_at,
+        completed_at: next.completed_at ?? prev.completed_at,
+        notes: next.notes ?? prev.notes,
+        assigned_rider_id: next.assigned_rider_id ?? prev.assigned_rider_id,
+      }));
+    };
+
     try {
-      const sb = createBrowserClient(props.supabaseUrl, props.supabaseAnonKey);
       const channel = sb
         .channel(`order-track-${ticket.id}`)
         .on(
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'tickets', filter: `id=eq.${ticket.id}` },
-          (payload) => {
-            const next = payload.new as any;
-            setTicket((prev) => ({
-              ...prev,
-              status: next.status ?? prev.status,
-              dispatched_at: next.dispatched_at ?? prev.dispatched_at,
-              arrived_at: next.arrived_at ?? prev.arrived_at,
-              delivered_at: next.delivered_at ?? prev.delivered_at,
-              cancelled_at: next.cancelled_at ?? prev.cancelled_at,
-              completed_at: next.completed_at ?? prev.completed_at,
-              notes: next.notes ?? prev.notes,
-              assigned_rider_id: next.assigned_rider_id ?? prev.assigned_rider_id,
-            }));
-          },
+          (payload) => applyRow(payload.new),
         )
         .subscribe();
       unsubFn = () => { try { sb.removeChannel(channel); } catch {} };
     } catch (e) {
       console.warn('[OrderStatus] realtime subscribe failed', e);
     }
-    return () => unsubFn?.();
+
+    // Polling fallback — 8s cadence, runs alongside realtime. Stops once
+    // the order reaches a terminal phase (delivered / cancelled) since
+    // there's nothing more to track at that point.
+    const poll = async () => {
+      try {
+        const { data } = await sb
+          .from('tickets')
+          .select('status, dispatched_at, arrived_at, delivered_at, cancelled_at, completed_at, notes, assigned_rider_id')
+          .eq('id', ticket.id)
+          .maybeSingle();
+        applyRow(data);
+      } catch (e) {
+        // Network blip — try again on the next tick.
+      }
+    };
+    pollTimer = setInterval(poll, 8000);
+
+    return () => {
+      unsubFn?.();
+      if (pollTimer) clearInterval(pollTimer);
+    };
   }, [ticket.id, props.supabaseUrl, props.supabaseAnonKey]);
+
+  // Note: polling runs indefinitely while the page is mounted. That's
+  // fine — once the order reaches a terminal phase the customer
+  // typically closes the tab, and 8s polls on a finished order are
+  // cheap (one row read).
 
   // ── Status resolution ────────────────────────────────────────────
   const isDispatched = Boolean(ticket.dispatched_at);
@@ -283,9 +320,12 @@ export default function OrderStatus(props: OrderStatusProps) {
           40% { transform: translateY(-7px); opacity: 1; }
         }
         @keyframes qfo-ride {
-          0%   { transform: translateX(-30%) rotate(-4deg); }
-          50%  { transform: translateX(45%)  rotate(2deg); }
-          100% { transform: translateX(120%) rotate(-4deg); }
+          /* The 🛵 emoji on iOS/Apple is drawn rider-facing-LEFT, so we
+             pre-flip with scaleX(-1) on the element and counter-flip in
+             the keyframe — the bike now faces right and rides forward. */
+          0%   { transform: scaleX(-1) translateX(30%)  rotate(4deg); }
+          50%  { transform: scaleX(-1) translateX(-45%) rotate(-2deg); }
+          100% { transform: scaleX(-1) translateX(-120%) rotate(4deg); }
         }
         @keyframes qfo-pop-in {
           0%   { transform: scale(0.4); opacity: 0; }

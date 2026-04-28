@@ -359,12 +359,31 @@ function CashBadge({ locale }: { locale: string }) {
 }
 
   function renderWithLanguageSwitcher(content: ReactNode) {
+    /*
+     * Public ticket-tracking shell: language toggle bottom-left,
+     * "Powered by Qflo" thin attribution at bottom-center. Both fixed
+     * so they stay visible while the user scrolls a long order page,
+     * and use safe-area inset padding so they don't collide with the
+     * iOS home-indicator bar on iPhones. Bottom-left for the switcher
+     * keeps it out of the thumb-tap path of the order's primary CTA
+     * (Call driver, Pin, etc.) which lives in the upper-right zone.
+     */
     return (
       <div className="relative">
-        <div className="fixed right-4 top-6 z-[60] sm:right-6 sm:top-6">
+        <div
+          className="fixed bottom-3 left-3 z-[60] sm:bottom-4 sm:left-4"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
           <LanguageSwitcher />
         </div>
         {content}
+        <div
+          aria-hidden
+          className="pointer-events-none fixed bottom-2 left-1/2 z-[55] -translate-x-1/2 select-none text-[10px] font-light tracking-wide text-muted-foreground/70"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          Powered by Qflo
+        </div>
       </div>
     );
   }
