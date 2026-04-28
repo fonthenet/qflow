@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMessage, sendWhatsAppLocationRequest } from '@/lib/whatsapp';
+import { reverseGeocode } from '@/lib/geocoding';
 import { resolveRestaurantServiceType, computeOrderEtaMinutes, type CartItem } from '@qflo/shared';
 import { nanoid } from 'nanoid';
 import type { Locale, SendFn } from '@/lib/messaging-commands';
@@ -664,36 +665,54 @@ export async function handleOrderAddressInput(
   // for these messages so the dispatcher routes them here.
   if (locationData) {
     const { latitude, longitude, name, address } = locationData;
-    // Synthesize a `street` so the existing render code (which just shows
-    // delivery_address.street) has something useful even if the customer
-    // didn't pick a labelled place. Operator gets the lat/lng + Maps link
-    // on the Station card regardless.
-    const synthesizedStreet = address
-      ? address
-      : name
-        ? name
-        : (locale === 'ar' ? `موقع مشترك (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
+
+    // Resolve a human-readable street label, in order of preference:
+    //   1. Address from the WA picker (when the customer chose a labelled place)
+    //   2. Name from the WA picker
+    //   3. Reverse-geocode lat/lng via Nominatim (free, OSM)
+    //   4. Coords-with-label fallback ("Shared location (lat, lng)")
+    let resolvedStreet: string;
+    let resolvedCity: string | null = null;
+    if (address) {
+      resolvedStreet = address;
+    } else if (name) {
+      resolvedStreet = name;
+    } else {
+      const accept = locale === 'ar' ? 'ar,en' : locale === 'en' ? 'en' : 'fr,en';
+      const geo = await reverseGeocode(latitude, longitude, accept);
+      if (geo?.street) {
+        resolvedStreet = geo.street;
+        resolvedCity = geo.city;
+      } else {
+        resolvedStreet = locale === 'ar' ? `موقع مشترك (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
           : locale === 'en' ? `Shared location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
-          : `Position partagée (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
+          : `Position partagée (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      }
+    }
+
     payload.delivery_address = {
-      street: synthesizedStreet,
+      street: resolvedStreet,
       instructions: name && address && name !== address ? name : undefined,
     } as any;
     // Stash lat/lng on the payload so placeWhatsappOrder reads them when
-    // it builds the ticket's delivery_address JSONB.
+    // it builds the ticket's delivery_address JSONB. City is also kept
+    // when reverse-geocoding gave us one — it shows on the Station card
+    // sub-line ("12 Rue Hassan · El Mouradia").
     (payload as any).delivery_address.lat = latitude;
     (payload as any).delivery_address.lng = longitude;
+    if (resolvedCity) (payload as any).delivery_address.city = resolvedCity;
 
     await supabase.from('whatsapp_sessions')
       .update({ custom_intake_data: payload, state: 'pending_order_confirm' })
       .eq('id', session.id);
 
     // Echo back so the customer can sanity-check before confirming.
+    const echoStreet = resolvedCity ? `${resolvedStreet}, ${resolvedCity}` : resolvedStreet;
     const echo = locale === 'ar'
-      ? `📍 تم استلام الموقع.\n${synthesizedStreet}`
+      ? `📍 تم استلام الموقع.\n${echoStreet}`
       : locale === 'en'
-        ? `📍 Got your pin.\n${synthesizedStreet}`
-        : `📍 Position reçue.\n${synthesizedStreet}`;
+        ? `📍 Got your pin.\n${echoStreet}`
+        : `📍 Position reçue.\n${echoStreet}`;
     await sendMessage({ to: identifier, body: echo });
 
     const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
