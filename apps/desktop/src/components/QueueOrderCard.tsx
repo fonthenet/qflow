@@ -120,8 +120,10 @@ export interface QueueOrderCardProps {
   suggestedEtaMinutes?: number;
   /** Delivery dispatch handlers. Surfaced only on delivery + serving cards.
    *  onDispatch: stamps dispatched_at, sends "out for delivery" WA.
-   *  onDelivered: stamps delivered_at, status → served, sends "delivered" WA. */
+   *  onArrived: stamps arrived_at, sends "driver has arrived" WA.
+   *  onDelivered: stamps delivered_at, status → served, sends receipt WA. */
   onDispatchOrder?: (ticketId: string) => void;
+  onArriveOrder?: (ticketId: string) => void;
   onDeliverOrder?: (ticketId: string) => void;
 }
 
@@ -226,6 +228,7 @@ export function QueueOrderCard({
   onDeclineOrder,
   suggestedEtaMinutes,
   onDispatchOrder,
+  onArriveOrder,
   onDeliverOrder,
 }: QueueOrderCardProps) {
   const [showOverflow, setShowOverflow] = useState(false);
@@ -752,6 +755,7 @@ export function QueueOrderCard({
           const isDeliveryTicket = svcType === 'delivery';
           if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
             const isDispatched = Boolean((ticket as any).dispatched_at);
+            const isArrived = Boolean((ticket as any).arrived_at);
             return (
               <>
                 {!isDispatched && onDispatchOrder && (
@@ -761,6 +765,19 @@ export function QueueOrderCard({
                     title={tl('Notify customer the order is on its way')}
                   >
                     🛵 {tl('Dispatch')}
+                  </button>
+                )}
+                {/* Arrived — appears once dispatched, disappears once
+                    arrived. Lets the operator ping "driver is here" so
+                    the customer comes down / opens the door before the
+                    actual handoff. Distinct from Delivered. */}
+                {isDispatched && !isArrived && onArriveOrder && (
+                  <button
+                    onClick={() => onArriveOrder(ticket.id)}
+                    style={btnStyle('#3b82f6', true)}
+                    title={tl('Notify customer the driver has arrived')}
+                  >
+                    🚪 {tl('Arrived')}
                   </button>
                 )}
                 {onDeliverOrder && (

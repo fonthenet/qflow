@@ -3696,6 +3696,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   };
 
+  // Operator-side "I've Arrived" — used when the operator runs the whole
+  // delivery flow from Station (no rider portal in the loop, e.g. owner
+  // delivers themselves or coordinates with the rider verbally over a
+  // separate WA chat). Same auth + WA template as /api/rider/arrived.
+  const handleArrivedOrder = async (ticketId: string) => {
+    try {
+      const token = await getStaffJwt();
+      const res = await cloudFetch('https://qflo.net/api/orders/arrived', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ticketId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        showToast(t('Could not mark arrived: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
+        return;
+      }
+      const tk = tickets.find((x) => x.id === ticketId);
+      showToast(t('Order {ticket} marked as arrived — customer notified', { ticket: tk?.ticket_number ?? '' }), 'success');
+      addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Arrived'), ticketId);
+      fetchTickets();
+    } catch (err: any) {
+      showToast(t('Could not mark arrived: {error}', { error: err?.message ?? 'Network error' }), 'error');
+    }
+  };
+
   const handleDeliverOrder = async (ticketId: string) => {
     try {
       const token = await getStaffJwt();
@@ -5058,6 +5087,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 onAcceptOrder={handleAcceptOrder}
                 onDeclineOrder={handleDeclineOrder}
                 onDispatchOrder={handleDispatchOrder}
+                onArriveOrder={handleArrivedOrder}
                 onDeliverOrder={handleDeliverOrder}
               />
             </div>
@@ -5651,6 +5681,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           onAcceptOrder={handleAcceptOrder}
                           onDeclineOrder={handleDeclineOrder}
                           onDispatchOrder={handleDispatchOrder}
+                          onArriveOrder={handleArrivedOrder}
                           onDeliverOrder={handleDeliverOrder}
                         />
                       </div>

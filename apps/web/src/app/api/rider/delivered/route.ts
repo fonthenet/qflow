@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyRiderToken } from '@/lib/rider-token';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { buildOrderReceiptMessage } from '@/lib/order-receipt';
 
 /**
  * POST /api/rider/delivered
@@ -82,14 +83,40 @@ export async function POST(request: NextRequest) {
       : 'fr';
     const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
     const trackUrl = `${cloudUrl}/q/${ticket.qr_token}`;
-    const msg =
+
+    const { data: office } = await supabase
+      .from('offices').select('name, organization_id').eq('id', ticket.office_id).maybeSingle();
+    let orgName = office?.name ?? '';
+    if (office?.organization_id) {
+      const { data: org } = await supabase
+        .from('organizations').select('name').eq('id', office.organization_id).maybeSingle();
+      if (org?.name) orgName = org.name;
+    }
+
+    const headerLine =
       locale === 'ar'
-        ? `✅ تم تسليم طلبك *#${ticket.ticket_number}*. شهية طيبة! 🍽️\nالتتبع: ${trackUrl}`
+        ? `✅ تم تسليم طلبك *#${ticket.ticket_number}*. شهية طيبة! 🍽️`
         : locale === 'en'
-          ? `✅ Your order *#${ticket.ticket_number}* has been delivered. Enjoy your meal! 🍽️\nTrack: ${trackUrl}`
-          : `✅ Votre commande *#${ticket.ticket_number}* a été livrée. Bon appétit ! 🍽️\nSuivi : ${trackUrl}`;
-    void sendWhatsAppMessage({ to: phone, body: msg })
-      .catch((e) => console.warn('[rider/delivered] WA send failed', e?.message));
+          ? `✅ Your order *#${ticket.ticket_number}* has been delivered. Enjoy your meal! 🍽️`
+          : `✅ Votre commande *#${ticket.ticket_number}* a été livrée. Bon appétit ! 🍽️`;
+
+    try {
+      const receiptBody = await buildOrderReceiptMessage(supabase, {
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticket_number,
+        orgName,
+        locale,
+        headerLine,
+        trackUrl,
+      });
+      void sendWhatsAppMessage({ to: phone, body: receiptBody })
+        .catch((e) => console.warn('[rider/delivered] WA send failed', e?.message));
+    } catch (e: any) {
+      console.warn('[rider/delivered] receipt build failed, falling back', e?.message);
+      const fallback = `${headerLine}\n${trackUrl}`;
+      void sendWhatsAppMessage({ to: phone, body: fallback })
+        .catch((e) => console.warn('[rider/delivered] fallback WA send failed', e?.message));
+    }
   }
 
   return NextResponse.json({ ok: true, delivered_at: nowIso });

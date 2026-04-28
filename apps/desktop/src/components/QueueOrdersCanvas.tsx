@@ -69,6 +69,7 @@ export interface QueueOrdersCanvasProps {
   suggestedEtaMinutesByTicket?: Record<string, number>;
   /** Delivery dispatch handlers — surfaced only on delivery + serving cards. */
   onDispatchOrder?: (ticketId: string) => void;
+  onArriveOrder?: (ticketId: string) => void;
   onDeliverOrder?: (ticketId: string) => void;
 }
 
@@ -105,6 +106,7 @@ export function QueueOrdersCanvas({
   onDeclineOrder,
   suggestedEtaMinutesByTicket,
   onDispatchOrder,
+  onArriveOrder,
   onDeliverOrder,
 }: QueueOrdersCanvasProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
@@ -449,6 +451,7 @@ export function QueueOrdersCanvas({
                 onDeclineOrder={onDeclineOrder}
                 suggestedEtaMinutes={suggestedEtaMinutesByTicket?.[ticket.id]}
                 onDispatchOrder={onDispatchOrder}
+                onArriveOrder={onArriveOrder}
                 onDeliverOrder={onDeliverOrder}
               />
             );
@@ -506,6 +509,7 @@ export function QueueOrdersCanvas({
           onBan={(id) => { onBan(id); setExpandedId(null); }}
           onItemNote={onItemNote}
           onDispatchOrder={onDispatchOrder ? (id) => { onDispatchOrder(id); } : undefined}
+          onArriveOrder={onArriveOrder ? (id) => { onArriveOrder(id); } : undefined}
           onDeliverOrder={onDeliverOrder ? (id) => { onDeliverOrder(id); setExpandedId(null); } : undefined}
         />
       )}
@@ -543,6 +547,7 @@ interface ExpandedTicketModalProps {
   /** Delivery transitions, optional. Surfaced only on serving delivery
    *  cards; for other service types we keep the plain Complete button. */
   onDispatchOrder?: (id: string) => void;
+  onArriveOrder?: (id: string) => void;
   onDeliverOrder?: (id: string) => void;
 }
 
@@ -550,7 +555,7 @@ function ExpandedTicketModal({
   ticket, items, locale, serviceName, currency, decimals,
   onClose, onPark, onResume, onRecall, onAddItems, onCall, onStartServing, onComplete,
   onNoShow, onCancel, onTransfer, onRequeue, onBan, onItemNote,
-  onDispatchOrder, onDeliverOrder,
+  onDispatchOrder, onArriveOrder, onDeliverOrder,
 }: ExpandedTicketModalProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
     translate(locale, key, values);
@@ -914,11 +919,17 @@ function ExpandedTicketModal({
             const isDeliveryTicket = svcType === 'delivery';
             const isDispatched = Boolean((ticket as any).dispatched_at);
             if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
+              const isArrived = Boolean((ticket as any).arrived_at);
               return (
                 <>
                   {!isDispatched && onDispatchOrder && (
                     <button onClick={() => onDispatchOrder(ticket.id)} style={modalBtnStyle('#f59e0b', true)}>
                       🛵 {tl('Dispatch')}
+                    </button>
+                  )}
+                  {isDispatched && !isArrived && onArriveOrder && (
+                    <button onClick={() => onArriveOrder(ticket.id)} style={modalBtnStyle('#3b82f6', true)}>
+                      🚪 {tl('Arrived')}
                     </button>
                   )}
                   {onDeliverOrder && (

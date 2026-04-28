@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { safeCompare } from '@/lib/crypto-utils';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { buildOrderReceiptMessage } from '@/lib/order-receipt';
 
 /**
  * POST /api/orders/delivered
@@ -84,7 +85,11 @@ export async function POST(request: NextRequest) {
     metadata: { delivered_at: nowIso, dispatched_at: ticket.dispatched_at ?? null },
   }).then(() => {}, () => {});
 
-  // ── Customer WhatsApp ───────────────────────────────────────────
+  // ── Customer WhatsApp — closing receipt ─────────────────────────
+  // Sends a full itemised receipt as the final touchpoint so the
+  // customer has a record of what they paid for (mirrors the printed
+  // receipt at a regular restaurant). Best-effort: WA send failure
+  // does NOT roll back the delivery.
   const phone: string | null = (ticket.customer_data as any)?.phone ?? null;
   if (phone) {
     const locale = (ticket.locale === 'ar' || ticket.locale === 'en' || ticket.locale === 'fr')
@@ -92,14 +97,41 @@ export async function POST(request: NextRequest) {
       : 'fr';
     const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
     const trackUrl = `${cloudUrl}/q/${ticket.qr_token}`;
-    const body =
+
+    // Office name lookup for the receipt header.
+    const { data: office } = await supabase
+      .from('offices').select('name, organization_id').eq('id', ticket.office_id).maybeSingle();
+    let orgName = office?.name ?? '';
+    if (office?.organization_id) {
+      const { data: org } = await supabase
+        .from('organizations').select('name').eq('id', office.organization_id).maybeSingle();
+      if (org?.name) orgName = org.name;
+    }
+
+    const headerLine =
       locale === 'ar'
-        ? `✅ تم تسليم طلبك *#${ticket.ticket_number}*. شهية طيبة! 🍽️\nالتتبع: ${trackUrl}`
+        ? `✅ تم تسليم طلبك *#${ticket.ticket_number}*. شهية طيبة! 🍽️`
         : locale === 'en'
-          ? `✅ Your order *#${ticket.ticket_number}* has been delivered. Enjoy your meal! 🍽️\nTrack: ${trackUrl}`
-          : `✅ Votre commande *#${ticket.ticket_number}* a été livrée. Bon appétit ! 🍽️\nSuivi : ${trackUrl}`;
-    void sendWhatsAppMessage({ to: phone, body })
-      .catch((e) => console.warn('[orders/delivered] WA send failed', e?.message));
+          ? `✅ Your order *#${ticket.ticket_number}* has been delivered. Enjoy your meal! 🍽️`
+          : `✅ Votre commande *#${ticket.ticket_number}* a été livrée. Bon appétit ! 🍽️`;
+
+    try {
+      const receiptBody = await buildOrderReceiptMessage(supabase, {
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticket_number,
+        orgName,
+        locale,
+        headerLine,
+        trackUrl,
+      });
+      void sendWhatsAppMessage({ to: phone, body: receiptBody })
+        .catch((e) => console.warn('[orders/delivered] WA send failed', e?.message));
+    } catch (e: any) {
+      console.warn('[orders/delivered] receipt build failed, falling back to short message', e?.message);
+      const fallback = `${headerLine}\n${trackUrl}`;
+      void sendWhatsAppMessage({ to: phone, body: fallback })
+        .catch((e) => console.warn('[orders/delivered] fallback WA send failed', e?.message));
+    }
   }
 
   return NextResponse.json({ ok: true, delivered_at: nowIso });
