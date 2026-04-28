@@ -67,6 +67,9 @@ export interface QueueOrdersCanvasProps {
   /** Per-ticket suggested ETA in minutes (computed by parent from items'
    *  prep_time_minutes). Looked up by ticket id in the card render. */
   suggestedEtaMinutesByTicket?: Record<string, number>;
+  /** Delivery dispatch handlers — surfaced only on delivery + serving cards. */
+  onDispatchOrder?: (ticketId: string) => void;
+  onDeliverOrder?: (ticketId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +104,8 @@ export function QueueOrdersCanvas({
   onAcceptOrder,
   onDeclineOrder,
   suggestedEtaMinutesByTicket,
+  onDispatchOrder,
+  onDeliverOrder,
 }: QueueOrdersCanvasProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
     translate(locale, key, values);
@@ -443,6 +448,8 @@ export function QueueOrdersCanvas({
                 onAcceptOrder={onAcceptOrder}
                 onDeclineOrder={onDeclineOrder}
                 suggestedEtaMinutes={suggestedEtaMinutesByTicket?.[ticket.id]}
+                onDispatchOrder={onDispatchOrder}
+                onDeliverOrder={onDeliverOrder}
               />
             );
           }),

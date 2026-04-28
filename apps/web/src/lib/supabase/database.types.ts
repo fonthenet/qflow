@@ -2434,6 +2434,7 @@ export type Database = {
           is_active: boolean | null
           office_id: string | null
           organization_id: string
+          phone: string | null
           role: string
           work_schedule: Json | null
         }
@@ -2448,6 +2449,7 @@ export type Database = {
           is_active?: boolean | null
           office_id?: string | null
           organization_id: string
+          phone?: string | null
           role: string
           work_schedule?: Json | null
         }
@@ -2462,6 +2464,7 @@ export type Database = {
           is_active?: boolean | null
           office_id?: string | null
           organization_id?: string
+          phone?: string | null
           role?: string
           work_schedule?: Json | null
         }
@@ -2858,6 +2861,7 @@ export type Database = {
       tickets: {
         Row: {
           appointment_id: string | null
+          assigned_rider_id: string | null
           called_at: string | null
           called_by_staff_id: string | null
           checked_in_at: string | null
@@ -2866,9 +2870,11 @@ export type Database = {
           customer_data: Json | null
           customer_id: string | null
           daily_sequence: number | null
+          delivered_at: string | null
           delivery_address: Json | null
           department_id: string
           desk_id: string | null
+          dispatched_at: string | null
           estimated_wait_minutes: number | null
           group_id: string | null
           id: string
@@ -2891,6 +2897,7 @@ export type Database = {
         }
         Insert: {
           appointment_id?: string | null
+          assigned_rider_id?: string | null
           called_at?: string | null
           called_by_staff_id?: string | null
           checked_in_at?: string | null
@@ -2899,9 +2906,11 @@ export type Database = {
           customer_data?: Json | null
           customer_id?: string | null
           daily_sequence?: number | null
+          delivered_at?: string | null
           delivery_address?: Json | null
           department_id: string
           desk_id?: string | null
+          dispatched_at?: string | null
           estimated_wait_minutes?: number | null
           group_id?: string | null
           id?: string
@@ -2924,6 +2933,7 @@ export type Database = {
         }
         Update: {
           appointment_id?: string | null
+          assigned_rider_id?: string | null
           called_at?: string | null
           called_by_staff_id?: string | null
           checked_in_at?: string | null
@@ -2932,9 +2942,11 @@ export type Database = {
           customer_data?: Json | null
           customer_id?: string | null
           daily_sequence?: number | null
+          delivered_at?: string | null
           delivery_address?: Json | null
           department_id?: string
           desk_id?: string | null
+          dispatched_at?: string | null
           estimated_wait_minutes?: number | null
           group_id?: string | null
           id?: string

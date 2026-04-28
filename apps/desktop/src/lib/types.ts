@@ -24,6 +24,13 @@ export interface Ticket {
    *  Shape: { street, city, instructions, lat?, lng? }. Stored as TEXT
    *  locally; cloud column is JSONB. */
   delivery_address?: string | null;
+  /** UUID of the staff (role='rider') currently assigned to deliver. */
+  assigned_rider_id?: string | null;
+  /** Set when operator clicks Dispatch — order is out for delivery. */
+  dispatched_at?: string | null;
+  /** Set when operator (or rider) marks the order delivered. Status
+   *  flips to 'served' at the same time. */
+  delivered_at?: string | null;
 }
 
 export interface SyncStatus {

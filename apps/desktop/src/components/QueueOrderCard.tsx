@@ -118,6 +118,11 @@ export interface QueueOrderCardProps {
   /** Computed default ETA from cart items' prep times — passed in by parent
    *  because that's where the items array is fully resolved. */
   suggestedEtaMinutes?: number;
+  /** Delivery dispatch handlers. Surfaced only on delivery + serving cards.
+   *  onDispatch: stamps dispatched_at, sends "out for delivery" WA.
+   *  onDelivered: stamps delivered_at, status → served, sends "delivered" WA. */
+  onDispatchOrder?: (ticketId: string) => void;
+  onDeliverOrder?: (ticketId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +225,8 @@ export function QueueOrderCard({
   onAcceptOrder,
   onDeclineOrder,
   suggestedEtaMinutes,
+  onDispatchOrder,
+  onDeliverOrder,
 }: QueueOrderCardProps) {
   const [showOverflow, setShowOverflow] = useState(false);
   // itemId → note editor open
@@ -687,14 +694,47 @@ export function QueueOrderCard({
             {tl('Serve')}
           </button>
         )}
-        {isServing && (
-          <button
-            onClick={() => onComplete(ticket.id)}
-            style={btnStyle('var(--success, #22c55e)', true)}
-          >
-            {tl('Complete')}
-          </button>
-        )}
+        {isServing && (() => {
+          // Delivery branch: instead of a single "Complete" button, the
+          // operator gets a two-step flow that drives the customer-facing
+          // WA messages — Dispatch → Delivered. Each call hits a dedicated
+          // /api/orders/* endpoint that fires the right locale-aware
+          // template. Falls back to plain "Complete" for takeout / dine-in.
+          const isDeliveryTicket = svcType === 'delivery';
+          if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
+            const isDispatched = Boolean((ticket as any).dispatched_at);
+            return (
+              <>
+                {!isDispatched && onDispatchOrder && (
+                  <button
+                    onClick={() => onDispatchOrder(ticket.id)}
+                    style={btnStyle('#f59e0b', true)}
+                    title={tl('Notify customer the order is on its way')}
+                  >
+                    🛵 {tl('Dispatch')}
+                  </button>
+                )}
+                {onDeliverOrder && (
+                  <button
+                    onClick={() => onDeliverOrder(ticket.id)}
+                    style={btnStyle('var(--success, #22c55e)', true)}
+                    title={tl('Mark as delivered and notify the customer')}
+                  >
+                    ✓ {tl('Delivered')}
+                  </button>
+                )}
+              </>
+            );
+          }
+          return (
+            <button
+              onClick={() => onComplete(ticket.id)}
+              style={btnStyle('var(--success, #22c55e)', true)}
+            >
+              {tl('Complete')}
+            </button>
+          );
+        })()}
         {/* Add items — only after the operator has started serving.
             Hiding it during 'called' avoids cluttering the simple
             call→serve handoff and removes a misleading affordance

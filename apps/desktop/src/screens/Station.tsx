@@ -3632,6 +3632,62 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     fetchTickets();
   };
 
+  // ── Delivery dispatch + delivered handlers ─────────────────────
+  // Both call the cloud directly (auth via the Station's stored session
+  // JWT); cloud updates the ticket and fires the customer WhatsApp
+  // template. Local SQLite picks the change up via the next pull /
+  // realtime tick. We optimistically refresh the ticket list so the
+  // operator sees the button flip without waiting.
+  const handleDispatchOrder = async (ticketId: string) => {
+    try {
+      const token = await (window as any).qf?.auth?.getToken?.().catch(() => '');
+      const res = await cloudFetch('https://qflo.net/api/orders/dispatch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ticketId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        showToast(t('Could not dispatch: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
+        return;
+      }
+      const tk = tickets.find((x) => x.id === ticketId);
+      showToast(t('Order {ticket} marked as out for delivery', { ticket: tk?.ticket_number ?? '' }), 'success');
+      addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Dispatched'), ticketId);
+      fetchTickets();
+    } catch (err: any) {
+      showToast(t('Could not dispatch: {error}', { error: err?.message ?? 'Network error' }), 'error');
+    }
+  };
+
+  const handleDeliverOrder = async (ticketId: string) => {
+    try {
+      const token = await (window as any).qf?.auth?.getToken?.().catch(() => '');
+      const res = await cloudFetch('https://qflo.net/api/orders/delivered', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ticketId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        showToast(t('Could not mark delivered: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
+        return;
+      }
+      const tk = tickets.find((x) => x.id === ticketId);
+      showToast(t('Order {ticket} marked as delivered', { ticket: tk?.ticket_number ?? '' }), 'success');
+      addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Delivered'), ticketId);
+      fetchTickets();
+    } catch (err: any) {
+      showToast(t('Could not mark delivered: {error}', { error: err?.message ?? 'Network error' }), 'error');
+    }
+  };
+
   const handleDeclineOrder = async (ticketId: string, reasonKey: string, note: string) => {
     const result = await callOrderTransition(ticketId, { action: 'decline', declineReason: reasonKey, declineNote: note });
     if (!result.ok) {
@@ -4968,6 +5024,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 onItemNote={handleQueueItemNote}
                 onAcceptOrder={handleAcceptOrder}
                 onDeclineOrder={handleDeclineOrder}
+                onDispatchOrder={handleDispatchOrder}
+                onDeliverOrder={handleDeliverOrder}
               />
             </div>
           )}
@@ -5559,6 +5617,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           onItemNote={handleQueueItemNote}
                           onAcceptOrder={handleAcceptOrder}
                           onDeclineOrder={handleDeclineOrder}
+                          onDispatchOrder={handleDispatchOrder}
+                          onDeliverOrder={handleDeliverOrder}
                         />
                       </div>
                     )}
