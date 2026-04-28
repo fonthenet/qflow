@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveKitchenScreenToken } from '@/lib/kitchen/resolve-screen-token';
+import { notifyCustomerOnKitchenReady } from '@/lib/kitchen/notify-customer-ready';
 
 const VALID_ACTIONS = new Set(['mark_all_ready', 'mark_all_served']);
 
@@ -112,6 +113,9 @@ export async function POST(req: NextRequest) {
         },
         sent_at: now,
       } as any);
+
+      // Customer-facing "ready" WA message for online orders only.
+      void notifyCustomerOnKitchenReady(supabase, ticketId);
     } catch (notifErr) {
       // Non-fatal — see update-item-status route for rationale.
       console.warn('[kitchen/bulk-update-ticket] notification insert failed', notifErr);

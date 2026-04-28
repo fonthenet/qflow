@@ -27,6 +27,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveKitchenScreenToken } from '@/lib/kitchen/resolve-screen-token';
+import { notifyCustomerOnKitchenReady } from '@/lib/kitchen/notify-customer-ready';
 
 export type KitchenItemStatus = 'new' | 'in_progress' | 'ready' | 'served';
 
@@ -144,6 +145,11 @@ export async function updateKitchenItemStatus(
           },
           sent_at: now,
         } as any);
+
+        // Customer-facing WA "ready" message — only fires for online
+        // takeout/delivery orders; walk-in/dine-in are filtered out
+        // inside the helper. Best-effort, no rollback on failure.
+        void notifyCustomerOnKitchenReady(supabase, item.ticket_id);
       }
     } catch (notifErr) {
       // Non-fatal — the UI write succeeded; notification failure must not
@@ -251,6 +257,9 @@ export async function markAllItemsOnTicket(
         },
         sent_at: now,
       } as any);
+
+      // Customer-facing "ready" WA message for online orders only.
+      void notifyCustomerOnKitchenReady(supabase, ticketId);
     } catch (notifErr) {
       // Non-fatal — see rationale in updateKitchenItemStatus.
       console.warn('[actions/markAllItemsOnTicket] notification insert failed', notifErr);

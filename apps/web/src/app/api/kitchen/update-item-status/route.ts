@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveKitchenScreenToken } from '@/lib/kitchen/resolve-screen-token';
+import { notifyCustomerOnKitchenReady } from '@/lib/kitchen/notify-customer-ready';
 
 const VALID_STATUSES = new Set(['new', 'in_progress', 'ready', 'served']);
 
@@ -125,6 +126,9 @@ export async function POST(req: NextRequest) {
           },
           sent_at: now,
         } as any);
+
+        // Customer-facing "ready" WA message for online orders only.
+        void notifyCustomerOnKitchenReady(supabase, item.ticket_id);
       }
     } catch (notifErr) {
       // Non-fatal — the UI is already updated; notification failure should not
