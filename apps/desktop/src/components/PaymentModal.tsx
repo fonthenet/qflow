@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import type { TicketItem } from './OrderPad';
 import { buildReceiptHtml } from '../lib/receipt';
-import { formatMoney, parseMoney, formatMoneyForInput, QUICK_ADD, labelForQuickAdd } from '../lib/money';
+import { formatMoney, parseMoney, formatMoneyForInput } from '../lib/money';
 
 interface Printer {
   id: string;
@@ -165,15 +165,18 @@ export function PaymentModal({
             />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button onClick={() => setTendered(formatMoneyForInput(total, decimals))} style={quickBtn}>{t('Exact')}</button>
-              {QUICK_ADD.map((n) => (
+              {/* Smart cash suggestions: round the total UP to natural
+                  denominations (next 500, next 1000, next 5000, next 10000)
+                  so every button gives the customer enough change. The old
+                  fixed "+500 / +1000 / ..." buttons were useless when the
+                  total exceeded their increment (e.g. on a 2450 ticket the
+                  +500 button still left the operator short). */}
+              {smartCashSuggestions(total).map((amount) => (
                 <button
-                  key={n}
-                  onClick={() => {
-                    const base = tendered === '' ? 0 : tenderedAmt;
-                    setTendered(formatMoneyForInput(base + n, decimals));
-                  }}
+                  key={amount}
+                  onClick={() => setTendered(formatMoneyForInput(amount, decimals))}
                   style={quickBtn}
-                >{labelForQuickAdd(n)}</button>
+                >{`${formatGroup(amount)}`}</button>
               ))}
               <button onClick={() => setTendered('')} style={{ ...quickBtn, marginLeft: 'auto', color: '#ef4444' }}>{t('Clear')}</button>
             </div>
@@ -280,3 +283,37 @@ const primaryBtn: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 10, border: 'none',
   background: '#22c55e', color: '#fff', cursor: 'pointer', fontWeight: 800, fontSize: 14,
 };
+
+/**
+ * Round `total` UP to the next four natural cash denominations so each
+ * suggestion is guaranteed to cover the bill. Steps adapt to the size of
+ * the total — small bills get tight increments (next 500, next 1000…),
+ * larger bills jump in 5000 / 10000 increments. Duplicates and amounts
+ * equal to total are filtered (the "Exact" button already handles those).
+ */
+function smartCashSuggestions(total: number): number[] {
+  if (!Number.isFinite(total) || total <= 0) return [];
+  const ceilTo = (n: number, step: number) => Math.ceil(n / step) * step;
+  // Pick 4 candidate steps based on the magnitude of the total. The aim
+  // is one "next round" suggestion + a couple of larger common notes.
+  let steps: number[];
+  if (total < 1000)       steps = [100, 500, 1000, 2000];
+  else if (total < 5000)  steps = [500, 1000, 2000, 5000];
+  else if (total < 10000) steps = [1000, 2000, 5000, 10000];
+  else if (total < 50000) steps = [5000, 10000, 20000, 50000];
+  else                    steps = [10000, 50000, 100000, 200000];
+  const set = new Set<number>();
+  for (const s of steps) {
+    const v = ceilTo(total, s);
+    if (v > total) set.add(v);
+  }
+  return Array.from(set).sort((a, b) => a - b).slice(0, 4);
+}
+
+function formatGroup(n: number): string {
+  // Thin-space every 3 digits — matches groupDigits() in lib/money.ts so
+  // 2500 renders as "2 500" (no decimals — these are whole-currency-unit
+  // suggestions; PaymentModal's formatMoneyForInput handles decimals on
+  // commit).
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}

@@ -391,7 +391,7 @@ export function FloorMap({
                         <Ionicons
                           name="restaurant"
                           size={compact ? 10 : 13}
-                          color={colors.success}
+                          color={colors.warning}
                         />
                       </View>
                     ) : null}
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   grid: {
-    padding: spacing.md,
+    padding: spacing.sm,
     gap: spacing.sm,
   },
   gridInner: {
@@ -531,9 +531,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.success + '1f',
+    // Amber matches the kitchen-active / notify color used elsewhere
+    // (item.note italic, "Preparing" pill). Green would clash with the
+    // "Ready" status — picking a different hue makes the food-present
+    // signal distinct from food-ready.
+    backgroundColor: colors.warning + '1f',
     borderWidth: 1,
-    borderColor: colors.success + '55',
+    borderColor: colors.warning + '55',
   },
   cardHeaderRow: {
     flexDirection: 'row',

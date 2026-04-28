@@ -7,6 +7,7 @@ import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { OrderPad, type TicketItem } from './OrderPad';
 import { PaymentModal } from './PaymentModal';
 import { ZReportModal } from './ZReportModal';
+import { TicketCompletionSummaryModal } from './TicketCompletionSummary';
 import { formatMoney } from '../lib/money';
 
 const CLOUD_URL = 'https://qflo.net';
@@ -14,6 +15,7 @@ import {
   matchTablesForParty,
   parsePartySize,
   summarizeOccupancy,
+  resolveRestaurantServiceType,
   type RestaurantTable,
   type TableStatus,
 } from '@qflo/shared';
@@ -47,6 +49,7 @@ interface SeatedTicket {
   serving_started_at: string | null;
   called_at: string | null;
   created_at: string;
+  service_id?: string | null;
 }
 
 const STATUS_COLORS: Record<TableStatus, { border: string; bg: string; label: string }> = {
@@ -128,7 +131,7 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
           .select('id, office_id, code, label, zone, capacity, min_party_size, max_party_size, reservable, status, current_ticket_id, assigned_at')
           .eq('office_id', officeId).order('code'),
         sb.from('tickets')
-          .select('id, ticket_number, customer_data, status, serving_started_at, called_at, created_at')
+          .select('id, ticket_number, customer_data, status, serving_started_at, called_at, created_at, service_id')
           .eq('office_id', officeId)
           .in('status', ['waiting', 'called', 'serving'])
           .order('created_at', { ascending: true }),
@@ -149,10 +152,37 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
       tableRows.sort((a, b) => collator.compare(a.code ?? '', b.code ?? ''));
       const ticketRows = (wait.data ?? []) as SeatedTicket[];
+      // Resolve service names for tickets that have a service_id. The
+      // services table is keyed by department_id, not office_id — so we
+      // can't filter by office. Instead, look up only the unique service
+      // IDs the tickets actually reference. Empty result is fine: those
+      // tickets fall through as service-less (type 'other') and the
+      // floor map shows them in waiting (safe default for ambiguous).
+      const referencedSvcIds = Array.from(
+        new Set(ticketRows.map((t) => t.service_id).filter((id): id is string => !!id)),
+      );
+      const serviceNames = new Map<string, string>();
+      if (referencedSvcIds.length > 0) {
+        const svc = await sb.from('services').select('id, name').in('id', referencedSvcIds);
+        for (const s of (svc.data ?? []) as any[]) {
+          if (s?.id && s?.name) serviceNames.set(s.id, s.name);
+        }
+      }
       setTables(tableRows);
       const seatedIds = new Set(tableRows.filter((x) => x.current_ticket_id).map((x) => x.current_ticket_id!));
       setTickets(ticketRows.filter((x) => seatedIds.has(x.id)));
-      setWaiting(ticketRows.filter((x) => x.status === 'waiting' && !seatedIds.has(x.id)));
+      // Floor-map waiting strip is for DINE-IN only. Takeout + delivery
+      // never get a table assigned and are handled by the queue canvas;
+      // showing them here just adds noise for the host. Tickets without
+      // a service_id, or services that don't match the takeout/delivery
+      // patterns, fall through as eligible (catches walk-ins and any
+      // restaurant that hasn't split its services yet).
+      setWaiting(ticketRows.filter((x) => {
+        if (x.status !== 'waiting' || seatedIds.has(x.id)) return false;
+        const svcName = x.service_id ? serviceNames.get(x.service_id) ?? '' : '';
+        const svcType = resolveRestaurantServiceType(svcName);
+        return svcType !== 'takeout' && svcType !== 'delivery';
+      }));
     } catch (e: any) {
       console.error('[FloorMap] load exception', e);
       setLoadError(e?.message ?? 'Failed to load floor map');
@@ -812,35 +842,11 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
         })}
       </div>
 
-      {/* Waiting strip at the bottom — read-only status. The floor-map tiles
-          drive every action (Call / Seat) via the customer picker below, so
-          these chips are purely informational. */}
-      {waiting.length > 0 && (
-        <div style={waitingStrip}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', marginBottom: 6 }}>
-            {t('Waiting')} ({waiting.length})
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {waiting.slice(0, 12).map((tk) => {
-              const ps = parsePartySize(tk.customer_data?.party_size);
-              const fitCount = ps ? matchTablesForParty(tables, ps).length : 0;
-              const waitElapsed = elapsedFromIso(tk.created_at ?? null);
-              return (
-                <div
-                  key={tk.id}
-                  style={{ ...waitingChip, border: '1px solid var(--border)' }}
-                >
-                  <span style={{ fontWeight: 700 }}>🎫 {tk.ticket_number}</span>
-                  {tk.customer_data?.name && <span style={{ opacity: 0.7 }}>· {tk.customer_data.name}</span>}
-                  {ps && <span style={{ opacity: 0.7, display: 'inline-flex', alignItems: 'center', gap: 4 }}>· <PeopleIcon size={12} /> {ps}</span>}
-                  {waitElapsed && <span style={{ opacity: 0.7 }}>· ⏱ {waitElapsed}</span>}
-                  {ps && fitCount === 0 && <span title={t('No matching table')} style={{ color: '#fca5a5' }}>⚠</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Waiting strip removed — the queue sidebar's WAITING section already
+          shows the same data, so the floor-map bottom strip was redundant
+          (and ate vertical space the table grid could use). The customer
+          picker below still lists waiting parties when the operator taps
+          Call/Seat on a tile, so no functionality is lost. */}
 
       {/* Customer picker — table-first flow. Operator tapped Call or Seat on
           an available tile; this modal lists every waiting ticket so they
@@ -936,112 +942,31 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
       )}
 
       {/* Visit summary — fires after Complete. Shows the lifecycle
-          timestamps and derived durations so the host has a record of
-          the service before the table recycles. */}
-      {completionSummary && createPortal(
-        <div style={modalBackdrop} onClick={() => setCompletionSummary(null)}>
-          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>
-              ✓ {t('Visit complete')}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14 }}>
-              {completionSummary.ticketNumber}{completionSummary.customerName ? ` · ${completionSummary.customerName}` : ''}
-            </div>
-            <SummaryRow label={t('Table')} value={completionSummary.tableCode} />
-            {completionSummary.partySize != null && (
-              <SummaryRow label={t('Party size')} value={`👥 ${completionSummary.partySize}`} />
-            )}
-            {completionSummary.calledAt && (
-              <SummaryRow label={t('Called at')} value={formatTime(completionSummary.calledAt)} />
-            )}
-            {completionSummary.seatedAt && (
-              <SummaryRow label={t('Seated at')} value={formatTime(completionSummary.seatedAt)} />
-            )}
-            <SummaryRow label={t('Completed at')} value={formatTime(completionSummary.completedAt)} />
-
-            {completionSummary.items.length > 0 && (
-              <>
-                <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', marginBottom: 6 }}>
-                  🍽 {t('Served')} ({completionSummary.items.reduce((s, i) => s + i.qty, 0)})
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
-                  {completionSummary.items.map((i) => (
-                    <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
-                      <span style={{ color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <strong>{i.qty}×</strong> {i.name}
-                        {i.note && <span style={{ color: '#fbbf24', fontStyle: 'italic' }}> · {i.note}</span>}
-                      </span>
-                      {i.price != null && (
-                        <span style={{ color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
-                          {fmtMoney(i.price * i.qty)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {completionSummary.itemsTotal > 0 && (
-                  <SummaryRow
-                    label={t('Items total')}
-                    value={fmtMoney(completionSummary.itemsTotal)}
-                    emphasis
-                  />
-                )}
-                {completionSummary.payment && (
-                  <>
-                    <SummaryRow
-                      label={t('Cash received')}
-                      value={fmtMoney(completionSummary.payment.tendered)}
-                    />
-                    {completionSummary.payment.change > 0 && (
-                      <SummaryRow
-                        label={t('Change')}
-                        value={fmtMoney(completionSummary.payment.change)}
-                      />
-                    )}
-                  </>
-                )}
-              </>
-            )}
-
-            <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
-            {completionSummary.calledAt && completionSummary.seatedAt && (
-              <SummaryRow
-                label={t('Waited before seating')}
-                value={durationBetween(completionSummary.calledAt, completionSummary.seatedAt)}
-                emphasis
-              />
-            )}
-            {completionSummary.seatedAt && (
-              <SummaryRow
-                label={t('Time at table')}
-                value={durationBetween(completionSummary.seatedAt, completionSummary.completedAt)}
-                emphasis
-              />
-            )}
-            {completionSummary.calledAt && (
-              <SummaryRow
-                label={t('Total visit duration')}
-                value={durationBetween(completionSummary.calledAt, completionSummary.completedAt)}
-                emphasis
-              />
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-              <button
-                onClick={() => setCompletionSummary(null)}
-                style={{
-                  padding: '8px 20px', borderRadius: 8,
-                  background: '#16a34a', color: '#fff', border: 'none',
-                  fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                }}
-              >
-                {t('Done')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          timestamps and derived durations + a Print receipt button. */}
+      <TicketCompletionSummaryModal
+        summary={completionSummary ? {
+          kind: 'dine_in',
+          ticketNumber: completionSummary.ticketNumber,
+          customerName: completionSummary.customerName,
+          customerPhone: null,
+          partySize: completionSummary.partySize,
+          tableCode: completionSummary.tableCode,
+          calledAt: completionSummary.calledAt,
+          seatedAt: completionSummary.seatedAt,
+          completedAt: completionSummary.completedAt,
+          items: completionSummary.items.map((i) => ({
+            id: i.id, name: i.name, qty: i.qty, price: i.price ?? null, note: i.note ?? null,
+          })),
+          itemsTotal: completionSummary.itemsTotal,
+          payment: completionSummary.payment,
+        } : null}
+        locale={locale}
+        currency={currency}
+        decimals={decimals}
+        orgName={null}
+        staffName={null}
+        onClose={() => setCompletionSummary(null)}
+      />
 
       {/* OrderPad — menu + running order for the currently serving ticket */}
       {orderPadFor && orgId && (
@@ -1092,38 +1017,6 @@ export function FloorMap({ officeId, staffId, deskId, locale, orgId, currency = 
       )}
     </div>
   );
-}
-
-function SummaryRow({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
-  return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '6px 0',
-      fontSize: emphasis ? 14 : 13,
-    }}>
-      <span style={{ color: 'var(--text2)' }}>{label}</span>
-      <span style={{ color: 'var(--text)', fontWeight: emphasis ? 800 : 600, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
-    </div>
-  );
-}
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return iso;
-  }
-}
-
-function durationBetween(startIso: string, endIso: string): string {
-  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return '—';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
 }
 
 function Stat({ label, value, color }: { label: string; value: number | string; color: string }) {

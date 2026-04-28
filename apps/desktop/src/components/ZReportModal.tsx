@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { formatMoney } from '../lib/money';
+import DatePicker from './DatePicker';
 
 interface Props {
   orgId: string;
@@ -28,6 +29,15 @@ interface ZReport {
 
 function todayLocal(): string {
   const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function oneYearAgoLocal(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 1);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -67,11 +77,18 @@ export function ZReportModal({ orgId, locale, currency = '', decimals = 2, onClo
         <div style={header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>📊 {t('Daily Z-Report')}</div>
-            <input
-              type="date"
+            {/* Custom DatePicker — native <input type="date"> on Electron
+                often refuses to open the calendar popover, leaving the
+                operator unable to navigate to past days. The themed
+                DatePicker exposes a calendar with month/year quick-pick
+                that always works, and we cap the range at 1 year of
+                history so the picker matches what we promise. */}
+            <DatePicker
               value={day}
               onChange={(e) => setDay(e.target.value)}
-              style={{ ...inputStyle, width: 160 }}
+              min={oneYearAgoLocal()}
+              max={todayLocal()}
+              style={{ ...inputStyle, width: 180 }}
             />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

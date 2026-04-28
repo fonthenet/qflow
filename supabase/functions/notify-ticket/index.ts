@@ -187,6 +187,24 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 //   1. Handles "joined" event (WhatsApp welcome message on queue join)
 //   2. Forwards push notifications (if pushPayload is provided)
 //
+// Service-type branching for ready/served (Takeout/Delivery/Dine-in copy)
+// lives in apps/web/src/lib/notify.ts:notifyCustomer(), which imports
+// resolveRestaurantServiceType from packages/shared/src/restaurant-services.ts.
+// If this edge function ever needs to handle ready/served directly, use:
+//
+//   /* SHARED-COPY: keep in sync with packages/shared/src/restaurant-services.ts */
+//   const TAKEOUT_RE  = /take.?out|à emporter|emporter|takeaway/i;
+//   const DELIVERY_RE = /deliver|livrais/i;
+//   const DINE_IN_RE  = /dine.?in|sur place|surplace/i;
+//   function resolveServiceType(name) {
+//     if (!name) return 'other';
+//     const low = name.toLowerCase();
+//     if (TAKEOUT_RE.test(low)) return 'takeout';
+//     if (DELIVERY_RE.test(low)) return 'delivery';
+//     if (DINE_IN_RE.test(low)) return 'dine_in';
+//     return 'other';
+//   }
+//
 // The old trigger-based WhatsApp path has been removed to prevent
 // duplicate messages. To restore it, check git history.
 

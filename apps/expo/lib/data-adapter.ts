@@ -747,6 +747,9 @@ export interface KitchenTicket {
   /** Earliest `added_at` of any non-served item — drives the "age"
    *  badge so the oldest ticket bubbles up + turns red. */
   oldest_item_at: string;
+  /** Free-text service name from the services table — used to derive
+   *  the service-type pill (Takeout / Delivery) on KDS cards. */
+  service_name?: string | null;
   items: TicketItem[];
 }
 
@@ -766,27 +769,69 @@ export async function fetchKitchenTickets(orgId: string): Promise<KitchenTicket[
     return [];
   }
   const { supabase } = await import('./supabase');
-  // Pull active tickets first (cheaper than starting from items + de-duping).
+  // Tickets are keyed by office_id (NOT organization_id — that column
+  // doesn't exist on the tickets table). Resolve offices for the org
+  // first, then filter tickets by those office_ids. table_label lives
+  // on restaurant_tables.label (joined via current_ticket_id), so we
+  // fetch table assignments separately and join in memory.
+  const { data: offices, error: oErr } = await (supabase as any)
+    .from('offices')
+    .select('id')
+    .eq('organization_id', orgId);
+  if (oErr) throw new Error(oErr.message);
+  const officeIds = (offices ?? []).map((o: any) => o.id);
+  if (!officeIds.length) return [];
+
   const { data: tickets, error: tErr } = await (supabase as any)
     .from('tickets')
-    .select('id, ticket_number, table_label, customer_data, status')
-    .eq('organization_id', orgId)
+    .select('id, ticket_number, customer_data, status, service_id')
+    .in('office_id', officeIds)
     .in('status', ['called', 'serving'])
     .order('created_at', { ascending: true });
   if (tErr) throw new Error(tErr.message);
   if (!tickets?.length) return [];
 
   const ids = tickets.map((t: any) => t.id);
-  const { data: items, error: iErr } = await (supabase as any)
-    .from('ticket_items')
-    .select('*')
-    .in('ticket_id', ids)
-    .neq('kitchen_status', 'served')
-    .order('added_at', { ascending: true });
-  if (iErr) throw new Error(iErr.message);
+
+  // Collect distinct service_ids so we can resolve service names for the
+  // service-type pill. Fetch once and cache in a Map for O(1) lookup below.
+  const serviceIds = [...new Set(
+    (tickets as any[]).map((t: any) => t.service_id).filter(Boolean),
+  )];
+
+  const [itemsRes, tablesRes, servicesRes] = await Promise.all([
+    (supabase as any)
+      .from('ticket_items')
+      .select('*')
+      .in('ticket_id', ids)
+      .neq('kitchen_status', 'served')
+      .order('added_at', { ascending: true }),
+    (supabase as any)
+      .from('restaurant_tables')
+      .select('label, current_ticket_id')
+      .in('current_ticket_id', ids),
+    serviceIds.length > 0
+      ? (supabase as any)
+          .from('services')
+          .select('id, name')
+          .in('id', serviceIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (itemsRes.error) throw new Error(itemsRes.error.message);
+  const items = itemsRes.data ?? [];
+  const tableByTicket = new Map<string, string>();
+  for (const row of (tablesRes.data ?? []) as any[]) {
+    if (row.current_ticket_id && row.label) {
+      tableByTicket.set(row.current_ticket_id, row.label);
+    }
+  }
+  const serviceNameById = new Map<string, string>();
+  for (const svc of (servicesRes.data ?? []) as any[]) {
+    if (svc.id && svc.name) serviceNameById.set(svc.id, svc.name);
+  }
 
   const byTicket = new Map<string, TicketItem[]>();
-  for (const it of (items ?? []) as TicketItem[]) {
+  for (const it of items as TicketItem[]) {
     const arr = byTicket.get(it.ticket_id) ?? [];
     arr.push(it);
     byTicket.set(it.ticket_id, arr);
@@ -803,11 +848,12 @@ export async function fetchKitchenTickets(orgId: string): Promise<KitchenTicket[
     cards.push({
       ticket_id: tk.id,
       ticket_number: tk.ticket_number,
-      table_label: tk.table_label ?? null,
+      table_label: tableByTicket.get(tk.id) ?? null,
       party_size: tk.customer_data?.party_size ?? null,
       customer_name: tk.customer_data?.name ?? null,
       ticket_status: tk.status,
       oldest_item_at: oldest,
+      service_name: tk.service_id ? (serviceNameById.get(tk.service_id) ?? null) : null,
       items: its,
     });
   }

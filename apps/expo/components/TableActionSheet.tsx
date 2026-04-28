@@ -18,15 +18,18 @@
  * Locale: FR/AR/EN via i18next + colors.* tokens (light + dark safe).
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Animated,
+  KeyboardAvoidingView,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -88,6 +91,10 @@ interface Props {
   /** Inline cart edits — wire to data-adapter from desk.tsx. */
   onItemQty?: (item: TicketItem, nextQty: number) => void;
   onItemRemove?: (item: TicketItem) => void;
+  /** Set or clear the kitchen note for an item (special prep request,
+   *  allergies, etc). Empty string clears it. Wired via desk.tsx to
+   *  updateTicketItem so it persists + propagates over realtime. */
+  onItemNote?: (item: TicketItem, note: string) => void;
 }
 
 function formatMoney(amount: number, currency: string, decimals: number): string {
@@ -142,7 +149,12 @@ export function TableActionSheet({
   onOrder,
   onItemQty,
   onItemRemove,
+  onItemNote,
 }: Props) {
+  // Note editor state — single item being edited at a time. When set,
+  // a small bottom-sheet with TextInput overlays the action sheet.
+  const [noteEditing, setNoteEditing] = useState<TicketItem | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
   const { t } = useTranslation();
   const translateY = useSheetAnim(visible);
   const fmt = (n: number) => formatMoney(n, currency, decimals);
@@ -357,8 +369,12 @@ export function TableActionSheet({
               </View>
             )}
 
-            {/* Primary action */}
-            {primary ? (
+            {/* Top primary action — only for non-finalising states.
+                "Start Serving" / "Resume" go here because the operator
+                hasn't finished anything yet. "Mark Served" is moved
+                BELOW the order list (see further down) so the operator
+                can review what's being served before the terminal tap. */}
+            {primary && !isServing ? (
               <Pressable
                 onPress={primary.onPress}
                 disabled={busy}
@@ -414,13 +430,28 @@ export function TableActionSheet({
                   </View>
                 </View>
 
-                {items.map((it) => (
+                {items.map((it) => {
+                  // Item-name color reflects kitchen progress: muted while
+                  // the kitchen still has it (new / in_progress), full
+                  // text color once it's ready to run. Same convention
+                  // restaurants use on paper chits — items get crossed
+                  // off / darkened as they come up. Lets the operator
+                  // scan a long order at a glance and see what's left.
+                  const kStatus = (it as any).kitchen_status ?? 'new';
+                  const isReady = kStatus === 'ready';
+                  const nameColor = isReady ? colors.text : colors.textMuted;
+                  return (
                   <View key={it.id} style={styles.orderRow}>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.orderRowName} numberOfLines={1}>{it.name}</Text>
+                      <Text
+                        style={[styles.orderRowName, { color: nameColor }]}
+                        numberOfLines={1}
+                      >
+                        {it.name}
+                      </Text>
                       {it.price != null ? (
                         <Text style={styles.orderRowPrice}>
-                          {fmt(it.price)} × {it.qty} = <Text style={{ fontWeight: '800', color: colors.text }}>{fmt(it.price * it.qty)}</Text>
+                          {fmt(it.price)} × {it.qty} = <Text style={{ fontWeight: '800', color: nameColor }}>{fmt(it.price * it.qty)}</Text>
                         </Text>
                       ) : (
                         <Text style={styles.orderRowFree}>
@@ -447,6 +478,32 @@ export function TableActionSheet({
                       >
                         <Text style={styles.qtyBtnText}>+</Text>
                       </Pressable>
+                      {/* Note button — opens an inline editor so the
+                          server can attach a kitchen instruction (e.g.
+                          "no onions", "well done"). Highlighted when a
+                          note is already set so the operator can see at
+                          a glance which lines have prep notes attached. */}
+                      {onItemNote ? (
+                        <Pressable
+                          onPress={() => {
+                            setNoteDraft(it.note ?? '');
+                            setNoteEditing(it);
+                          }}
+                          disabled={busy}
+                          style={[
+                            styles.qtyBtn,
+                            { marginLeft: 4 },
+                            it.note ? { backgroundColor: colors.warning + '22', borderColor: colors.warning } : null,
+                          ]}
+                          accessibilityLabel={t('order.editNote', { defaultValue: 'Edit note' })}
+                        >
+                          <Ionicons
+                            name={it.note ? 'chatbubble-ellipses' : 'chatbubble-outline'}
+                            size={14}
+                            color={it.note ? colors.warning : colors.text}
+                          />
+                        </Pressable>
+                      ) : null}
                       <Pressable
                         onPress={() => onItemRemove?.(it)}
                         disabled={busy || !onItemRemove}
@@ -456,7 +513,8 @@ export function TableActionSheet({
                       </Pressable>
                     </View>
                   </View>
-                ))}
+                  );
+                })}
 
                 <View style={styles.orderTotalRow}>
                   <Text style={styles.orderTotalLabel}>
@@ -518,8 +576,8 @@ export function TableActionSheet({
               </View>
             ) : null}
 
-            {/* Add items button. Cash collection is now folded into the
-                Mark Served flow — operator taps Mark Served at the top
+            {/* Add items button. Cash collection is folded into the
+                Mark Served flow — operator taps Mark Served below
                 and sees the order summary + cash recorder + receipt
                 send-off in one combined sheet. */}
             {ticket && onOrder ? (
@@ -538,6 +596,27 @@ export function TableActionSheet({
                     ? t('order.addMore', { defaultValue: 'Add more items' })
                     : t('order.addItems', { defaultValue: 'Add items' })}
                 </Text>
+              </Pressable>
+            ) : null}
+
+            {/* Bottom primary action — Mark Served lives here so the
+                operator scans the order list first, optionally adjusts
+                quantities or attaches notes, then commits at the end.
+                Other primary actions (Start Serving, Resume) sit above
+                because they happen BEFORE the order is finalised. */}
+            {primary && isServing ? (
+              <Pressable
+                onPress={primary.onPress}
+                disabled={busy}
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  { backgroundColor: primary.bg },
+                  pressed && !busy && { opacity: 0.85 },
+                  busy && { opacity: 0.5 },
+                ]}
+              >
+                <Ionicons name={primary.icon} size={22} color="#fff" />
+                <Text style={styles.primaryBtnText}>{primary.label}</Text>
               </Pressable>
             ) : null}
 
@@ -600,6 +679,85 @@ export function TableActionSheet({
           </ScrollView>
         </Animated.View>
       </View>
+
+      {/* Inline note editor — overlays the action sheet when an item's
+          note button is tapped. Lets the server attach a kitchen
+          instruction (e.g. "no onions", "well done", "allergy: nuts").
+          The note flows straight to the KDS card on Station + Expo
+          since both already render `item.note` in italic warning color. */}
+      <Modal
+        visible={!!noteEditing}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setNoteEditing(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.noteBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setNoteEditing(null)} />
+            <View style={styles.noteSheet}>
+              <Text style={styles.noteTitle}>
+                {t('order.itemNote', { defaultValue: 'Kitchen note' })}
+              </Text>
+              {noteEditing ? (
+                <Text style={styles.noteSubtitle} numberOfLines={1}>
+                  {noteEditing.name}
+                </Text>
+              ) : null}
+              <TextInput
+                value={noteDraft}
+                onChangeText={setNoteDraft}
+                placeholder={t('order.notePlaceholder', { defaultValue: 'e.g. no onions, well done, allergy: nuts' })}
+                placeholderTextColor={colors.textMuted}
+                style={styles.noteInput}
+                multiline
+                autoFocus
+                maxLength={200}
+                returnKeyType="done"
+                blurOnSubmit
+              />
+              <View style={styles.noteActions}>
+                {noteEditing?.note ? (
+                  <Pressable
+                    onPress={() => {
+                      if (noteEditing && onItemNote) onItemNote(noteEditing, '');
+                      setNoteEditing(null);
+                    }}
+                    style={({ pressed }) => [styles.noteClearBtn, pressed && { opacity: 0.7 }]}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.error} />
+                    <Text style={[styles.noteBtnText, { color: colors.error }]}>
+                      {t('common.clear', { defaultValue: 'Clear' })}
+                    </Text>
+                  </Pressable>
+                ) : <View style={{ flex: 1 }} />}
+                <Pressable
+                  onPress={() => setNoteEditing(null)}
+                  style={({ pressed }) => [styles.noteCancelBtn, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={[styles.noteBtnText, { color: colors.text }]}>
+                    {t('common.cancel', { defaultValue: 'Cancel' })}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (noteEditing && onItemNote) onItemNote(noteEditing, noteDraft.trim());
+                    setNoteEditing(null);
+                  }}
+                  style={({ pressed }) => [styles.noteSaveBtn, { backgroundColor: colors.primary }, pressed && { opacity: 0.85 }]}
+                >
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                  <Text style={[styles.noteBtnText, { color: '#fff' }]}>
+                    {t('common.save', { defaultValue: 'Save' })}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </Modal>
   );
 }
@@ -614,6 +772,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
+    // Pin both min and max so the sheet opens at a stable height — items
+    // and payments arrive ~80–150 ms after the modal mounts (async fetch
+    // through refreshSheetItems), and without minHeight the sheet renders
+    // short on first paint then visibly expands when the data lands.
+    minHeight: '70%',
     maxHeight: '85%',
     paddingTop: spacing.xs,
   },
@@ -699,6 +862,78 @@ const styles = StyleSheet.create({
   },
   kitchenBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   kitchenBadgeCount: { color: '#fff', fontSize: 12, fontWeight: '600', opacity: 0.9 },
+  noteBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  noteSheet: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+    gap: spacing.sm,
+  },
+  noteTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  noteSubtitle: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginTop: -4,
+  },
+  noteInput: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: fontSize.md,
+    color: colors.text,
+    minHeight: 80,
+    maxHeight: 140,
+    textAlignVertical: 'top',
+  },
+  noteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: spacing.xs,
+  },
+  noteClearBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  noteCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface2 ?? colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  noteSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: borderRadius.md,
+  },
+  noteBtnText: {
+    fontSize: fontSize.sm,
+    fontWeight: '800',
+  },
 
   orderBtn: {
     flexDirection: 'row', alignItems: 'center',

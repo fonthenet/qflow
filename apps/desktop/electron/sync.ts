@@ -2248,7 +2248,7 @@ export class SyncEngine {
         try {
           const [menuCatsRes, menuItemsRes, ticketItemsRes, ticketPaymentsRes] = await Promise.all([
             fetch(`${this.supabaseUrl}/rest/v1/menu_categories?organization_id=eq.${orgId}&select=id,organization_id,name,sort_order,color,icon,active,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
-            fetch(`${this.supabaseUrl}/rest/v1/menu_items?organization_id=eq.${orgId}&select=id,organization_id,category_id,name,price,discount_percent,sort_order,active,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
+            fetch(`${this.supabaseUrl}/rest/v1/menu_items?organization_id=eq.${orgId}&select=id,organization_id,category_id,name,price,discount_percent,sort_order,active,prep_time_minutes,is_available,image_url,created_at,updated_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
             // Ticket items are scoped to the org; we pull for tickets the station already has.
             fetch(`${this.supabaseUrl}/rest/v1/ticket_items?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,menu_item_id,name,price,qty,note,added_at,added_by,kitchen_status,kitchen_status_at`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
             fetch(`${this.supabaseUrl}/rest/v1/ticket_payments?organization_id=eq.${orgId}&select=id,ticket_id,organization_id,method,amount,tendered,change_given,note,paid_at,paid_by`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
@@ -2270,10 +2270,29 @@ export class SyncEngine {
             const pendingIds = new Set((this.db.prepare(
               "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'menu_items'"
             ).all() as any[]).map((r: any) => r.record_id));
-            const stmt = this.db.prepare(`INSERT OR REPLACE INTO menu_items (id, organization_id, category_id, name, price, discount_percent, sort_order, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            // INSERT OR REPLACE wipes the row, so every column we want to
+            // keep MUST be in the bindings — otherwise locally-saved values
+            // (prep_time_minutes, is_available, image_url) get blown away
+            // by the next 5-second pull. This is exactly the bug that made
+            // prep times reset on restart before this fix.
+            const stmt = this.db.prepare(`INSERT OR REPLACE INTO menu_items (id, organization_id, category_id, name, price, discount_percent, sort_order, active, prep_time_minutes, is_available, image_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
             for (const r of rows) {
               if (pendingIds.has(r.id)) continue;
-              stmt.run(r.id, r.organization_id, r.category_id, r.name, r.price ?? null, Math.max(0, Math.min(100, Number(r.discount_percent ?? 0) || 0)), r.sort_order ?? 0, r.active === false ? 0 : 1, r.created_at ?? null, r.updated_at ?? null);
+              stmt.run(
+                r.id,
+                r.organization_id,
+                r.category_id,
+                r.name,
+                r.price ?? null,
+                Math.max(0, Math.min(100, Number(r.discount_percent ?? 0) || 0)),
+                r.sort_order ?? 0,
+                r.active === false ? 0 : 1,
+                typeof r.prep_time_minutes === 'number' ? r.prep_time_minutes : null,
+                r.is_available === false ? 0 : 1,
+                r.image_url ?? null,
+                r.created_at ?? null,
+                r.updated_at ?? null,
+              );
             }
           }
           if (ticketItemsRes?.ok) {

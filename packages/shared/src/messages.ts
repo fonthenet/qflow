@@ -61,6 +61,45 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     ar: "التذكرة *{ticket}* في *{name}* مكتملة بتاريخ *{date}* الساعة *{time}*. شكرًا لزيارتكم! ✅",
     en: "✅ Ticket *{ticket}* at *{name}* is complete (*{date}* at *{time}*). Thank you for your visit!",
   },
+  // ── Service-aware 'ready' templates ────────────────────────────────
+  // Used when a kitchen bump triggers a customer notification.
+  // 'ready' (generic dine-in default)
+  ready: {
+    fr: "🍽️ Votre commande est en cours de dressage chez *{name}*. Ticket *{ticket}*.",
+    ar: "🍽️ طلبك قيد التجهيز في *{name}*. التذكرة *{ticket}*.",
+    en: "🍽️ Your meal is being plated at *{name}*. Ticket *{ticket}*.",
+  },
+  ready_dine_in: {
+    fr: "🍽️ Votre repas est en cours de dressage chez *{name}*. Ticket *{ticket}*.",
+    ar: "🍽️ وجبتك قيد التجهيز في *{name}*. التذكرة *{ticket}*.",
+    en: "🍽️ Your meal is being plated at *{name}*. Ticket *{ticket}*.",
+  },
+  ready_takeout: {
+    fr: "✅ Votre commande est prête ! Récupérez-la à la caisse chez *{name}*. Ticket *{ticket}*.",
+    ar: "✅ طلبك جاهز! استلمه من الكاونتر في *{name}*. التذكرة *{ticket}*.",
+    en: "✅ Your order is ready for pickup at the counter at *{name}*. Ticket *{ticket}*.",
+  },
+  ready_delivery: {
+    fr: "✅ Votre commande est prête et en cours de préparation pour la livraison chez *{name}*. Ticket *{ticket}*.",
+    ar: "✅ طلبك جاهز ويُجهَّز للتوصيل من *{name}*. التذكرة *{ticket}*.",
+    en: "✅ Your order is ready and being prepared for delivery from *{name}*. Ticket *{ticket}*.",
+  },
+  // ── Service-aware 'served' templates ───────────────────────────────
+  served_dine_in: {
+    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé le *{date}* à *{time}*. Bon appétit !",
+    ar: "التذكرة *{ticket}* في *{name}* مكتملة بتاريخ *{date}* الساعة *{time}*. شهية طيبة! ✅",
+    en: "✅ Ticket *{ticket}* at *{name}* is complete (*{date}* at *{time}*). Enjoy your meal!",
+  },
+  served_takeout: {
+    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé le *{date}* à *{time}*. Merci pour votre commande, à bientôt !",
+    ar: "التذكرة *{ticket}* في *{name}* مكتملة بتاريخ *{date}* الساعة *{time}*. شكرًا لطلبكم، إلى اللقاء! ✅",
+    en: "✅ Ticket *{ticket}* at *{name}* is complete (*{date}* at *{time}*). Thanks for your order — see you next time!",
+  },
+  served_delivery: {
+    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé le *{date}* à *{time}*. Votre commande a été remise au livreur.",
+    ar: "التذكرة *{ticket}* في *{name}* مكتملة بتاريخ *{date}* الساعة *{time}*. تم تسليم طلبك للمندوب. ✅",
+    en: "✅ Ticket *{ticket}* at *{name}* is complete (*{date}* at *{time}*). Your order has been handed to the courier.",
+  },
   next_in_line: {
     fr: "⏳ *Vous êtes le prochain chez {name} !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
     ar: "*أنت التالي في {name}!* التذكرة *{ticket}* — استعد، دورك قريبًا ⏳\n\nتتبع: {url}",

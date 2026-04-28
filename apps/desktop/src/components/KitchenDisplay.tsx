@@ -67,6 +67,16 @@ const LABELS = {
     statusCooking: 'Preparing',
     statusReady: 'Ready',
     loading: 'Loading...',
+    sortByLabel: 'Sort',
+    groupByLabel: 'Group',
+    sortOldest: 'Oldest',
+    sortNewest: 'Newest',
+    sortStatus: 'Status',
+    sortTable: 'Table / #',
+    sortItems: 'Items',
+    groupNone: 'No grouping',
+    groupStatus: 'By Status',
+    groupTable: 'By Table',
   },
   fr: {
     filterAll: 'Tout',
@@ -82,6 +92,16 @@ const LABELS = {
     statusCooking: 'En préparation',
     statusReady: 'Prêt',
     loading: 'Chargement...',
+    sortByLabel: 'Tri',
+    groupByLabel: 'Groupe',
+    sortOldest: 'Plus ancien',
+    sortNewest: 'Plus récent',
+    sortStatus: 'Statut',
+    sortTable: 'Table / #',
+    sortItems: 'Articles',
+    groupNone: 'Aucun groupe',
+    groupStatus: 'Par statut',
+    groupTable: 'Par table',
   },
   ar: {
     filterAll: 'الكل',
@@ -97,6 +117,16 @@ const LABELS = {
     statusCooking: 'قيد التحضير',
     statusReady: 'جاهز',
     loading: 'جارٍ التحميل...',
+    sortByLabel: 'ترتيب',
+    groupByLabel: 'تجميع',
+    sortOldest: 'الأقدم',
+    sortNewest: 'الأحدث',
+    sortStatus: 'الحالة',
+    sortTable: 'الطاولة / #',
+    sortItems: 'الأصناف',
+    groupNone: 'بدون تجميع',
+    groupStatus: 'حسب الحالة',
+    groupTable: 'حسب الطاولة',
   },
 } as const;
 type LocaleKey = keyof typeof LABELS;
@@ -455,6 +485,36 @@ export function KitchenDisplay({ orgId, locale }: Props) {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<FilterMode>('all');
 
+  // Sort + Group controls — operator preference, persisted per device.
+  type KdsSortMode = 'time-asc' | 'time-desc' | 'status' | 'table' | 'items';
+  type KdsGroupMode = 'none' | 'status' | 'table';
+  const KDS_SORT_KEYS: KdsSortMode[] = ['time-asc', 'time-desc', 'status', 'table', 'items'];
+  const KDS_GROUP_KEYS: KdsGroupMode[] = ['none', 'status', 'table'];
+  const [sortMode, setSortMode] = useState<KdsSortMode>(() => {
+    try {
+      const v = window.localStorage.getItem('qflo.kds.sort');
+      return (KDS_SORT_KEYS as string[]).includes(v ?? '') ? (v as KdsSortMode) : 'time-asc';
+    } catch { return 'time-asc'; }
+  });
+  const [groupMode, setGroupMode] = useState<KdsGroupMode>(() => {
+    try {
+      const v = window.localStorage.getItem('qflo.kds.group');
+      return (KDS_GROUP_KEYS as string[]).includes(v ?? '') ? (v as KdsGroupMode) : 'none';
+    } catch { return 'none'; }
+  });
+  const cycleSort = () => {
+    const i = KDS_SORT_KEYS.indexOf(sortMode);
+    const next = KDS_SORT_KEYS[(i + 1) % KDS_SORT_KEYS.length];
+    setSortMode(next);
+    try { window.localStorage.setItem('qflo.kds.sort', next); } catch {}
+  };
+  const cycleGroup = () => {
+    const i = KDS_GROUP_KEYS.indexOf(groupMode);
+    const next = KDS_GROUP_KEYS[(i + 1) % KDS_GROUP_KEYS.length];
+    setGroupMode(next);
+    try { window.localStorage.setItem('qflo.kds.group', next); } catch {}
+  };
+
   const prevItemIdsRef = useRef<Set<string>>(new Set());
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
 
@@ -562,6 +622,76 @@ export function KitchenDisplay({ orgId, locale }: Props) {
       .filter((c) => c.items.length > 0);
   }, [cards, filter]);
 
+  // Apply sort. The sort runs on the FILTERED list so the order is
+  // consistent with what the operator currently sees. Time-asc = oldest
+  // first (default — matches the original FIFO behavior).
+  const aggregateOf = (items: KitchenItem[]): 'ready' | 'preparing' | 'mixed' | 'new' | 'none' => {
+    if (items.length === 0) return 'none';
+    const active = items.filter((i) => (i.kitchen_status ?? 'new') !== 'served');
+    if (active.length === 0) return 'ready';
+    const set = new Set(active.map((i) => i.kitchen_status ?? 'new'));
+    if (set.size === 1) {
+      const s = [...set][0];
+      if (s === 'new') return 'new';
+      if (s === 'in_progress') return 'preparing';
+      if (s === 'ready') return 'ready';
+    }
+    return 'mixed';
+  };
+  const sortedCards = useMemo(() => {
+    const arr = [...visibleCards];
+    const byTimeAsc = (a: KitchenTicket, b: KitchenTicket) =>
+      new Date(a.oldest_item_at).getTime() - new Date(b.oldest_item_at).getTime();
+    if (sortMode === 'time-asc') arr.sort(byTimeAsc);
+    else if (sortMode === 'time-desc') arr.sort((a, b) => -byTimeAsc(a, b));
+    else if (sortMode === 'status') {
+      const order: Record<string, number> = { ready: 0, preparing: 1, mixed: 2, new: 3, none: 4 };
+      arr.sort((a, b) => (order[aggregateOf(a.items)] ?? 99) - (order[aggregateOf(b.items)] ?? 99) || byTimeAsc(a, b));
+    } else if (sortMode === 'table') {
+      arr.sort((a, b) => {
+        const la = (a.table_label ?? a.ticket_number ?? '').toLowerCase();
+        const lb = (b.table_label ?? b.ticket_number ?? '').toLowerCase();
+        return la.localeCompare(lb, undefined, { numeric: true }) || byTimeAsc(a, b);
+      });
+    } else if (sortMode === 'items') {
+      arr.sort((a, b) => b.items.reduce((s, i) => s + i.qty, 0) - a.items.reduce((s, i) => s + i.qty, 0) || byTimeAsc(a, b));
+    }
+    return arr;
+  }, [visibleCards, sortMode]);
+
+  // Apply group. Returns a flat list of [{ key, label, items }] sections.
+  const groupedCards = useMemo(() => {
+    if (groupMode === 'none') return [{ key: 'all', label: '', items: sortedCards }];
+    const map = new Map<string, { key: string; label: string; items: KitchenTicket[]; order: number }>();
+    for (const card of sortedCards) {
+      let key = 'other'; let label = ''; let order = 99;
+      if (groupMode === 'status') {
+        const ag = aggregateOf(card.items);
+        key = ag;
+        label = ag === 'ready' ? L.statusReady
+          : ag === 'preparing' ? L.statusCooking
+          : ag === 'new' ? L.statusNew
+          : ag === 'mixed' ? L.statusCooking
+          : '';
+        order = ag === 'ready' ? 0 : ag === 'preparing' ? 1 : ag === 'mixed' ? 2 : ag === 'new' ? 3 : 4;
+      } else if (groupMode === 'table') {
+        // Tables together, then takeout/delivery (no table) at the end.
+        if (card.table_label) {
+          key = card.table_label;
+          label = card.table_label;
+          order = 0;
+        } else {
+          key = '__no_table__';
+          label = '#';
+          order = 1000;
+        }
+      }
+      if (!map.has(key)) map.set(key, { key, label, items: [], order });
+      map.get(key)!.items.push(card);
+    }
+    return Array.from(map.values()).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  }, [sortedCards, groupMode, L]);
+
   const counts = useMemo(() => {
     const c = { new: 0, in_progress: 0, ready: 0 };
     for (const card of cards) {
@@ -622,6 +752,52 @@ export function KitchenDisplay({ orgId, locale }: Props) {
           accent="var(--kds-ready, #22c55e)"
           onClick={() => setFilter('ready')}
         />
+
+        {/* Sort + Group cycling buttons — pushed to the end of the bar
+            so they don't compete with the status-filter chips. Persisted
+            per device via localStorage. */}
+        <div style={{ marginInlineStart: 'auto', display: 'inline-flex', gap: 6 }}>
+          <button
+            onClick={cycleSort}
+            title={L.sortByLabel}
+            aria-label={L.sortByLabel}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 12px', borderRadius: 14,
+              border: '1.5px solid var(--border)',
+              background: sortMode === 'time-asc' ? 'transparent' : 'var(--surface2)',
+              cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              color: sortMode === 'time-asc' ? 'var(--text3)' : 'var(--text)',
+              whiteSpace: 'nowrap',
+              colorScheme: 'light dark',
+            }}
+          >
+            {'↕'} {sortMode === 'time-asc' ? L.sortOldest
+              : sortMode === 'time-desc' ? L.sortNewest
+              : sortMode === 'status' ? L.sortStatus
+              : sortMode === 'table' ? L.sortTable
+              : L.sortItems}
+          </button>
+          <button
+            onClick={cycleGroup}
+            title={L.groupByLabel}
+            aria-label={L.groupByLabel}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 12px', borderRadius: 14,
+              border: '1.5px solid var(--border)',
+              background: groupMode === 'none' ? 'transparent' : 'var(--surface2)',
+              cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              color: groupMode === 'none' ? 'var(--text3)' : 'var(--text)',
+              whiteSpace: 'nowrap',
+              colorScheme: 'light dark',
+            }}
+          >
+            {'\u{1F4D1}'} {groupMode === 'none' ? L.groupNone
+              : groupMode === 'status' ? L.groupStatus
+              : L.groupTable}
+          </button>
+        </div>
       </div>
 
       {/* Grid */}
@@ -641,23 +817,45 @@ export function KitchenDisplay({ orgId, locale }: Props) {
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            // auto-fit collapses empty tracks and stretches the remaining
+            // cards to fill the row — so 3 cards on a wide monitor each
+            // get a third of the width instead of staying at the 320px
+            // minimum with whitespace to the right (the bug the user saw).
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
             gap: 12,
             alignItems: 'start',
           }}>
-            {visibleCards.map((card) => (
-              <KitchenTicketCard
-                key={card.ticket_id}
-                card={card}
-                newItemIds={newItemIds}
-                busy={busy}
-                locale={locale as LocaleKey}
-                orgId={orgId}
-                onItemAdvance={handleItemAdvance}
-                onBumpAllReady={handleBumpAllReady}
-                onMarkAllServed={handleMarkAllServed}
-              />
-            ))}
+            {groupedCards.flatMap((group) => [
+              // Group section header — full row.
+              ...(group.label ? [(
+                <div
+                  key={`group-${group.key}`}
+                  style={{
+                    gridColumn: '1 / -1',
+                    fontSize: 12, fontWeight: 800, color: 'var(--text3)',
+                    textTransform: 'uppercase', letterSpacing: 1,
+                    padding: '6px 4px 0',
+                    borderTop: '1px solid var(--border)',
+                    marginTop: 4,
+                  }}
+                >
+                  {group.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>· {group.items.length}</span>
+                </div>
+              )] : []),
+              ...group.items.map((card) => (
+                <KitchenTicketCard
+                  key={card.ticket_id}
+                  card={card}
+                  newItemIds={newItemIds}
+                  busy={busy}
+                  locale={locale as LocaleKey}
+                  orgId={orgId}
+                  onItemAdvance={handleItemAdvance}
+                  onBumpAllReady={handleBumpAllReady}
+                  onMarkAllServed={handleMarkAllServed}
+                />
+              )),
+            ])}
           </div>
         )}
       </div>

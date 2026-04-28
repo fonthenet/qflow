@@ -105,6 +105,17 @@
     "booked": "Booked"
   },
 
+  "service": {
+    "takeout": "Takeout",
+    "delivery": "Delivery",
+    "dineIn": "Dine-in",
+    "other": "Other"
+  },
+
+  "kitchen": {
+    "serviceAll": "All types"
+  },
+
   "time": {
     "lessThan1m": "<1m",
     "minutes": "{{count}}m",

@@ -317,7 +317,7 @@ button:not([disabled]):active {
 }
 
 /* ── Station Layout ──────────────────────────────────────────────── */
-.station { display: flex; flex: 1; overflow: hidden; }
+.station { display: flex; flex: 1; overflow: hidden; position: relative; }
 .station-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; padding-bottom: 0; position: relative; overflow: hidden; }
 .station-main > .booking-panel { flex-shrink: 0; }
 /* Legacy bottom-docked booking panel (no longer used) */
@@ -336,19 +336,19 @@ button:not([disabled]):active {
 .station-sidebar-resizer::after {
   content: '';
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   left: 50%;
-  width: 4px;
-  height: 64px;
-  border-radius: 999px;
-  background: rgba(148,163,184,0.35);
-  transform: translate(-50%, -50%);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  width: 1px;
+  background: var(--border, #475569);
+  transform: translateX(-50%);
+  transition: background 0.15s ease, width 0.15s ease, box-shadow 0.15s ease;
 }
 .station-sidebar-resizer:hover::after,
 .station-sidebar-resizer:focus-visible::after {
-  background: rgba(59,130,246,0.8);
-  box-shadow: 0 0 0 4px rgba(59,130,246,0.15);
+  width: 3px;
+  background: var(--primary, #3b82f6);
+  box-shadow: 0 0 0 1px rgba(59,130,246,0.25);
 }
 .station-sidebar-resizer:focus-visible {
   outline: none;
@@ -1050,6 +1050,10 @@ html[dir="rtl"] .station-action-pills .pills-right {
 @keyframes queue-pulse-serving {
   0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
   50% { box-shadow: 0 0 12px 3px rgba(34,197,94,0.4); }
+}
+@keyframes queue-canvas-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(34,197,94,0.15), 0 4px 16px rgba(34,197,94,0.1); }
+  50% { box-shadow: 0 0 0 4px rgba(34,197,94,0.35), 0 6px 24px rgba(34,197,94,0.25); }
 }
 
 /* ── Premium hover polish (global) ──────────────────────────────── */

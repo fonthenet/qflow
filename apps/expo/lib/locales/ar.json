@@ -105,6 +105,17 @@
     "booked": "محجوز"
   },
 
+  "service": {
+    "takeout": "سفري",
+    "delivery": "توصيل",
+    "dineIn": "داخل المطعم",
+    "other": "أخرى"
+  },
+
+  "kitchen": {
+    "serviceAll": "كل الأنواع"
+  },
+
   "time": {
     "lessThan1m": "<1د",
     "minutes": "{{count}}د",

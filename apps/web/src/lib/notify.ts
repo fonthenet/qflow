@@ -3,7 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
-import { renderNotification, type Locale } from '@qflo/shared';
+import { renderNotification, resolveRestaurantServiceType, type Locale } from '@qflo/shared';
 import { APP_BASE_URL } from '@/lib/config';
 import { getCountryConfig, resolveLocale } from '@/lib/country';
 // ── Receipt block for 'served' ─────────────────────────────────────
@@ -121,6 +121,7 @@ export type NotifyEvent =
   | 'buzz'
   | 'table_changed'
   | 'serving'
+  | 'ready'
   | 'served'
   | 'no_show'
   | 'cancelled_notify'
@@ -172,10 +173,10 @@ export async function notifyCustomer(
   const supabase = createAdminClient() as any;
 
   try {
-    // Fetch ticket
+    // Fetch ticket (include service_id for service-type branching on ready/served)
     const { data: ticket, error: ticketErr } = await supabase
       .from('tickets')
-      .select('id, ticket_number, qr_token, locale, office_id')
+      .select('id, ticket_number, qr_token, locale, office_id, service_id')
       .eq('id', ticketId)
       .single();
 
@@ -308,8 +309,39 @@ export async function notifyCustomer(
     const dateStr = now.toLocaleDateString(locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = now.toLocaleTimeString(locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR', { hour: '2-digit', minute: '2-digit', hour12: false });
 
+    // Resolve service type for ready/served branching.
+    // Fetch service name once, only when needed — avoids a DB hit for other events.
+    let resolvedServiceType: ReturnType<typeof resolveRestaurantServiceType> = 'other';
+    if ((event === 'ready' || event === 'served') && ticket.service_id) {
+      try {
+        const { data: svcRow } = await supabase
+          .from('services')
+          .select('name')
+          .eq('id', ticket.service_id)
+          .single();
+        if (svcRow?.name) {
+          resolvedServiceType = resolveRestaurantServiceType(svcRow.name);
+        }
+      } catch {
+        // Non-fatal — falls back to generic template
+      }
+    }
+
+    // Pick the service-aware template key for ready/served.
+    // For all other events the key equals the event name unchanged.
+    let templateKey: string = event;
+    if (event === 'ready') {
+      if (resolvedServiceType === 'takeout')  templateKey = 'ready_takeout';
+      else if (resolvedServiceType === 'delivery') templateKey = 'ready_delivery';
+      else templateKey = 'ready_dine_in'; // dine_in or other → generic
+    } else if (event === 'served') {
+      if (resolvedServiceType === 'takeout')  templateKey = 'served_takeout';
+      else if (resolvedServiceType === 'delivery') templateKey = 'served_delivery';
+      else templateKey = 'served_dine_in'; // dine_in or other → keep existing behaviour
+    }
+
     // Render message
-    let messageBody = renderNotification(event, locale, {
+    let messageBody = renderNotification(templateKey, locale, {
       name: orgName,
       ticket: ticket.ticket_number,
       desk: opts.deskName || '?',

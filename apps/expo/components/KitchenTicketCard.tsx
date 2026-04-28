@@ -24,6 +24,7 @@ import { Pressable, StyleSheet, Text, View, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import type { TicketItem } from '@qflo/shared';
+import { resolveRestaurantServiceType, RESTAURANT_SERVICE_VISUALS, shouldShowServicePill } from '@qflo/shared';
 import { borderRadius, fontSize, spacing, useTheme } from '@/lib/theme';
 import type { KitchenTicket } from '@/lib/data-adapter';
 
@@ -39,6 +40,11 @@ interface Props {
   /** "Mark all served" — final state, removes the card from KDS. */
   onMarkAllServed: (card: KitchenTicket) => void;
   busy?: boolean;
+  /** Compact mode — engaged when the card sits in a 2-col grid on a
+   *  phone (~187 px wide). Shrinks the table label, hides redundant
+   *  sub-text + party chip, collapses status pills to dots so the card
+   *  renders cleanly without wrapping the header character-by-character. */
+  compact?: boolean;
 }
 
 function ageMinutes(iso: string): number {
@@ -61,10 +67,11 @@ export function KitchenTicketCard({
   onBumpAllReady,
   onMarkAllServed,
   busy = false,
+  compact = false,
 }: Props) {
   const { t } = useTranslation();
   const { colors, isDark } = useTheme();
-  const styles = makeStyles(colors, isDark);
+  const styles = makeStyles(colors, isDark, compact);
 
   // Tick every 30s so the age badge stays accurate without the parent
   // having to force a re-render. Cheap — just bumps state.
@@ -107,33 +114,55 @@ export function KitchenTicketCard({
     : aggregate === 'mixed' ? 'ellipse-half'
     : 'ellipse-outline';
 
+  // Service-type pill — only takeout + delivery get a pill on KDS cards.
+  // Dine-in is the default; the table label already signals it.
+  const svcType = resolveRestaurantServiceType(card.service_name);
+  const showSvcPill = shouldShowServicePill(svcType);
+  const svcVisuals = showSvcPill ? RESTAURANT_SERVICE_VISUALS[svcType] : null;
+
   return (
     <View style={[styles.card, { borderColor: urgencyColor + '88' }]}>
-      {/* Header — big table number, party, age */}
+      {/* Header — big table number, party, age. In compact mode the
+          header wraps so badges drop below the title rather than
+          squeezing the title to a single character per line. */}
       <View style={[styles.header, { backgroundColor: urgencyColor + (isDark ? '22' : '14') }]}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.tableLabel}>{headerLabel}</Text>
-          <View style={styles.subRow}>
-            {card.table_label ? (
-              <Text style={styles.subText}>#{card.ticket_number}</Text>
-            ) : null}
-            {card.party_size ? (
-              <View style={styles.metaChip}>
-                <Ionicons name="people-outline" size={11} color={colors.textMuted} />
-                <Text style={styles.metaText}>
-                  {t('kitchen.partyOf', { n: card.party_size, defaultValue: 'Party of {{n}}' })}
-                </Text>
-              </View>
-            ) : null}
-            {card.customer_name ? (
-              <Text style={styles.subText} numberOfLines={1}>{card.customer_name}</Text>
-            ) : null}
-          </View>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text style={styles.tableLabel} numberOfLines={1} ellipsizeMode="tail">{headerLabel}</Text>
+          {/* Sub-row hidden in compact: redundant ticket #, party chip,
+              and customer name eat the limited horizontal room. */}
+          {!compact ? (
+            <View style={styles.subRow}>
+              {card.table_label ? (
+                <Text style={styles.subText}>#{card.ticket_number}</Text>
+              ) : null}
+              {card.party_size ? (
+                <View style={styles.metaChip}>
+                  <Ionicons name="people-outline" size={11} color={colors.textMuted} />
+                  <Text style={styles.metaText}>
+                    {t('kitchen.partyOf', { n: card.party_size, defaultValue: 'Party of {{n}}' })}
+                  </Text>
+                </View>
+              ) : null}
+              {card.customer_name ? (
+                <Text style={styles.subText} numberOfLines={1}>{card.customer_name}</Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
         <View style={styles.headerBadges}>
+          {/* Service-type pill: takeout (amber) or delivery (purple) only.
+              Hidden for dine-in (table label is the signal) and 'other'. */}
+          {showSvcPill && svcVisuals ? (
+            <View style={[styles.aggBadge, { backgroundColor: svcVisuals.color + '22', borderColor: svcVisuals.color + '88' }]}>
+              <Ionicons name={svcVisuals.icon as any} size={12} color={svcVisuals.color} />
+              {!compact ? <Text style={[styles.aggText, { color: svcVisuals.color }]}>{t(svcVisuals.labelKey, { defaultValue: svcType })}</Text> : null}
+            </View>
+          ) : null}
+          {/* Compact: agg badge collapses to icon-only (no text label).
+              Per-item pills below already convey detail. */}
           <View style={[styles.aggBadge, { backgroundColor: aggColor + '22', borderColor: aggColor + '88' }]}>
             <Ionicons name={aggIcon} size={12} color={aggColor} />
-            <Text style={[styles.aggText, { color: aggColor }]}>{aggLabel}</Text>
+            {!compact ? <Text style={[styles.aggText, { color: aggColor }]}>{aggLabel}</Text> : null}
           </View>
           <View style={[styles.ageBadge, { backgroundColor: urgencyColor }]}>
             <Ionicons name="time-outline" size={13} color="#fff" />
@@ -151,6 +180,7 @@ export function KitchenTicketCard({
             isNew={newItemIds?.has(it.id) ?? false}
             onAdvance={onItemAdvance}
             busy={busy}
+            compact={compact}
           />
         ))}
       </View>
@@ -204,15 +234,17 @@ function KitchenItemRow({
   isNew,
   onAdvance,
   busy,
+  compact = false,
 }: {
   item: TicketItem;
   isNew: boolean;
   onAdvance: (item: TicketItem) => void;
   busy: boolean;
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const styles = makeStyles(colors, false);
+  const styles = makeStyles(colors, false, compact);
   const [pulse] = useState(() => new Animated.Value(isNew ? 1 : 0));
   useEffect(() => {
     if (!isNew) return;
@@ -262,14 +294,16 @@ function KitchenItemRow({
         </View>
         <View style={[styles.statusPill, { backgroundColor: statusColor + '22', borderColor: statusColor + '66' }]}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          {!compact ? (
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          ) : null}
         </View>
       </Pressable>
     </Animated.View>
   );
 }
 
-const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
+const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean, compact: boolean = false) =>
   StyleSheet.create({
     card: {
       backgroundColor: colors.surface,
@@ -286,53 +320,54 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: spacing.md,
+      paddingHorizontal: compact ? spacing.sm : spacing.md,
       paddingVertical: spacing.sm,
-      gap: spacing.sm,
+      gap: compact ? 4 : spacing.sm,
+      flexWrap: compact ? 'wrap' : 'nowrap',
     },
     tableLabel: {
-      fontSize: fontSize.xxl,
+      fontSize: compact ? fontSize.lg : fontSize.xxl,
       fontWeight: '900',
       color: colors.text,
-      letterSpacing: 0.5,
+      letterSpacing: compact ? 0 : 0.5,
     },
     subRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
     subText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '600' },
     metaChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
     metaText: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
-    headerBadges: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    headerBadges: { flexDirection: 'row', alignItems: 'center', gap: compact ? 3 : 6 },
     aggBadge: {
       flexDirection: 'row', alignItems: 'center', gap: 4,
-      paddingHorizontal: 8, paddingVertical: 4,
+      paddingHorizontal: compact ? 5 : 8, paddingVertical: compact ? 3 : 4,
       borderRadius: borderRadius.full,
       borderWidth: 1,
     },
     aggText: { fontSize: fontSize.xs, fontWeight: '800' },
     ageBadge: {
       flexDirection: 'row', alignItems: 'center', gap: 4,
-      paddingHorizontal: 10, paddingVertical: 5,
+      paddingHorizontal: compact ? 7 : 10, paddingVertical: compact ? 3 : 5,
       borderRadius: borderRadius.full,
     },
-    ageText: { color: '#fff', fontWeight: '800', fontSize: fontSize.sm },
+    ageText: { color: '#fff', fontWeight: '800', fontSize: compact ? fontSize.xs : fontSize.sm },
     itemsList: {
-      paddingHorizontal: spacing.sm,
+      paddingHorizontal: compact ? 4 : spacing.sm,
       paddingVertical: spacing.xs,
       gap: 2,
     },
     itemRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.xs,
-      paddingVertical: 8,
+      gap: compact ? 6 : spacing.sm,
+      paddingHorizontal: compact ? 4 : spacing.xs,
+      paddingVertical: compact ? 6 : 8,
     },
     qtyBlock: {
-      width: 36, height: 36, borderRadius: borderRadius.sm,
+      width: compact ? 28 : 36, height: compact ? 28 : 36, borderRadius: borderRadius.sm,
       backgroundColor: colors.primary + '14',
       alignItems: 'center', justifyContent: 'center',
     },
-    qtyText: { fontSize: fontSize.md, fontWeight: '900', color: colors.primary },
-    itemName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+    qtyText: { fontSize: compact ? fontSize.sm : fontSize.md, fontWeight: '900', color: colors.primary },
+    itemName: { fontSize: compact ? fontSize.sm : fontSize.md, fontWeight: '700', color: colors.text },
     itemNameDone: {
       textDecorationLine: 'line-through',
       color: colors.textMuted,
@@ -341,23 +376,23 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     itemNote: { fontSize: fontSize.xs, color: colors.warning, fontStyle: 'italic' },
     statusPill: {
       flexDirection: 'row', alignItems: 'center', gap: 4,
-      paddingHorizontal: 8, paddingVertical: 4,
+      paddingHorizontal: compact ? 5 : 8, paddingVertical: 4,
       borderRadius: borderRadius.full,
       borderWidth: 1,
     },
     statusDot: { width: 6, height: 6, borderRadius: 3 },
     statusText: { fontSize: fontSize.xs, fontWeight: '800' },
     footer: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.sm,
+      paddingHorizontal: compact ? 6 : spacing.sm,
+      paddingVertical: compact ? 6 : spacing.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
     },
     primaryBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
       gap: 6,
-      paddingVertical: 11,
+      paddingVertical: compact ? 8 : 11,
       borderRadius: borderRadius.md,
     },
-    primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: fontSize.md },
+    primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: compact ? fontSize.sm : fontSize.md },
   });

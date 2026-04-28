@@ -116,13 +116,28 @@ export default async function KitchenPage({ params }: KitchenPageProps) {
     const { data: activeTickets } = await supabase
       .from('tickets')
       .select(
-        'id, ticket_number, status, customer_data, called_at, restaurant_tables!current_ticket_id(label)',
+        'id, ticket_number, status, customer_data, called_at, service_id, restaurant_tables!current_ticket_id(label)',
       )
       .eq('office_id', screen.office_id)
       .in('status', ['called', 'serving'])
       .order('called_at', { ascending: true });
 
     const ticketIds = (activeTickets ?? []).map((t: any) => t.id);
+
+    // Resolve service names for the service-type pill on KDS cards.
+    const serviceIds = [...new Set(
+      (activeTickets ?? []).map((t: any) => t.service_id).filter(Boolean),
+    )];
+    const serviceNameById = new Map<string, string>();
+    if (serviceIds.length > 0) {
+      const { data: svcs } = await supabase
+        .from('services')
+        .select('id, name')
+        .in('id', serviceIds);
+      for (const svc of svcs ?? []) {
+        if (svc.id && svc.name) serviceNameById.set(svc.id, svc.name);
+      }
+    }
 
     let itemsByTicket: Record<string, any[]> = {};
     if (ticketIds.length > 0) {
@@ -156,6 +171,7 @@ export default async function KitchenPage({ params }: KitchenPageProps) {
           customer_name: (customerData?.name ?? customerData?.customer_name ?? null) as string | null,
           ticket_status: t.status,
           oldest_item_at: items[0]?.added_at ?? t.called_at ?? new Date().toISOString(),
+          service_name: t.service_id ? (serviceNameById.get(t.service_id) ?? null) : null,
           items: items.map((it: any) => ({
             id: it.id,
             ticket_id: it.ticket_id,

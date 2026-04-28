@@ -55,6 +55,9 @@ export interface KitchenTicket {
   customer_name: string | null;
   ticket_status: string;
   oldest_item_at: string;
+  /** Free-text service name joined from the services table. Used to derive
+   *  the service-type pill (Takeout / Delivery) on KDS cards. */
+  service_name?: string | null;
   items: KitchenItem[];
 }
 
@@ -79,6 +82,18 @@ const LABELS = {
     statusReady: 'Ready',
     loading: 'Loading...',
     partial: 'Partial',
+    svcTakeout: 'Takeout',
+    svcDelivery: 'Delivery',
+    sortByLabel: 'Sort',
+    groupByLabel: 'Group',
+    sortOldest: 'Oldest',
+    sortNewest: 'Newest',
+    sortStatus: 'Status',
+    sortTable: 'Table / #',
+    sortItems: 'Items',
+    groupNone: 'No grouping',
+    groupStatus: 'By Status',
+    groupTable: 'By Table',
   },
   fr: {
     filterAll: 'Tout',
@@ -95,6 +110,18 @@ const LABELS = {
     statusReady: 'Prêt',
     loading: 'Chargement...',
     partial: 'Partiel',
+    svcTakeout: 'À emporter',
+    svcDelivery: 'Livraison',
+    sortByLabel: 'Tri',
+    groupByLabel: 'Groupe',
+    sortOldest: 'Plus ancien',
+    sortNewest: 'Plus récent',
+    sortStatus: 'Statut',
+    sortTable: 'Table / #',
+    sortItems: 'Articles',
+    groupNone: 'Aucun groupe',
+    groupStatus: 'Par statut',
+    groupTable: 'Par table',
   },
   ar: {
     filterAll: 'الكل',
@@ -111,9 +138,37 @@ const LABELS = {
     statusReady: 'جاهز',
     loading: 'جارٍ التحميل...',
     partial: 'جزئي',
+    svcTakeout: 'سفري',
+    svcDelivery: 'توصيل',
+    sortByLabel: 'ترتيب',
+    groupByLabel: 'تجميع',
+    sortOldest: 'الأقدم',
+    sortNewest: 'الأحدث',
+    sortStatus: 'الحالة',
+    sortTable: 'الطاولة / #',
+    sortItems: 'الأصناف',
+    groupNone: 'بدون تجميع',
+    groupStatus: 'حسب الحالة',
+    groupTable: 'حسب الطاولة',
   },
 } as const;
 type LocaleKey = keyof typeof LABELS;
+
+// ---------------------------------------------------------------------------
+// Service-type resolver
+// SHARED-COPY: keep in sync with packages/shared/src/restaurant-services.ts
+// ---------------------------------------------------------------------------
+type RestaurantServiceType = 'takeout' | 'delivery' | 'dine_in' | 'other';
+const TAKEOUT_RE  = /take.?out|à emporter|emporter|takeaway/i;
+const DELIVERY_RE = /deliver|livrais/i;
+
+function resolveServiceType(name: string | null | undefined): RestaurantServiceType {
+  if (!name) return 'other';
+  const lower = name.toLowerCase();
+  if (TAKEOUT_RE.test(lower))  return 'takeout';
+  if (DELIVERY_RE.test(lower)) return 'delivery';
+  return 'other'; // dine-in and other → suppress pill on web KDS
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -246,6 +301,14 @@ function KitchenTicketCard({
     return () => clearInterval(id);
   }, []);
 
+  const svcType = resolveServiceType(card.service_name);
+  const svcPill =
+    svcType === 'takeout'
+      ? { color: '#f59e0b', emoji: '🛍️', label: L.svcTakeout }
+      : svcType === 'delivery'
+        ? { color: '#8b5cf6', emoji: '🚴', label: L.svcDelivery }
+        : null;
+
   const minutes = ageMinutes(card.oldest_item_at);
   const color = urgencyColor(minutes);
   const borderClass = urgencyBorderClass(minutes);
@@ -310,6 +373,21 @@ function KitchenTicketCard({
             )}
           </div>
         </div>
+
+        {/* Service-type pill — takeout (amber) or delivery (purple) only */}
+        {svcPill ? (
+          <div
+            className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-extrabold"
+            style={{
+              background: `color-mix(in srgb, ${svcPill.color} 18%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${svcPill.color} 50%, transparent)`,
+              color: svcPill.color,
+            }}
+          >
+            <span>{svcPill.emoji}</span>
+            <span>{svcPill.label}</span>
+          </div>
+        ) : null}
 
         {/* Aggregate pill */}
         <div className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-extrabold ${aggColorClass}`}>
@@ -425,6 +503,39 @@ export function KitchenDisplayBoard({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<FilterMode>('all');
+
+  // Sort + Group controls — operator preference, persisted per device.
+  // Same key namespace as desktop KDS so the two views stay symmetric.
+  type KdsSortMode = 'time-asc' | 'time-desc' | 'status' | 'table' | 'items';
+  type KdsGroupMode = 'none' | 'status' | 'table';
+  const KDS_SORT_KEYS: KdsSortMode[] = ['time-asc', 'time-desc', 'status', 'table', 'items'];
+  const KDS_GROUP_KEYS: KdsGroupMode[] = ['none', 'status', 'table'];
+  const [sortMode, setSortMode] = useState<KdsSortMode>(() => {
+    if (typeof window === 'undefined') return 'time-asc';
+    try {
+      const v = window.localStorage.getItem('qflo.kds.sort');
+      return (KDS_SORT_KEYS as string[]).includes(v ?? '') ? (v as KdsSortMode) : 'time-asc';
+    } catch { return 'time-asc'; }
+  });
+  const [groupMode, setGroupMode] = useState<KdsGroupMode>(() => {
+    if (typeof window === 'undefined') return 'none';
+    try {
+      const v = window.localStorage.getItem('qflo.kds.group');
+      return (KDS_GROUP_KEYS as string[]).includes(v ?? '') ? (v as KdsGroupMode) : 'none';
+    } catch { return 'none'; }
+  });
+  const cycleSort = () => {
+    const i = KDS_SORT_KEYS.indexOf(sortMode);
+    const next = KDS_SORT_KEYS[(i + 1) % KDS_SORT_KEYS.length];
+    setSortMode(next);
+    try { window.localStorage.setItem('qflo.kds.sort', next); } catch {}
+  };
+  const cycleGroup = () => {
+    const i = KDS_GROUP_KEYS.indexOf(groupMode);
+    const next = KDS_GROUP_KEYS[(i + 1) % KDS_GROUP_KEYS.length];
+    setGroupMode(next);
+    try { window.localStorage.setItem('qflo.kds.group', next); } catch {}
+  };
 
   const prevItemIdsRef = useRef<Set<string>>(new Set(initialTickets.flatMap((c) => c.items.map((i) => i.id))));
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
@@ -587,6 +698,68 @@ export function KitchenDisplayBoard({
       .filter((c) => c.items.length > 0);
   }, [cards, filter]);
 
+  // Sort + Group — mirror desktop KDS exactly so operators get parity.
+  const aggregateOf = (items: KitchenItem[]): 'ready' | 'preparing' | 'mixed' | 'new' | 'none' => {
+    if (items.length === 0) return 'none';
+    const active = items.filter((i) => (i.kitchen_status ?? 'new') !== 'served');
+    if (active.length === 0) return 'ready';
+    const set = new Set(active.map((i) => i.kitchen_status ?? 'new'));
+    if (set.size === 1) {
+      const s = [...set][0];
+      if (s === 'new') return 'new';
+      if (s === 'in_progress') return 'preparing';
+      if (s === 'ready') return 'ready';
+    }
+    return 'mixed';
+  };
+  const sortedCards = useMemo(() => {
+    const arr = [...visibleCards];
+    const byTimeAsc = (a: KitchenTicket, b: KitchenTicket) =>
+      new Date(a.oldest_item_at).getTime() - new Date(b.oldest_item_at).getTime();
+    if (sortMode === 'time-asc') arr.sort(byTimeAsc);
+    else if (sortMode === 'time-desc') arr.sort((a, b) => -byTimeAsc(a, b));
+    else if (sortMode === 'status') {
+      const order: Record<string, number> = { ready: 0, preparing: 1, mixed: 2, new: 3, none: 4 };
+      arr.sort((a, b) => (order[aggregateOf(a.items)] ?? 99) - (order[aggregateOf(b.items)] ?? 99) || byTimeAsc(a, b));
+    } else if (sortMode === 'table') {
+      arr.sort((a, b) => {
+        const la = (a.table_label ?? a.ticket_number ?? '').toLowerCase();
+        const lb = (b.table_label ?? b.ticket_number ?? '').toLowerCase();
+        return la.localeCompare(lb, undefined, { numeric: true }) || byTimeAsc(a, b);
+      });
+    } else if (sortMode === 'items') {
+      arr.sort((a, b) => b.items.reduce((s, i) => s + i.qty, 0) - a.items.reduce((s, i) => s + i.qty, 0) || byTimeAsc(a, b));
+    }
+    return arr;
+  }, [visibleCards, sortMode]);
+
+  const groupedCards = useMemo(() => {
+    if (groupMode === 'none') return [{ key: 'all', label: '', items: sortedCards }];
+    const map = new Map<string, { key: string; label: string; items: KitchenTicket[]; order: number }>();
+    for (const card of sortedCards) {
+      let key = 'other'; let label = ''; let order = 99;
+      if (groupMode === 'status') {
+        const ag = aggregateOf(card.items);
+        key = ag;
+        label = ag === 'ready' ? L.statusReady
+          : ag === 'preparing' ? L.statusCooking
+          : ag === 'new' ? L.statusNew
+          : ag === 'mixed' ? L.statusCooking
+          : '';
+        order = ag === 'ready' ? 0 : ag === 'preparing' ? 1 : ag === 'mixed' ? 2 : ag === 'new' ? 3 : 4;
+      } else if (groupMode === 'table') {
+        if (card.table_label) {
+          key = card.table_label; label = card.table_label; order = 0;
+        } else {
+          key = '__no_table__'; label = '#'; order = 1000;
+        }
+      }
+      if (!map.has(key)) map.set(key, { key, label, items: [], order });
+      map.get(key)!.items.push(card);
+    }
+    return Array.from(map.values()).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  }, [sortedCards, groupMode, L]);
+
   const counts = useMemo(() => {
     const c = { new: 0, in_progress: 0, ready: 0 };
     for (const card of cards) {
@@ -648,6 +821,50 @@ export function KitchenDisplayBoard({
           accent="#22c55e"
           onClick={() => setFilter('ready')}
         />
+
+        {/* Sort + Group cycling buttons (parity with desktop KDS). */}
+        <div style={{ marginInlineStart: 'auto', display: 'inline-flex', gap: 6 }}>
+          <button
+            onClick={cycleSort}
+            title={L.sortByLabel}
+            aria-label={L.sortByLabel}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 12px', borderRadius: 14,
+              border: '1.5px solid var(--border)',
+              background: sortMode === 'time-asc' ? 'transparent' : 'var(--surface2, rgba(148,163,184,0.12))',
+              cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              color: sortMode === 'time-asc' ? 'var(--text3,#64748b)' : 'var(--text,inherit)',
+              whiteSpace: 'nowrap',
+              colorScheme: 'light dark',
+            }}
+          >
+            {'↕'} {sortMode === 'time-asc' ? L.sortOldest
+              : sortMode === 'time-desc' ? L.sortNewest
+              : sortMode === 'status' ? L.sortStatus
+              : sortMode === 'table' ? L.sortTable
+              : L.sortItems}
+          </button>
+          <button
+            onClick={cycleGroup}
+            title={L.groupByLabel}
+            aria-label={L.groupByLabel}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 12px', borderRadius: 14,
+              border: '1.5px solid var(--border)',
+              background: groupMode === 'none' ? 'transparent' : 'var(--surface2, rgba(148,163,184,0.12))',
+              cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              color: groupMode === 'none' ? 'var(--text3,#64748b)' : 'var(--text,inherit)',
+              whiteSpace: 'nowrap',
+              colorScheme: 'light dark',
+            }}
+          >
+            {'\u{1F4D1}'} {groupMode === 'none' ? L.groupNone
+              : groupMode === 'status' ? L.groupStatus
+              : L.groupTable}
+          </button>
+        </div>
       </div>
 
       {/* Card grid */}
@@ -659,20 +876,37 @@ export function KitchenDisplayBoard({
             <div className="text-sm text-center max-w-xs">{L.noOrders}</div>
           </div>
         ) : (
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-            {visibleCards.map((card) => (
-              <KitchenTicketCard
-                key={card.ticket_id}
-                card={card}
-                newItemIds={newItemIds}
-                busy={busy}
-                L={L}
-                screenToken={screenToken}
-                onItemAdvance={handleItemAdvance}
-                onBumpAllReady={handleBumpAllReady}
-                onMarkAllServed={handleMarkAllServed}
-              />
-            ))}
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+            {groupedCards.flatMap((group) => [
+              ...(group.label ? [(
+                <div
+                  key={`group-${group.key}`}
+                  style={{
+                    gridColumn: '1 / -1',
+                    fontSize: 12, fontWeight: 800, color: 'var(--text3,#64748b)',
+                    textTransform: 'uppercase', letterSpacing: 1,
+                    padding: '6px 4px 0',
+                    borderTop: '1px solid var(--border)',
+                    marginTop: 4,
+                  }}
+                >
+                  {group.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>· {group.items.length}</span>
+                </div>
+              )] : []),
+              ...group.items.map((card) => (
+                <KitchenTicketCard
+                  key={card.ticket_id}
+                  card={card}
+                  newItemIds={newItemIds}
+                  busy={busy}
+                  L={L}
+                  screenToken={screenToken}
+                  onItemAdvance={handleItemAdvance}
+                  onBumpAllReady={handleBumpAllReady}
+                  onMarkAllServed={handleMarkAllServed}
+                />
+              )),
+            ])}
           </div>
         )}
       </div>

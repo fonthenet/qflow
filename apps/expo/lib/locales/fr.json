@@ -105,6 +105,17 @@
     "booked": "Réservé"
   },
 
+  "service": {
+    "takeout": "À emporter",
+    "delivery": "Livraison",
+    "dineIn": "Sur place",
+    "other": "Autre"
+  },
+
+  "kitchen": {
+    "serviceAll": "Tous types"
+  },
+
   "time": {
     "lessThan1m": "<1m",
     "minutes": "{{count}}m",

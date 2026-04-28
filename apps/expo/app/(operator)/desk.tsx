@@ -37,7 +37,7 @@ import { OrderPad } from '@/components/OrderPad';
 import { fetchTicketItems, updateTicketItem, deleteTicketItem, fetchTicketPayments, fetchTicketIdsWithItems } from '@/lib/data-adapter';
 import type { TicketItem, TicketPayment } from '@qflo/shared';
 import { CashPaymentSheet } from '@/components/CashPaymentSheet';
-import { parsePartySize, type RestaurantTable } from '@qflo/shared';
+import { parsePartySize, type RestaurantTable, resolveRestaurantServiceType, RESTAURANT_SERVICE_VISUALS, shouldShowServicePill } from '@qflo/shared';
 import { useTabletMode } from '@/lib/use-tablet-mode';
 import { useFloorView } from '@/lib/use-floor-view';
 
@@ -402,6 +402,29 @@ export default function DeskScreen() {
     () => [...queue.called, ...queue.serving].map((t) => t.id).sort().join(','),
     [queue.called, queue.serving],
   );
+  // Bump on any ticket_items change so the food badge appears the
+  // moment the operator adds the first line — without this, the
+  // useEffect only re-runs when the queue array shape changes
+  // (new/removed ticket), so adding items to an already-seated ticket
+  // would NOT refresh the badge until the next queue poll cycle.
+  const [itemsRev, setItemsRev] = useState(0);
+  useEffect(() => {
+    if (!supportsFloorView || !officeId) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setItemsRev((n) => n + 1), 200);
+    };
+    const channel = supabase
+      .channel(`desk-items-${officeId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_items' }, bump)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [officeId, supportsFloorView]);
+
   useEffect(() => {
     if (!supportsFloorView) return;
     const ids = activeTicketIdsForItems ? activeTicketIdsForItems.split(',') : [];
@@ -414,7 +437,7 @@ export default function DeskScreen() {
       .then((set) => { if (!cancelled) setTicketsWithItems(set); })
       .catch(() => { if (!cancelled) setTicketsWithItems(new Set()); });
     return () => { cancelled = true; };
-  }, [activeTicketIdsForItems, supportsFloorView]);
+  }, [activeTicketIdsForItems, supportsFloorView, itemsRev]);
 
   const screenDims = useScreenDimensions();
   // Two-pane layout when tablet mode is on OR when the screen is inherently wide (>=768)
@@ -1149,6 +1172,23 @@ export default function DeskScreen() {
     }
   };
 
+  // Save / clear an item-level kitchen note (e.g. "no onions"). Empty
+  // string clears the note. The KDS card on Station + Expo already
+  // renders item.note in italic, so the cook sees prep instructions
+  // the moment the operator hits Save.
+  const handleSheetItemNote = async (item: TicketItem, note: string) => {
+    if (!tableSheetTicket) return;
+    setTableSheetBusy(true);
+    try {
+      await updateTicketItem(item.id, { note: note.length > 0 ? note : null as any });
+      await refreshSheetItems(tableSheetTicket.id);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message ?? t('adminQueue.actionFailed'));
+    } finally {
+      setTableSheetBusy(false);
+    }
+  };
+
   // ── Move: hand off to TablePickerModal (no confirm) ─────────────
   const sheetMove = (ticket: QueueTicket, _fromTable: any) => {
     // iOS can't stack two RN Modals — opening TablePickerModal while
@@ -1510,7 +1550,28 @@ export default function DeskScreen() {
             </View>
           );
 
-          // Single flat row: name · phone · source
+          // Service-type pill — Takeout / Delivery / Dine in. Resolved via
+          // the shared resolveRestaurantServiceType() helper (single source
+          // of truth — also used by KDS cards and the notify-ticket function).
+          const svcName = activeTicket.service_id
+            ? (services.find((s) => s.id === activeTicket.service_id)?.name ?? '')
+            : '';
+          let serviceBadgeEl: React.ReactNode = null;
+          if (supportsFloorView && svcName) {
+            const svcType = resolveRestaurantServiceType(svcName);
+            if (shouldShowServicePill(svcType) || svcType === 'dine_in') {
+              const visuals = RESTAURANT_SERVICE_VISUALS[svcType];
+              const svcLabel = t(visuals.labelKey, { defaultValue: svcType });
+              serviceBadgeEl = (
+                <View style={[styles.sourceBadge, { backgroundColor: visuals.color + '20', borderColor: visuals.color + '55', borderWidth: 1 }]}>
+                  <Ionicons name={visuals.icon as any} size={13} color={visuals.color} />
+                  <Text style={[styles.sourceBadgeText, { color: visuals.color }]}>{svcLabel}</Text>
+                </View>
+              );
+            }
+          }
+
+          // Single flat row: name · phone · source · service
           return (
             <View style={styles.sourceBadgeRow}>
               {hasName ? (
@@ -1535,6 +1596,7 @@ export default function DeskScreen() {
                 </TouchableOpacity>
               )}
               {sourceBadgeEl}
+              {serviceBadgeEl}
             </View>
           );
         })()}
@@ -1629,6 +1691,28 @@ export default function DeskScreen() {
             <Ionicons name="checkmark-circle" size={28} color="#fff" />
             <Text style={styles.primaryActionText}>{t('desk.markServed')}</Text>
           </TouchableOpacity>
+
+          {/* Add items — restaurant/café only. Critical for takeout +
+              delivery tickets which never sit on the FloorMap, so the
+              TableActionSheet (which normally hosts the OrderPad button)
+              never opens for them. Without this, the operator had no way
+              to attach menu items to a takeout order from the desk view. */}
+          {supportsFloorView ? (
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { alignSelf: 'stretch', justifyContent: 'center', gap: 8, paddingVertical: 12, marginTop: spacing.sm }]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setOrderTicket(activeTicket as QueueTicket);
+              }}
+              disabled={actionLoading}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="restaurant-outline" size={18} color={colors.primary} />
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>
+                {t('order.addItems', { defaultValue: 'Add items' })}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           {kitchenStatusBadge}
 
@@ -2037,6 +2121,7 @@ export default function DeskScreen() {
         payments={tableSheetPayments}
         onItemQty={handleSheetItemQty}
         onItemRemove={handleSheetItemRemove}
+        onItemNote={handleSheetItemNote}
       />
 
       {/* Move flow — destination picker for an existing seated ticket.
@@ -2906,13 +2991,17 @@ const styles = StyleSheet.create({
   floorTabBtnTextActive: {
     color: colors.primary,
   },
-  // Phone floor map wrapper — full-width below the active ticket panel
+  // Phone floor map wrapper — full-width below the active ticket panel.
+  // Negative horizontal margin pulls the panel out of the ScrollView's
+  // 24 px content padding so the table cards sit closer to the screen
+  // edges. Without this, ~48 px of side padding is wasted on phones
+  // where every pixel of the 2-col grid matters.
   floorMapPhone: {
     minHeight: 280,
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius.lg,
     overflow: 'hidden',
     backgroundColor: colors.surface,
-    width: '100%',
+    marginHorizontal: -spacing.md,
   },
   headerLocalBadge: {
     flexDirection: 'row',

@@ -258,6 +258,13 @@ export async function POST(request: NextRequest) {
     if (svcErr || !svcRows || svcRows.length === 0) throw new Error(`service: ${svcErr?.message ?? 'no row'}`);
 
     // 6. Desks — first one open + assigned to the admin, the rest closed.
+    //
+    // Why only the first desk gets a staff binding: when two desks share
+    // the same `current_staff_id`, two operator clicks racing on "Call next"
+    // produce DESK_CONFLICT 409s on the cloud. Keeping a strict 1:1 mapping
+    // (one desk → one operator at a time) eliminates that class of conflict.
+    // Admins can reassign later via Team Settings, but the seed defaults to
+    // a safe single-active-desk topology.
     const { data: staffRow } = await supabase
       .from('staff')
       .select('id, role')
@@ -340,6 +347,42 @@ export async function POST(request: NextRequest) {
       min_booking_lead_hours: 1,
       default_check_in_mode: 'hybrid',
       listed_in_directory: true,
+
+      // ── Concurrency / sync hardening defaults ───────────────────
+      // These four settings are written explicitly at onboarding so the
+      // admin UI surfaces them on day one (rather than relying on `??`
+      // fallbacks scattered through the codebase). Together they minimize
+      // DESK_CONFLICT noise and keep the offline-first sync queue clean
+      // for new businesses.
+
+      // Approval gate: ON by default. Bookings stay 'pending' until staff
+      // act on them. With the new per-customer auto_approve_reservations
+      // flag, VIP customers still skip the gate. Better default: a brand-
+      // new business hasn't yet decided who they trust, so require approval.
+      require_appointment_approval: true,
+
+      // Walk-in tickets bypass approval by default — they're already in
+      // the building. Public-service / bank verticals can flip this on.
+      require_ticket_approval: false,
+
+      // Documents the fact that the DB enforces "one active call per desk"
+      // (see queue_resilience.sql trigger). The Station UI reads this to
+      // show a friendly "Already called by Jan" toast instead of letting
+      // two operators race-click "Call next" and discover the conflict
+      // only via the diagnostic panel.
+      single_active_call_per_desk: true,
+
+      // Tells the Station to require a healthy realtime websocket before
+      // enabling "Call next". If realtime is down the operator's view of
+      // who-called-what is stale and stale calls produce 409s. When false
+      // (default in tests) the Station falls back to polling every 3s.
+      realtime_required_for_calls: true,
+
+      // Caps how many minutes a queued cloud mutation can sit before the
+      // Station auto-discards it as a ghost. Matches the CONFLICT_MAX × tick
+      // window in sync.ts. Surfacing it in settings lets ops tune it per
+      // business (e.g. spotty rural Wi-Fi → bump to 5).
+      sync_ghost_timeout_minutes: 1,
     };
     if (category) {
       // Only stamp category-derived fields when we actually have a
