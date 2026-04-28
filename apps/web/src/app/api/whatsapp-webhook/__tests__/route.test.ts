@@ -294,6 +294,7 @@ describe('POST /api/whatsapp-webhook — first delivery (happy path)', () => {
       'JOIN BISTRO',
       'Test User',
       undefined, // bsuid absent in this payload
+      undefined, // locationData
     );
   });
 });
@@ -393,6 +394,7 @@ describe('POST /api/whatsapp-webhook — multi-tenant routing via JOIN command',
       'JOIN BISTRO',
       'Test User',
       undefined,
+      undefined,
     );
   });
 });
@@ -427,6 +429,7 @@ describe('POST /api/whatsapp-webhook — greeting locale detection', () => {
       arabicBody,
       'Test User',
       undefined,
+      undefined,
     );
   });
 
@@ -452,6 +455,7 @@ describe('POST /api/whatsapp-webhook — greeting locale detection', () => {
       frBody,
       'Test User',
       undefined,
+      undefined,
     );
   });
 
@@ -476,6 +480,7 @@ describe('POST /api/whatsapp-webhook — greeting locale detection', () => {
       expect.any(String),
       enBody,
       'Test User',
+      undefined,
       undefined,
     );
   });
