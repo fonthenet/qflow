@@ -504,27 +504,38 @@ export function QueueOrderCard({
       )}
 
       {/* Customer-supplied order note — captured during the WhatsApp
-          order intake step (handleOrderNotesInput), persisted to
-          tickets.notes. Shown as an amber "kitchen instruction" callout
-          right above the items list so the kitchen sees it before
-          starting any item. Operators can still over-write the same
-          column from their side; we don't try to distinguish — last
-          writer wins. RTL-safe via dir="auto" + unicodeBidi. */}
-      {ticket.notes && ticket.notes.trim() && (
-        <div style={{
-          padding: '6px 8px', borderRadius: 6,
-          background: 'rgba(245,158,11,0.10)',
-          border: '1px solid rgba(245,158,11,0.35)',
-          fontSize: 12, lineHeight: 1.35,
-          color: 'var(--warning, #f59e0b)',
-          display: 'flex', gap: 6, alignItems: 'flex-start',
-        }}>
-          <span style={{ flexShrink: 0 }}>📝</span>
-          <span dir="auto" style={{ unicodeBidi: 'isolate', wordBreak: 'break-word', flex: 1, fontStyle: 'italic' }}>
-            {ticket.notes.trim()}
-          </span>
-        </div>
-      )}
+          order intake (handleOrderNotesInput) AFTER the address step,
+          so it can carry both delivery instructions ("3rd floor, ring
+          twice") and food preferences ("no onions, mild spicy") in one
+          field. Persisted to BOTH tickets.notes (for direct readers
+          like this card) AND customer_data.reason_of_visit (the
+          canonical column the rest of Qflo reads). We fall back across
+          both so the UI is robust whichever path supplied the value:
+          legacy operator-typed notes → tickets.notes; new WA-order
+          intake → reason_of_visit. RTL-safe via dir="auto". */}
+      {(() => {
+        const cd: any = (ticket as any).customer_data ?? {};
+        const note: string =
+          (typeof ticket.notes === 'string' && ticket.notes.trim())
+          || (typeof cd.reason_of_visit === 'string' && cd.reason_of_visit.trim())
+          || '';
+        if (!note) return null;
+        return (
+          <div style={{
+            padding: '6px 8px', borderRadius: 6,
+            background: 'rgba(245,158,11,0.10)',
+            border: '1px solid rgba(245,158,11,0.35)',
+            fontSize: 12, lineHeight: 1.35,
+            color: 'var(--warning, #f59e0b)',
+            display: 'flex', gap: 6, alignItems: 'flex-start',
+          }}>
+            <span style={{ flexShrink: 0 }}>📝</span>
+            <span dir="auto" style={{ unicodeBidi: 'isolate', wordBreak: 'break-word', flex: 1, fontStyle: 'italic' }}>
+              {note}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Items list — compact, with inline note + price */}
       {items.length > 0 && (

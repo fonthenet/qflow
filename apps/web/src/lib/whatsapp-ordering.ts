@@ -236,31 +236,45 @@ function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: s
 }
 
 /**
- * Notes step prompt — last input before the YES/NO confirm. Kept short
- * because a long prompt right before the confirm summary makes the
- * customer scroll a lot. The skip option is explicit so people who
- * don't want to type anything aren't trapped.
+ * Notes step prompt — last input before the YES/NO confirm. Asked
+ * AFTER the address (when delivery) so the customer can combine
+ * delivery instructions and food preferences in a single field. We
+ * deliberately suggest examples of both kinds so they don't think
+ * notes are food-only or delivery-only.
+ *
+ * The prompt varies by service type so the examples land in the
+ * right context — pure-takeout customers don't see delivery hints.
  */
-function tplAskNotes(locale: Locale): string {
+function tplAskNotes(locale: Locale, service: 'takeout' | 'delivery'): string {
   if (locale === 'ar') {
+    const examples = service === 'delivery'
+      ? '(مثل: الطابق 3، اطرق الباب، بدون بصل، حساسية المكسرات)'
+      : '(مثل: بدون بصل، حساسية المكسرات، حار قليلًا)';
     return [
       '📝 *ملاحظات للمطعم؟*',
-      '(مثل: بدون بصل، جرس مرتين، إلخ)',
+      examples,
       '',
       '✏️ اكتب ملاحظتك، أو أرسل *تخطي* للمتابعة بدونها.',
     ].join('\n');
   }
   if (locale === 'en') {
+    const examples = service === 'delivery'
+      ? '(e.g. 3rd floor, ring the bell, no onions, nut allergy)'
+      : '(e.g. no onions, nut allergy, mildly spicy)';
     return [
-      '📝 *Any note for the restaurant?*',
-      '(e.g. no onions, ring the bell twice, allergies)',
+      '📝 *Any notes for the restaurant?*',
+      examples,
       '',
       '✏️ Type your note, or send *SKIP* to continue without one.',
     ].join('\n');
   }
+  // French
+  const examples = service === 'delivery'
+    ? '(ex : 3e étage, sonner à la porte, sans oignons, allergie aux noix)'
+    : '(ex : sans oignons, allergie aux noix, légèrement épicé)';
   return [
     '📝 *Une note pour le restaurant ?*',
-    '(ex : sans oignons, sonner deux fois, allergies)',
+    examples,
     '',
     '✏️ Tapez votre note, ou envoyez *PASSER* pour continuer sans.',
   ].join('\n');
@@ -685,7 +699,7 @@ export async function handleOrderReviewInput(
     await supabase.from('whatsapp_sessions')
       .update({ custom_intake_data: payload, state: 'pending_order_notes' })
       .eq('id', session.id);
-    await sendMessage({ to: identifier, body: tplAskNotes(locale) });
+    await sendMessage({ to: identifier, body: tplAskNotes(locale, payload.service) });
     return;
   }
 
@@ -765,11 +779,18 @@ export async function handleOrderAddressInput(
     (payload as any).delivery_address.lng = longitude;
     if (resolvedCity) (payload as any).delivery_address.city = resolvedCity;
 
-    // Address captured (pin path) → ask for kitchen notes before the
-    // final confirm. Notes is the last input step in every order flow.
-    await supabase.from('whatsapp_sessions')
+    // Idempotent transition — only fire echo + notes prompt on the
+    // FIRST delivery of this location message. If Meta replays the
+    // webhook (or the customer re-shares the same pin), the second
+    // call sees state=pending_order_notes and bails silently. Without
+    // this lock the customer would receive the "Got your pin" + notes
+    // prompt twice for a single share.
+    const { data: addrAdvanced } = await supabase.from('whatsapp_sessions')
       .update({ custom_intake_data: payload, state: 'pending_order_notes' })
-      .eq('id', session.id);
+      .eq('id', session.id)
+      .eq('state', 'pending_order_address')
+      .select('id');
+    if (!addrAdvanced || addrAdvanced.length === 0) return; // duplicate — bail
 
     // Echo back so the customer can sanity-check before confirming.
     const echoStreet = resolvedCity ? `${resolvedStreet}, ${resolvedCity}` : resolvedStreet;
@@ -780,7 +801,7 @@ export async function handleOrderAddressInput(
         : `📍 Position reçue.\n${echoStreet}`;
     await sendMessage({ to: identifier, body: echo });
 
-    await sendMessage({ to: identifier, body: tplAskNotes(locale) });
+    await sendMessage({ to: identifier, body: tplAskNotes(locale, payload.service) });
     return;
   }
 
@@ -797,18 +818,33 @@ export async function handleOrderAddressInput(
   }
   payload.delivery_address = { street: trimmed };
 
-  // Text address captured → ask for kitchen notes before confirming.
-  await supabase.from('whatsapp_sessions')
+  // Text-address path — same idempotent state-lock as the pin path.
+  const { data: textAdvanced } = await supabase.from('whatsapp_sessions')
     .update({ custom_intake_data: payload, state: 'pending_order_notes' })
-    .eq('id', session.id);
+    .eq('id', session.id)
+    .eq('state', 'pending_order_address')
+    .select('id');
+  if (!textAdvanced || textAdvanced.length === 0) return; // duplicate — bail
 
-  await sendMessage({ to: identifier, body: tplAskNotes(locale) });
+  await sendMessage({ to: identifier, body: tplAskNotes(locale, payload.service) });
 }
 
 /**
  * Notes step: capture an optional free-text instruction for the
- * kitchen / operator, then move to the final confirm. The customer can
- * either type a note or send "skip" / "-" to bypass. Cancel still works.
+ * kitchen / operator, then move to the final confirm.
+ *
+ * IDEMPOTENT: Meta delivers webhooks multiple times (your dedup rule),
+ * so this handler must be safe to replay. We use an optimistic state-
+ * lock — every state-mutating UPDATE is gated on `.eq('state',
+ * 'pending_order_notes')`. If the row's state has already advanced
+ * (because a previous delivery of the same message already processed
+ * it), the UPDATE matches zero rows and we silently bail out instead
+ * of double-sending tplAskConfirm.
+ *
+ * Without this lock, a duplicate "Need water" delivery would re-run
+ * the handler and either (a) re-send the confirm prompt — confusing,
+ * or (b) get caught by an earlier branch that fires re-prompts of
+ * stale state. Either way the customer experience breaks.
  */
 export async function handleOrderNotesInput(
   session: any, input: string, identifier: string, sendMessage: SendFn,
@@ -818,13 +854,20 @@ export async function handleOrderNotesInput(
   const payload = session.custom_intake_data as OrderSessionPayload;
 
   if (isCancel(input)) {
-    await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
-    await sendMessage({ to: identifier, body: tplCancelled(locale) });
+    // Cancel is also state-locked — only delete if still in notes step.
+    const { data: cancelled } = await supabase.from('whatsapp_sessions')
+      .delete()
+      .eq('id', session.id)
+      .eq('state', 'pending_order_notes')
+      .select('id');
+    if (cancelled && cancelled.length > 0) {
+      await sendMessage({ to: identifier, body: tplCancelled(locale) });
+    }
     return;
   }
 
-  // Stray global commands (JOIN, STATUS) at this step — refuse politely
-  // so we don't half-cancel mid-order. Same pattern as other steps.
+  // Stray global commands (JOIN, STATUS) — refuse politely. No state
+  // mutation so safe to send unconditionally.
   if (detectGlobalCommand(input)) {
     const hint = locale === 'ar'
       ? '👉 أنت في وسط طلب. اكتب ملاحظتك للمطعم أو أرسل *تخطي*.'
@@ -835,31 +878,34 @@ export async function handleOrderNotesInput(
     return;
   }
 
-  // Skip path — proceed without a note. customer_notes stays undefined
-  // so the confirm summary doesn't show a 📝 line.
+  // Skip path — advance with no note. State lock ensures only the
+  // first delivery of "skip" sends the confirm; duplicates no-op.
   if (isSkipNotes(input)) {
-    await supabase.from('whatsapp_sessions')
+    const { data: advanced } = await supabase.from('whatsapp_sessions')
       .update({ state: 'pending_order_confirm' })
-      .eq('id', session.id);
+      .eq('id', session.id)
+      .eq('state', 'pending_order_notes')
+      .select('id');
+    if (!advanced || advanced.length === 0) return; // duplicate — bail
     const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
     await sendMessage({ to: identifier, body: tplAskConfirm(payload, locale, currency, orgName) });
     return;
   }
 
-  // Capture path — trim and cap at 500 chars. The cap prevents abuse
-  // and matches the trim we apply to text addresses.
+  // Capture path. Trim + 500-char cap matches the address handler.
   const note = input.trim().slice(0, 500);
   if (note.length === 0) {
-    // Empty after trim — re-prompt rather than treating it as skip,
-    // since the customer may have hit send by accident.
-    await sendMessage({ to: identifier, body: tplAskNotes(locale) });
+    await sendMessage({ to: identifier, body: tplAskNotes(locale, payload.service) });
     return;
   }
   payload.customer_notes = note;
 
-  await supabase.from('whatsapp_sessions')
+  const { data: captured } = await supabase.from('whatsapp_sessions')
     .update({ custom_intake_data: payload, state: 'pending_order_confirm' })
-    .eq('id', session.id);
+    .eq('id', session.id)
+    .eq('state', 'pending_order_notes')
+    .select('id');
+  if (!captured || captured.length === 0) return; // duplicate — bail
 
   const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
   await sendMessage({ to: identifier, body: tplAskConfirm(payload, locale, currency, orgName) });
@@ -960,6 +1006,14 @@ export async function handleOrderConfirmInput(
   // Strip channel prefix like "whatsapp:" if present, else use identifier as-is.
   const phone = identifier.replace(/^whatsapp:/i, '');
   if (phone) customerData.phone = phone;
+  // Mirror the customer-supplied note onto customer_data.reason_of_visit
+  // — that's the canonical column the rest of Qflo (Station ticket
+  // detail, analytics, RLS) already reads. We also write it to
+  // tickets.notes (below) so the kitchen card surfaces it inline.
+  // Persisting in both spots avoids touching every consumer in this
+  // change while keeping reason_of_visit the source of truth long-term.
+  const customerNote = payload.customer_notes?.trim() || null;
+  if (customerNote) customerData.reason_of_visit = customerNote;
 
   const deliveryAddress = payload.service === 'delivery' && payload.delivery_address
     ? {
@@ -971,12 +1025,6 @@ export async function handleOrderConfirmInput(
         lng: typeof payload.delivery_address.lng === 'number' ? payload.delivery_address.lng : null,
       }
     : null;
-
-  // Customer note → tickets.notes so it surfaces on the Station card
-  // alongside operator-set notes. Empty string would still satisfy
-  // schema; we leave the column null when nothing was supplied so the
-  // UI can hide the row entirely.
-  const customerNotes = payload.customer_notes?.trim() || null;
 
   // Insert ticket as pending_approval — operator on Station accepts/declines.
   const { data: ticket, error: tkErr } = await supabase
@@ -991,7 +1039,11 @@ export async function handleOrderConfirmInput(
       status: 'pending_approval',
       customer_data: customerData,
       delivery_address: deliveryAddress as any,
-      notes: customerNotes,
+      // Mirror to tickets.notes so the QueueOrderCard surfaces the note
+      // inline on the kitchen card. customer_data.reason_of_visit is
+      // the canonical store (set above); this column is a convenience
+      // for the kitchen view that reads `ticket.notes` directly.
+      notes: customerNote,
       is_remote: true,
       source: 'whatsapp',
       locale,
