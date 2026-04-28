@@ -297,15 +297,16 @@ const messages: Record<string, Partial<Record<Locale, string>> & Record<'en' | '
     en: '⚠️ Something went wrong. Please try again.',
   },
   joined: {
-    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}{now_serving}\n\n📍 Suivez votre position : {url}\n\nRépondez *STATUT* pour les mises à jour ou *ANNULER* pour quitter.',
-    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}{now_serving}\n\nتتبع موقعك: {url} 📍\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
-    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}{now_serving}\n\n📍 Track your position: {url}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
+    fr: '✅ *{ticket}* — {name}\n{position}{now_serving}📍 {url}',
+    ar: '✅ *{ticket}* — {name}\n{position}{now_serving}📍 {url}',
+    en: '✅ *{ticket}* — {name}\n{position}{now_serving}📍 {url}',
   },
-  // Same as joined but without the header line — used after approval_approved_sameday
+  // Same as joined but without the leading "queue" indicator — used after
+  // approval_approved_sameday. Matches the compact `joined` shape.
   joined_details: {
-    fr: '🎫 Ticket : *{ticket}*\n{position}{now_serving}\n\n📍 Suivez votre position : {url}\n\nRépondez *STATUT* pour les mises à jour ou *ANNULER* pour quitter.',
-    ar: 'التذكرة: *{ticket}* 🎫\n{position}{now_serving}\n\nتتبع موقعك: {url} 📍\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
-    en: '🎫 Ticket: *{ticket}*\n{position}{now_serving}\n\n📍 Track your position: {url}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
+    fr: '🎫 *{ticket}*\n{position}{now_serving}📍 {url}',
+    ar: '🎫 *{ticket}*\n{position}{now_serving}📍 {url}',
+    en: '🎫 *{ticket}*\n{position}{now_serving}📍 {url}',
   },
   your_turn: {
     fr: '🔔 C\'est votre tour ! Veuillez vous diriger vers le point de service.',
@@ -3517,6 +3518,10 @@ async function handleJoin(
 
   const pos = await getQueuePosition(ticket.id);
 
+  // Compact join-success message — drops the "What would you like to do?
+  // 1 — Check your position / 2 — Cancel" boilerplate that previously got
+  // appended to every confirmation. Customers who actually want to act on
+  // those commands type STATUS / CANCEL freely; the menu was clutter.
   await sendMessage({
     to: identifier,
     body: t('joined', locale, {
@@ -3525,7 +3530,7 @@ async function handleJoin(
       position: formatPosition(pos, locale),
       now_serving: formatNowServing(pos, locale),
       url: trackUrl,
-    }) + t('quick_menu', locale),
+    }),
   });
 }
 

@@ -235,28 +235,27 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
   }, [rider, dest]);
 
   return (
-    <section style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
-      <div style={{
-        padding: '10px 14px', borderBlockEnd: '1px solid #e2e8f0',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-        background: '#f8fafc',
-      }}>
-        <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700 }}>
-          🗺️ {tr(locale, 'Live driver tracking', 'Suivi du livreur en direct', 'تتبع السائق مباشر')}
+    <section style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
+      {/* Compact header — emoji on the left, ETA on the right.
+          Skipped entirely when there's no rider yet so the placeholder
+          fills the space cleanly. */}
+      {eta && (
+        <div style={{
+          padding: '6px 10px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          background: '#f8fafc', fontSize: 12,
+        }}>
+          <span style={{ color: '#64748b', fontWeight: 700 }}>🗺️ {tr(locale, 'Live tracking', 'Suivi en direct', 'تتبع مباشر')}</span>
+          <span style={{ fontWeight: 800, color: '#3b82f6' }}>~{eta.minutes} min · {eta.distKm.toFixed(1)} km</span>
         </div>
-        {eta && (
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#3b82f6' }}>
-            ~{eta.minutes} min · {eta.distKm.toFixed(1)} km
-          </div>
-        )}
-      </div>
-      <div ref={containerRef} style={{ width: '100%', height: 280 }} />
+      )}
+      <div ref={containerRef} style={{ width: '100%', height: 200 }} />
       {!rider && (
-        <div style={{ padding: 12, fontSize: 12, color: '#64748b', textAlign: 'center', background: '#f8fafc' }}>
+        <div style={{ padding: 8, fontSize: 11, color: '#64748b', textAlign: 'center', background: '#f8fafc' }}>
           {tr(locale,
-            'Waiting for the driver to start sharing their location…',
-            'En attente du partage de position du livreur…',
-            'بانتظار بدء السائق مشاركة موقعه…',
+            'Waiting for the driver to share their location…',
+            'En attente du partage de position…',
+            'بانتظار مشاركة الموقع…',
           )}
         </div>
       )}

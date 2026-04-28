@@ -173,15 +173,45 @@ export async function notifyCustomer(
   const supabase = createAdminClient() as any;
 
   try {
-    // Fetch ticket (include service_id for service-type branching on ready/served)
+    // Fetch ticket (include service_id for service-type branching on ready/served,
+    // and source so we can suppress queue-flow templates on online orders).
     const { data: ticket, error: ticketErr } = await supabase
       .from('tickets')
-      .select('id, ticket_number, qr_token, locale, office_id, service_id')
+      .select('id, ticket_number, qr_token, locale, office_id, service_id, source')
       .eq('id', ticketId)
       .single();
 
     if (ticketErr || !ticket) {
       return { sent: false, channel: null, error: 'ticket_not_found' };
+    }
+
+    // ── Online-order guard: skip queue-flow templates ─────────────────
+    // Online restaurant orders (source whatsapp/web with takeout/delivery)
+    // get their own customer-facing copy directly from /api/orders/* —
+    // we explicitly DON'T want the queue-style "service has started at
+    // floor" or "you've been called" messages bouncing in alongside.
+    // Order-specific events (order_received/accepted/etc) aren't routed
+    // through this function, so we only need to filter the queue ones.
+    const isOnlineOrder = ticket.source === 'whatsapp' || ticket.source === 'web';
+    if (isOnlineOrder) {
+      const queueOnlyEvents = new Set(['called', 'serving', 'recall', 'transferred', 'position_update']);
+      if (queueOnlyEvents.has(event as string)) {
+        // Try to detect takeout / delivery via service name. If we can't,
+        // err on the side of suppressing — restaurant tickets explicitly
+        // marked dine-in still hit notifyCustomer through other paths.
+        try {
+          const { data: svc } = await supabase
+            .from('services').select('name').eq('id', ticket.service_id).maybeSingle();
+          const { resolveRestaurantServiceType } = await import('@qflo/shared');
+          const t = resolveRestaurantServiceType(svc?.name ?? '');
+          if (t === 'takeout' || t === 'delivery') {
+            return { sent: false, channel: null, error: 'suppressed_for_online_order' };
+          }
+        } catch {
+          // Conservative fallback: skip the queue-flow message anyway.
+          return { sent: false, channel: null, error: 'suppressed_for_online_order' };
+        }
+      }
     }
 
     // Find the session for this ticket.

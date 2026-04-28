@@ -280,22 +280,27 @@ export default function OrderStatus(props: OrderStatusProps) {
 
   return (
     <main style={pageWrap}>
-      <div style={{ ...banner.tint && {} }}>
-        <div style={{
-          background: '#fff', borderRadius: 14, padding: 24, textAlign: 'center',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.06)', border: `2px solid ${banner.tint}33`,
-        }}>
-          <div style={{ fontSize: 56, lineHeight: 1 }}>{banner.emoji}</div>
-          <h1 style={{ margin: '12px 0 6px', fontSize: 22, color: banner.tint }}>{banner.title}</h1>
-          <p style={{ margin: 0, color: '#475569', fontSize: 14, lineHeight: 1.5 }}>{banner.body}</p>
-          <div style={{
-            display: 'inline-block', marginTop: 16,
-            padding: '6px 18px', borderRadius: 999,
-            background: '#eef2ff', color: '#4338ca',
-            fontWeight: 800, fontSize: 18, letterSpacing: 1,
-          }}>
-            {ticket.ticket_number}
+      {/* Compact hero — emoji + ticket number + title on one row, body
+          on a second line. Fits a phone viewport without dominating it. */}
+      <div style={{
+        background: '#fff', borderRadius: 12, padding: 12,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.05)',
+        border: `2px solid ${banner.tint}33`,
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>{banner.emoji}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: 16, color: banner.tint, lineHeight: 1.2 }}>{banner.title}</h1>
+            <span style={{
+              display: 'inline-block', padding: '2px 8px', borderRadius: 6,
+              background: '#eef2ff', color: '#4338ca',
+              fontWeight: 800, fontSize: 12, letterSpacing: 0.5,
+            }}>
+              {ticket.ticket_number}
+            </span>
           </div>
+          <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: 12, lineHeight: 1.4 }}>{banner.body}</p>
         </div>
       </div>
 
@@ -314,141 +319,186 @@ export default function OrderStatus(props: OrderStatusProps) {
         />
       )}
 
-      {/* Driver block — only for delivery + dispatched + not yet delivered. */}
+      {/* Driver block — single-row: emoji · name + phone · Call button.
+          Halves the height vs the previous two-row card and keeps the
+          phone-tap-to-call affordance front-and-centre. */}
       {serviceMode === 'delivery' && isDispatched && !isDelivered && rider && (
-        <section style={card}>
-          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, marginBottom: 8 }}>
-            🛵 {tr(locale, 'Your driver', 'Votre livreur', 'السائق')}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: '#0f172a' }}>{rider.full_name ?? '—'}</div>
-              {rider.phone && (
-                <div style={{ fontSize: 13, color: '#64748b', direction: 'ltr' }}>{rider.phone}</div>
-              )}
+        <section style={{ ...card, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 22 }}>🛵</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {rider.full_name ?? tr(locale, 'Driver', 'Livreur', 'السائق')}
             </div>
             {rider.phone && (
-              <a
-                href={`tel:${rider.phone}`}
-                style={{
-                  padding: '10px 16px', borderRadius: 8,
-                  background: '#22c55e', color: '#fff',
-                  fontWeight: 700, fontSize: 14, textDecoration: 'none',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                📞 {tr(locale, 'Call', 'Appeler', 'اتصل')}
-              </a>
+              <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr' }}>{rider.phone}</div>
             )}
           </div>
-        </section>
-      )}
-
-      {/* Lifecycle timeline */}
-      {!isCancelled && (
-        <section style={card}>
-          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, marginBottom: 12 }}>
-            {tr(locale, 'Order progress', 'Avancement', 'تقدّم الطلب')}
-          </div>
-          <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-            {steps.map((s, i) => (
-              <li key={s.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, paddingBlock: 8 }}>
-                <span style={{
-                  display: 'inline-flex', width: 22, height: 22, borderRadius: '50%',
-                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  background: s.reached ? (s.current ? '#3b82f6' : '#22c55e') : '#e2e8f0',
-                  color: s.reached ? '#fff' : '#94a3b8',
-                  fontSize: 12, fontWeight: 800,
-                }}>
-                  {s.reached ? '✓' : i + 1}
-                </span>
-                <span style={{
-                  flex: 1, color: s.reached ? '#0f172a' : '#94a3b8',
-                  fontWeight: s.current ? 700 : 500,
-                  fontSize: 14,
-                }}>
-                  {s.label}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {/* Delivery address — only for delivery, with Maps button when pin. */}
-      {serviceMode === 'delivery' && da?.street && (
-        <section style={card}>
-          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, marginBottom: 8 }}>
-            📍 {tr(locale, 'Delivery to', 'Livraison à', 'التوصيل إلى')}
-          </div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }} dir="auto">{da.street}</div>
-          {da.city && <div style={{ fontSize: 13, color: '#475569' }}>{da.city}</div>}
-          {da.instructions && (
-            <div style={{ fontSize: 13, color: '#64748b', fontStyle: 'italic', marginTop: 4 }}>{da.instructions}</div>
+          {rider.phone && (
+            <a
+              href={`tel:${rider.phone}`}
+              style={{
+                padding: '8px 14px', borderRadius: 8,
+                background: '#22c55e', color: '#fff',
+                fontWeight: 700, fontSize: 13, textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              📞 {tr(locale, 'Call', 'Appeler', 'اتصل')}
+            </a>
           )}
+        </section>
+      )}
+
+      {/* Lifecycle timeline — horizontal row of dots so 4 steps fit
+          inline rather than stacking vertically (saves ~80px on phones).
+          Active step's label is shown; reached steps show a check. */}
+      {!isCancelled && (
+        <section style={{ ...card, padding: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {steps.map((s, i) => {
+              const reachedColor = s.current ? '#3b82f6' : '#22c55e';
+              return (
+                <span key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 4, flex: s.current ? 1 : 0 }}>
+                  <span style={{
+                    display: 'inline-flex', width: 18, height: 18, borderRadius: '50%',
+                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    background: s.reached ? reachedColor : '#e2e8f0',
+                    color: s.reached ? '#fff' : '#94a3b8',
+                    fontSize: 10, fontWeight: 800,
+                  }}>
+                    {s.reached ? '✓' : i + 1}
+                  </span>
+                  {s.current && (
+                    <span style={{
+                      fontSize: 12, fontWeight: 700, color: reachedColor,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{s.label}</span>
+                  )}
+                  {i < steps.length - 1 && (
+                    <span style={{
+                      flex: s.current ? 0 : 1, height: 2, minWidth: 10,
+                      background: steps[i + 1].reached ? '#22c55e' : '#e2e8f0',
+                    }} />
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Delivery address — single-row when there's a pin: address text on
+          one side, Maps button on the other. Shrinks vertically by ~40px. */}
+      {serviceMode === 'delivery' && da?.street && (
+        <section style={{ ...card, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>📍</span>
+          <div style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+              {da.street}
+            </div>
+            {(da.city || da.instructions) && (
+              <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {da.city ?? ''}{da.city && da.instructions ? ' · ' : ''}{da.instructions ?? ''}
+              </div>
+            )}
+          </div>
           {mapsHref && (
             <a
               href={mapsHref}
               target="_blank"
               rel="noreferrer"
               style={{
-                display: 'inline-block', marginTop: 10,
-                padding: '8px 14px', borderRadius: 8,
+                padding: '6px 10px', borderRadius: 6,
                 background: '#3b82f6', color: '#fff',
-                fontWeight: 700, fontSize: 13, textDecoration: 'none',
+                fontWeight: 700, fontSize: 11, textDecoration: 'none',
+                whiteSpace: 'nowrap', flexShrink: 0,
               }}
             >
-              🗺️ {tr(locale, 'Open in Maps', 'Ouvrir dans Maps', 'فتح في الخرائط')}
+              🗺️ {tr(locale, 'Maps', 'Maps', 'الخرائط')}
             </a>
           )}
         </section>
       )}
 
-      {/* Items list + total. Always shown when there are items, regardless of status. */}
+      {/* Items: collapsed-by-default summary line. The customer already
+          saw the cart when they confirmed the order — here we just need
+          a count + total + a way to open the details if they want them.
+          Saves a lot of vertical space on bigger menus. */}
       {items.length > 0 && (
-        <section style={card}>
-          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, marginBottom: 8 }}>
-            🛒 {tr(locale, `Order (${itemCount})`, `Commande (${itemCount})`, `الطلب (${itemCount})`)}
-          </div>
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-            {items.map((it) => (
-              <li key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingBlock: 4, fontSize: 14 }}>
-                <span>
-                  <span style={{ fontWeight: 700, marginInlineEnd: 6 }}>{it.qty}×</span>
-                  <span dir="auto">{it.name}</span>
-                </span>
-                {it.line_total && <span style={{ color: '#475569' }}>{it.line_total}</span>}
-              </li>
-            ))}
-          </ul>
-          {totalDisplay && (
-            <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              marginTop: 10, paddingTop: 8, borderTop: '1px solid #e2e8f0',
-              fontWeight: 800, fontSize: 15,
-            }}>
-              <span>{tr(locale, 'Total', 'Total', 'المجموع')}</span>
-              <span>{totalDisplay}</span>
-            </div>
-          )}
-        </section>
+        <ItemsSummary
+          items={items}
+          itemCount={itemCount}
+          totalDisplay={totalDisplay}
+          locale={locale}
+        />
       )}
 
-      <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, marginTop: 16 }}>
+      <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 11, marginTop: 6 }}>
         {organizationName ? `${organizationName} · ${officeName}` : officeName}
       </p>
     </main>
   );
 }
 
+function ItemsSummary({
+  items, itemCount, totalDisplay, locale,
+}: {
+  items: Array<{ id: string; name: string; qty: number; line_total: string | null }>;
+  itemCount: number;
+  totalDisplay: string | null;
+  locale: 'ar' | 'fr' | 'en';
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section style={card}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: 0, background: 'transparent', border: 'none', cursor: 'pointer',
+          color: '#0f172a', font: 'inherit', textAlign: 'start',
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          🛒 {tr(locale, `${itemCount} items`, `${itemCount} articles`, `${itemCount} منتجات`)}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {totalDisplay && <span style={{ fontWeight: 800, fontSize: 14 }}>{totalDisplay}</span>}
+          <span style={{
+            fontSize: 10, color: '#94a3b8',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.15s',
+          }}>
+            ▶
+          </span>
+        </span>
+      </button>
+      {open && (
+        <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
+          {items.map((it) => (
+            <li key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingBlock: 3, fontSize: 13 }}>
+              <span>
+                <span style={{ fontWeight: 700, marginInlineEnd: 6 }}>{it.qty}×</span>
+                <span dir="auto">{it.name}</span>
+              </span>
+              {it.line_total && <span style={{ color: '#475569' }}>{it.line_total}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 const pageWrap: React.CSSProperties = {
-  maxWidth: 480, margin: '0 auto', padding: '20px 14px 40px',
+  maxWidth: 480, margin: '0 auto', padding: '12px 12px 16px',
   fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   color: '#0f172a', background: '#f8fafc', minHeight: '100vh',
-  display: 'flex', flexDirection: 'column', gap: 14,
+  display: 'flex', flexDirection: 'column', gap: 8,
 };
 
 const card: React.CSSProperties = {
-  background: '#fff', borderRadius: 12, padding: 16,
+  background: '#fff', borderRadius: 10, padding: 12,
   border: '1px solid #e2e8f0',
 };

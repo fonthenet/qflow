@@ -191,23 +191,38 @@ export function RiderPortal(props: RiderPortalProps) {
   // ── UI ────────────────────────────────────────────────────────────
   return (
     <main style={pageWrap}>
-      <header style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
-          {orgName ? `${orgName} · ${officeName}` : officeName}
-        </div>
-        <div style={{ fontSize: 26, fontWeight: 800, marginTop: 4 }}>{ticketNumber}</div>
+      {/* Compact hero — ticket number on the same row as a tracking
+          status dot so the driver sees both at a glance. */}
+      <header style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>{ticketNumber}</div>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+          background: geoStatus === 'streaming' ? '#22c55e'
+            : geoStatus === 'requesting' ? '#f59e0b'
+            : geoStatus === 'denied' || geoStatus === 'unavailable' ? '#ef4444'
+            : '#94a3b8',
+        }} />
+        <span style={{ flex: 1, fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {geoStatus === 'streaming' && (lastBeatAt ? `Live · ${Math.max(1, Math.round((Date.now() - lastBeatAt) / 1000))}s ago` : 'Live')}
+          {geoStatus === 'requesting' && 'Requesting location…'}
+          {geoStatus === 'denied' && 'Location denied'}
+          {geoStatus === 'unavailable' && 'GPS unavailable'}
+          {geoStatus === 'stopped' && 'Tracking off'}
+          {geoStatus === 'idle' && 'Starting…'}
+        </span>
+        <span style={{ fontSize: 10, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+          {orgName || officeName}
+        </span>
       </header>
 
-      {/* Customer card — name, callable phone, address, navigate button. */}
+      {/* Customer + address combined in one card. Single tap-to-call,
+          single tap-to-navigate, no extra UPPERCASE labels. */}
       <section style={card}>
-        <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, marginBottom: 8 }}>
-          Customer
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 17 }} dir="auto">{customerName || '—'}</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }} dir="auto">{customerName || '—'}</div>
             {customerPhone && (
-              <div style={{ fontSize: 13, color: '#64748b', direction: 'ltr' }}>{customerPhone}</div>
+              <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr' }}>{customerPhone}</div>
             )}
           </div>
           {customerPhone && (
@@ -215,44 +230,20 @@ export function RiderPortal(props: RiderPortalProps) {
           )}
         </div>
         {address && (
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: '#f1f5f9' }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }} dir="auto">{address}</div>
-            {addressCity && <div style={{ fontSize: 13, color: '#475569' }}>{addressCity}</div>}
-            {addressInstructions && (
-              <div style={{ marginTop: 4, fontStyle: 'italic', color: '#64748b', fontSize: 13 }}>
-                {addressInstructions}
+          <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: '#f1f5f9', fontSize: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }} dir="auto">{address}</div>
+            {(addressCity || addressInstructions) && (
+              <div style={{ color: '#64748b', marginTop: 2 }}>
+                {addressCity ?? ''}{addressCity && addressInstructions ? ' · ' : ''}{addressInstructions ?? ''}
               </div>
             )}
             {mapsHref && (
-              <a href={mapsHref} target="_blank" rel="noreferrer" style={{ ...primaryBtn, display: 'inline-block', marginTop: 10 }}>
+              <a href={mapsHref} target="_blank" rel="noreferrer" style={{ ...primaryBtn, display: 'inline-block', marginTop: 6, padding: '6px 10px', fontSize: 12 }}>
                 🗺️ Navigate
               </a>
             )}
           </div>
         )}
-      </section>
-
-      {/* Geolocation status — at-a-glance "is the live map working" */}
-      <section style={{ ...card, padding: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{
-            width: 10, height: 10, borderRadius: '50%',
-            background: geoStatus === 'streaming' ? '#22c55e'
-              : geoStatus === 'requesting' ? '#f59e0b'
-              : geoStatus === 'denied' || geoStatus === 'unavailable' ? '#ef4444'
-              : '#94a3b8',
-          }} />
-          <span style={{ flex: 1, fontSize: 13, color: '#475569' }}>
-            {geoStatus === 'streaming' && (
-              <>Live tracking on{lastBeatAt ? ` · last ping ${Math.max(1, Math.round((Date.now() - lastBeatAt) / 1000))}s ago` : ''}</>
-            )}
-            {geoStatus === 'requesting' && 'Requesting location…'}
-            {geoStatus === 'denied' && 'Location permission denied — customer won\'t see your live position'}
-            {geoStatus === 'unavailable' && 'GPS unavailable on this device'}
-            {geoStatus === 'stopped' && 'Tracking stopped'}
-            {geoStatus === 'idle' && 'Starting…'}
-          </span>
-        </div>
       </section>
 
       {/* Action buttons — disabled state mirrors the lifecycle. */}
@@ -308,13 +299,13 @@ export function RiderPortal(props: RiderPortalProps) {
 }
 
 const pageWrap: React.CSSProperties = {
-  maxWidth: 480, margin: '0 auto', padding: '20px 14px 40px',
+  maxWidth: 480, margin: '0 auto', padding: '12px 12px 16px',
   fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   color: '#0f172a', background: '#f8fafc', minHeight: '100vh',
-  display: 'flex', flexDirection: 'column', gap: 12,
+  display: 'flex', flexDirection: 'column', gap: 8,
 };
 const card: React.CSSProperties = {
-  background: '#fff', borderRadius: 12, padding: 14,
+  background: '#fff', borderRadius: 10, padding: 10,
   border: '1px solid #e2e8f0',
 };
 const greenBtn: React.CSSProperties = {
@@ -328,7 +319,7 @@ const primaryBtn: React.CSSProperties = {
   fontWeight: 700, fontSize: 13, textDecoration: 'none',
 };
 const bigBtn: React.CSSProperties = {
-  padding: '16px 18px', borderRadius: 12, border: 'none',
-  fontWeight: 800, fontSize: 16, cursor: 'pointer',
+  padding: '12px 16px', borderRadius: 10, border: 'none',
+  fontWeight: 800, fontSize: 14, cursor: 'pointer',
   letterSpacing: 0.3,
 };
