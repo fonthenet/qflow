@@ -58,9 +58,14 @@ async function resolvePublicMenuLink(
   customerPhone: string,
 ): Promise<string | null> {
   try {
+    // No `slug` column exists on `offices` — the public slug is derived
+    // from name + id by getOfficePublicSlug(). Selecting a phantom column
+    // here was the root cause of the JOIN-flow regression: PostgREST
+    // returned null, the helper bailed, and the JOIN dispatcher fell
+    // back to the default intake (Full name → Party size).
     const { data: offices } = await supabase
       .from('offices')
-      .select('id, name, settings, slug, is_active, organization_id')
+      .select('id, name, settings, is_active, organization_id')
       .eq('organization_id', organizationId)
       .eq('is_active', true);
     if (!offices?.length) return null;
