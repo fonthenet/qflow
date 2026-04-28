@@ -245,6 +245,7 @@ export function initDB() {
       delivery_address TEXT,
       assigned_rider_id TEXT,
       dispatched_at TEXT,
+      arrived_at TEXT,
       delivered_at TEXT,
       checked_in_at TEXT,
       estimated_wait_minutes INTEGER
@@ -521,6 +522,7 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN delivery_address TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN assigned_rider_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN dispatched_at TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN arrived_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN delivered_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN qr_token TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN checked_in_at TEXT`); } catch { /* already exists */ }

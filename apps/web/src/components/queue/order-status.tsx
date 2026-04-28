@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
+import OrderMap from './order-map';
 
 /**
  * Customer-facing tracking page for online restaurant orders.
@@ -39,6 +40,7 @@ export interface OrderStatusProps {
     completed_at: string | null;
     cancelled_at: string | null;
     dispatched_at: string | null;
+    arrived_at: string | null;
     delivered_at: string | null;
     notes: string | null;
     customer_data: Record<string, any> | null;
@@ -96,6 +98,7 @@ export default function OrderStatus(props: OrderStatusProps) {
               ...prev,
               status: next.status ?? prev.status,
               dispatched_at: next.dispatched_at ?? prev.dispatched_at,
+              arrived_at: next.arrived_at ?? prev.arrived_at,
               delivered_at: next.delivered_at ?? prev.delivered_at,
               cancelled_at: next.cancelled_at ?? prev.cancelled_at,
               completed_at: next.completed_at ?? prev.completed_at,
@@ -114,6 +117,7 @@ export default function OrderStatus(props: OrderStatusProps) {
 
   // ── Status resolution ────────────────────────────────────────────
   const isDispatched = Boolean(ticket.dispatched_at);
+  const isArrived = Boolean(ticket.arrived_at);
   const isDelivered = Boolean(ticket.delivered_at);
   const isCancelled = ticket.status === 'cancelled' || ticket.status === 'no_show';
   const isPending = ticket.status === 'pending_approval';
@@ -169,6 +173,22 @@ export default function OrderStatus(props: OrderStatusProps) {
         `Passez chez ${officeName} quand vous voulez.`,
         `يمكنك المرور على ${officeName} في أي وقت.`,
       ),
+    };
+    if (isArrived && !isDelivered && serviceMode === 'delivery') return {
+      emoji: '🚪',
+      tint: '#22c55e',
+      title: tr(locale, 'Driver has arrived', 'Le livreur est arrivé', 'وصل السائق'),
+      body: rider?.full_name
+        ? tr(locale,
+            `${rider.full_name} is at your address. Please open the door.`,
+            `${rider.full_name} est à votre adresse. Veuillez ouvrir.`,
+            `${rider.full_name} في عنوانك. يرجى فتح الباب.`,
+          )
+        : tr(locale,
+            'Your driver is at your address.',
+            'Votre livreur est à votre adresse.',
+            'السائق في عنوانك.',
+          ),
     };
     if (isDispatched && serviceMode === 'delivery') return {
       emoji: '🛵',
@@ -232,8 +252,14 @@ export default function OrderStatus(props: OrderStatusProps) {
       arr.push({
         key: 'dispatched',
         label: tr(locale, 'Out for delivery', 'En route', 'في الطريق'),
-        reached: isDispatched || isDelivered,
-        current: isDispatched && !isDelivered,
+        reached: isDispatched || isArrived || isDelivered,
+        current: isDispatched && !isArrived && !isDelivered,
+      });
+      arr.push({
+        key: 'arrived',
+        label: tr(locale, 'Driver arrived', 'Livreur arrivé', 'وصل السائق'),
+        reached: isArrived || isDelivered,
+        current: isArrived && !isDelivered,
       });
       arr.push({
         key: 'delivered',
@@ -272,6 +298,21 @@ export default function OrderStatus(props: OrderStatusProps) {
           </div>
         </div>
       </div>
+
+      {/* Live driver map — only when delivery is in flight AND we know
+          where to drop the food (lat/lng on the address). The map
+          subscribes to rider_locations realtime, so it animates as the
+          driver streams heartbeats from the rider portal. */}
+      {serviceMode === 'delivery' && isDispatched && !isDelivered && lat != null && lng != null && (
+        <OrderMap
+          ticketId={ticket.id}
+          destLat={lat}
+          destLng={lng}
+          supabaseUrl={props.supabaseUrl}
+          supabaseAnonKey={props.supabaseAnonKey}
+          locale={locale}
+        />
+      )}
 
       {/* Driver block — only for delivery + dispatched + not yet delivered. */}
       {serviceMode === 'delivery' && isDispatched && !isDelivered && rider && (

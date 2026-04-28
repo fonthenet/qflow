@@ -2357,8 +2357,8 @@ export class SyncEngine {
         (id, ticket_number, office_id, department_id, service_id, desk_id, status, priority,
          customer_data, created_at, called_at, called_by_staff_id, serving_started_at,
          completed_at, cancelled_at, parked_at, recall_count, notes, is_remote, appointment_id, source, synced_at,
-         delivery_address, assigned_rider_id, dispatched_at, delivered_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         delivery_address, assigned_rider_id, dispatched_at, arrived_at, delivered_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       // IDs of locally-modified tickets — protect ALL unsynced items regardless of age.
@@ -2483,6 +2483,7 @@ export class SyncEngine {
               : (typeof t.delivery_address === 'string' ? t.delivery_address : JSON.stringify(t.delivery_address)),
             t.assigned_rider_id ?? null,
             t.dispatched_at ?? null,
+            t.arrived_at ?? null,
             t.delivered_at ?? null,
           );
         }

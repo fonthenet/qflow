@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { safeCompare } from '@/lib/crypto-utils';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { buildRiderPortalUrl } from '@/lib/rider-token';
 
 /**
  * POST /api/orders/dispatch
@@ -159,10 +160,18 @@ export async function POST(request: NextRequest) {
       .catch((e) => console.warn('[orders/dispatch] WA send failed', e?.message));
   }
 
+  // Stateless rider portal URL — Station copies this to the operator's
+  // clipboard so they can paste it into a WA chat with the driver.
+  // Token is HMAC(ticketId, INTERNAL_WEBHOOK_SECRET) — rotating the
+  // secret invalidates every outstanding link.
+  const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+  const riderLink = buildRiderPortalUrl(cloudUrl, ticketId);
+
   return NextResponse.json({
     ok: true,
     dispatched_at: update.dispatched_at,
     rider_id: riderId ?? null,
     rider_name: riderName,
+    rider_link: riderLink,
   });
 }

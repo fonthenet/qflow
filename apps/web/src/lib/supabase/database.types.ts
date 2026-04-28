@@ -2259,6 +2259,50 @@ export type Database = {
           },
         ]
       }
+      rider_locations: {
+        Row: {
+          accuracy_m: number | null
+          created_at: string
+          heading_deg: number | null
+          id: string
+          lat: number
+          lng: number
+          recorded_at: string
+          speed_mps: number | null
+          ticket_id: string
+        }
+        Insert: {
+          accuracy_m?: number | null
+          created_at?: string
+          heading_deg?: number | null
+          id?: string
+          lat: number
+          lng: number
+          recorded_at?: string
+          speed_mps?: number | null
+          ticket_id: string
+        }
+        Update: {
+          accuracy_m?: number | null
+          created_at?: string
+          heading_deg?: number | null
+          id?: string
+          lat?: number
+          lng?: number
+          recorded_at?: string
+          speed_mps?: number | null
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rider_locations_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       services: {
         Row: {
           code: string
@@ -2861,6 +2905,7 @@ export type Database = {
       tickets: {
         Row: {
           appointment_id: string | null
+          arrived_at: string | null
           assigned_rider_id: string | null
           called_at: string | null
           called_by_staff_id: string | null
@@ -2897,6 +2942,7 @@ export type Database = {
         }
         Insert: {
           appointment_id?: string | null
+          arrived_at?: string | null
           assigned_rider_id?: string | null
           called_at?: string | null
           called_by_staff_id?: string | null
@@ -2933,6 +2979,7 @@ export type Database = {
         }
         Update: {
           appointment_id?: string | null
+          arrived_at?: string | null
           assigned_rider_id?: string | null
           called_at?: string | null
           called_by_staff_id?: string | null

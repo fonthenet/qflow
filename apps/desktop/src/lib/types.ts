@@ -28,6 +28,8 @@ export interface Ticket {
   assigned_rider_id?: string | null;
   /** Set when operator clicks Dispatch — order is out for delivery. */
   dispatched_at?: string | null;
+  /** Set when the rider taps "I've Arrived" on the rider portal. */
+  arrived_at?: string | null;
   /** Set when operator (or rider) marks the order delivered. Status
    *  flips to 'served' at the same time. */
   delivered_at?: string | null;

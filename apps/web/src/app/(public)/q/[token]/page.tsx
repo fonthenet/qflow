@@ -207,6 +207,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
           // from status === 'cancelled' inside the client component.
           cancelled_at: null,
           dispatched_at: (ticket as any).dispatched_at ?? null,
+          arrived_at: (ticket as any).arrived_at ?? null,
           delivered_at: (ticket as any).delivered_at ?? null,
           notes: ticket.notes ?? null,
           customer_data: (ticket.customer_data as Record<string, any>) ?? null,

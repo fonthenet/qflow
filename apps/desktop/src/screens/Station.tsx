@@ -3671,6 +3671,25 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       const tk = tickets.find((x) => x.id === ticketId);
       showToast(t('Order {ticket} marked as out for delivery', { ticket: tk?.ticket_number ?? '' }), 'success');
       addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Dispatched'), ticketId);
+      // Auto-copy the rider portal link returned by the API so the
+      // operator can paste it into WhatsApp to the driver. Falls back
+      // to a manual prompt if the clipboard API is unavailable (older
+      // Electron or insecure context).
+      const riderLink: string | undefined = data?.rider_link;
+      if (riderLink) {
+        try {
+          await navigator.clipboard.writeText(riderLink);
+          showToast(t('Driver link copied — paste into WhatsApp to your driver'), 'info');
+        } catch {
+          // Fallback: show an alert with the link so the operator can
+          // manually copy. styledConfirm displays the link inline.
+          await styledConfirm(`${t('Driver link')}:\n\n${riderLink}`, {
+            confirmLabel: t('OK'),
+            cancelLabel: t('Cancel'),
+            variant: 'info' as any,
+          });
+        }
+      }
       fetchTickets();
     } catch (err: any) {
       showToast(t('Could not dispatch: {error}', { error: err?.message ?? 'Network error' }), 'error');
