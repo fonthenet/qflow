@@ -7058,6 +7058,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 </div>
                 {ticket.id !== activeTicket?.id ? (
                   <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                    {/* Complete — primary action when a ticket is already
+                        being served. Critical for auto-served dine-in
+                        tickets (restaurants): they don't show on the
+                        QueueOrdersCanvas (canvas filters dine-in) and
+                        don't show on FloorMap until assigned to a table,
+                        so the sidebar is the ONLY place the operator can
+                        end the visit. Without this button such tickets
+                        appear permanently "stuck" in ACTIVE. */}
+                    {ticket.status === 'serving' && (
+                      <button
+                        className="btn-sm"
+                        style={{ background: '#22c55e', color: '#fff', border: 'none' }}
+                        onClick={() => complete(ticket.id)}
+                        aria-label={`${t('Complete')} ${ticket.ticket_number}`}
+                      >
+                        ✓ {t('Complete')}
+                      </button>
+                    )}
                     <button
                       className="btn-sm"
                       style={{ background: '#3b82f6', color: '#fff', border: 'none' }}
