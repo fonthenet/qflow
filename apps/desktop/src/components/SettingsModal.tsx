@@ -141,6 +141,156 @@ function TouchModeToggleCard({ t }: { t: (k: string, v?: any) => string }) {
   );
 }
 
+// Sync-mode picker — Cloud Sync vs Local + Backup. Per-Station setting,
+// switches live without a restart. Driving rationale: shops with bad
+// internet, or owners who want zero risk of cloud sync ghosting their
+// queue, can run the Station fully offline-first with a periodic safety
+// backup. Customer-facing cloud features (online booking, WhatsApp,
+// public displays) are hidden in Local + Backup mode — see the consumers
+// of useSyncMode().
+function SyncModeCard({ t }: { t: (k: string, v?: any) => string }) {
+  const [mode, setMode] = useState<'cloud' | 'local_backup'>('cloud');
+  const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [clickCount, setClickCount] = useState(0); // diagnostic — visible counter so we know the click handler ran
+
+  useEffect(() => {
+    const api = (window as any).qf?.syncMode;
+    if (!api?.get) return;
+    Promise.resolve()
+      .then(() => api.get())
+      .then((m: 'cloud' | 'local_backup') => { if (m) setMode(m); })
+      .catch((e: any) => {
+        // eslint-disable-next-line no-console
+        console.warn('[SyncModeCard] get failed:', e);
+      });
+    const off = api.onChanged?.((m: 'cloud' | 'local_backup') => setMode(m));
+    return () => { try { off?.(); } catch {} };
+  }, []);
+
+  const choose = async (target: 'cloud' | 'local_backup') => {
+    setClickCount((c) => c + 1); // always bumps — proves the handler fired
+    if (target === mode || busy) return;
+    setBusy(true);
+    setErrorMsg(null);
+    const previous = mode;
+    setMode(target);
+    try {
+      const api = (window as any).qf?.syncMode;
+      if (!api?.set) throw new Error('IPC bridge missing');
+      const result = await api.set(target);
+      if (result?.mode && result.mode !== target) {
+        setMode(result.mode);
+      }
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error('[SyncModeCard] set failed:', e);
+      setErrorMsg(e?.message ?? String(e));
+      setMode(previous);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renderCard = (value: 'cloud' | 'local_backup', icon: string, title: string, body: string, badges: string[]) => {
+    const active = mode === value;
+    return (
+      <button
+        key={value}
+        type="button"
+        onClick={() => choose(value)}
+        disabled={busy}
+        style={{
+          flex: 1, minWidth: 280,
+          textAlign: 'start',
+          padding: 14,
+          borderRadius: 10,
+          border: `2px solid ${active ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)'}`,
+          background: active ? 'rgba(59,130,246,0.1)' : 'transparent',
+          color: 'var(--text)',
+          cursor: busy ? 'wait' : 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          minHeight: 140,
+          opacity: busy && !active ? 0.6 : 1,
+          // Defensive: ensure the button captures clicks even if a parent
+          // sets pointer-events: none somewhere.
+          pointerEvents: 'auto',
+          position: 'relative',
+          zIndex: 1,
+        }}
+        aria-pressed={active}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none' }}>
+          <span style={{ fontSize: 18 }}>{icon}</span>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{title}</span>
+          {active && (
+            <span style={{ marginInlineStart: 'auto', fontSize: 10, fontWeight: 700, background: 'var(--primary, #3b82f6)', color: '#fff', padding: '2px 8px', borderRadius: 10 }}>
+              {t('Active')}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', lineHeight: 1.4, pointerEvents: 'none' }}>{body}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 'auto', pointerEvents: 'none' }}>
+          {badges.map((b) => (
+            <span key={b} style={{
+              fontSize: 10, fontWeight: 600,
+              background: 'var(--surface, #1e293b)', color: 'var(--text2, #94a3b8)',
+              padding: '2px 7px', borderRadius: 8,
+              border: '1px solid var(--border, #475569)',
+            }}>{b}</span>
+          ))}
+        </div>
+      </button>
+    );
+  };
+
+  return (
+    <div style={{ background: 'var(--surface2, #334155)', borderRadius: 10, padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>☁️ {t('Cloud sync mode')}</div>
+        {clickCount > 0 && (
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 10,
+            background: 'rgba(34,197,94,0.15)', color: '#22c55e',
+          }}>
+            clicks: {clickCount}{busy ? ' (working…)' : ''}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', lineHeight: 1.4, marginBottom: 12 }}>
+        {t('Choose how this Station talks to the cloud. Switch any time — no restart.')}
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {renderCard(
+          'cloud',
+          '☁️',
+          t('Cloud Sync'),
+          t('Real-time push and pull. Customers can book online, receive WhatsApp updates, and watch the public display. Best for normal operation with reliable internet.'),
+          [t('Online booking'), t('WhatsApp'), t('Public displays'), t('Multi-device')],
+        )}
+        {renderCard(
+          'local_backup',
+          '💾',
+          t('Local + Backup'),
+          t('Station runs entirely from local storage. A backup is uploaded to the cloud every 6 hours so your data is safe. Customer-facing online features are hidden in this mode.'),
+          [t('No realtime'), t('No online booking'), t('Backup every 6h'), t('Works offline')],
+        )}
+      </div>
+      {errorMsg && (
+        <div style={{
+          marginTop: 10, padding: '8px 12px', borderRadius: 6,
+          background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+          fontSize: 11, fontWeight: 600,
+        }}>
+          ⚠ {errorMsg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotificationsToggleCard({ t }: { t: (k: string, v?: any) => string }) {
   return (
     <StationPrefToggleCard
@@ -3183,6 +3333,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>
 
+                    <SyncModeCard t={t} />
                     <TouchModeToggleCard t={t} />
                     <MiniQueueToggleCard t={t} />
                     <NotificationsToggleCard t={t} />

@@ -11,12 +11,21 @@ import { TableSuggestionBar } from '../components/TableSuggestionBar';
 import { FloorMap } from '../components/FloorMap';
 import { KitchenDisplay } from '../components/KitchenDisplay';
 import { MenuEditor } from '../components/MenuEditor';
+import { OrderPad, type TicketItem as OrderPadTicketItem } from '../components/OrderPad';
+import { PaymentModal } from '../components/PaymentModal';
+import { QueueOrdersCanvas } from '../components/QueueOrdersCanvas';
+import {
+  TicketCompletionSummaryModal,
+  type CompletionSummaryData,
+} from '../components/TicketCompletionSummary';
 import { getCountryConfig, getOrgCountryConfig, type CountryConfig } from '../lib/country-config';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
+import { useSyncMode } from '../lib/use-sync-mode';
 import { speak as speakNatural, parseVoiceSettings } from '../lib/voice';
 import { arabicNumberToWords } from '@qflo/shared';
+import { resolveRestaurantServiceType, RESTAURANT_SERVICE_VISUALS, shouldShowServicePill } from '@qflo/shared';
 import { dateKeyInTz, getDayNameFromKey, getDayHours, CALENDAR_DAYS, migrateToIntakeFields, getFieldLabel, INTAKE_PRESETS, type IntakeField, type PresetKey } from '@qflo/shared';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
@@ -121,6 +130,12 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
+  // Cloud-only entry points (QR codes, track URL, WhatsApp/Messenger join
+  // QRs) are pointless in Local + Backup mode — the cloud doesn't have
+  // this ticket yet, so the URLs would 404 and the WhatsApp join QR
+  // would never connect. Hide them; show a clear local-mode notice instead.
+  const panelSyncMode = useSyncMode();
+  const isLocalModePanel = panelSyncMode === 'local_backup';
   const [bookingTab, setBookingTab] = useState<'walkin' | 'future'>('walkin');
   const [selectedDept, setSelectedDept] = useState(departments[0]?.[0] ?? '');
   const [selectedService, setSelectedService] = useState('');
@@ -151,7 +166,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
   // Dynamic customer data state — keyed by field key
   const [customerData, setCustomerData] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
+    const init: Record<string, string> = { party_size: '1' };
     if (prefill?.name) init.name = prefill.name;
     if (prefill?.phone) init.phone = prefill.phone;
     if (prefill?.notes) init.reason = prefill.notes;
@@ -180,6 +195,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       phone: prefill.phone ?? '',
       reason: prefill.notes ?? '',
       wilaya: displayW,
+      party_size: '1',
     });
     // Future-tab fields now proxy customerData so no separate sync needed.
   }, [prefill]);
@@ -588,22 +604,25 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '24px 16px 0', flexShrink: 0,
       }}>
-        {/* Segmented toggle */}
+        {/* Segmented toggle. In Local + Backup mode the Future Booking
+            tab is hidden — that flow POSTs to the cloud booking API and
+            persists in cloud only, which doesn't fit a local-first Station. */}
         <div style={{
           position: 'relative', display: 'flex',
           background: 'var(--surface2, #1e293b)', borderRadius: 8, padding: 2,
           flex: 1,
         }}>
-          {/* Sliding indicator */}
+          {/* Sliding indicator — full width when only walkin is shown */}
           <span style={{
             position: 'absolute', top: 2, bottom: 2,
-            left: bookingTab === 'walkin' ? 2 : '50%',
-            width: 'calc(50% - 2px)', borderRadius: 6,
+            left: isLocalModePanel ? 2 : (bookingTab === 'walkin' ? 2 : '50%'),
+            width: isLocalModePanel ? 'calc(100% - 4px)' : 'calc(50% - 2px)',
+            borderRadius: 6,
             background: '#8b5cf6',
             transition: 'left 0.2s ease',
             zIndex: 0,
           }} />
-          {(['walkin', 'future'] as const).map(tab => (
+          {(isLocalModePanel ? (['walkin'] as const) : (['walkin', 'future'] as const)).map(tab => (
             <button
               key={tab}
               onClick={() => setBookingTab(tab)}
@@ -746,20 +765,49 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           )}
 
-          {/* Service */}
+          {/* Service — quick-pick buttons (mirrors the Walk-in form).
+              One tap to set, no dropdown drill. Clearing futSlots +
+              futTime on change matches the dropdown's previous behavior
+              (any service change invalidates the picked slot). */}
           {futDept && futDeptServices.length > 0 && (
             <div>
               <label style={labelStyle}>{t('Service')} *</label>
-              <select
-                value={futService}
-                onChange={(e) => { setFutService(e.target.value); setFutSlots([]); setFutTime(''); }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
+              <div
+                role="radiogroup"
+                aria-label={t('Service')}
+                style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
               >
-                <option value="">{t('Select...')}</option>
-                {futDeptServices.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                {futDeptServices.map((s) => {
+                  const active = futService === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => { setFutService(s.id); setFutSlots([]); setFutTime(''); }}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 999,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: active ? 800 : 600,
+                        border: active
+                          ? '1px solid var(--primary, #6366f1)'
+                          : '1px solid var(--border)',
+                        background: active
+                          ? 'color-mix(in srgb, var(--primary, #6366f1) 18%, var(--surface))'
+                          : 'var(--surface)',
+                        color: active ? 'var(--primary, #6366f1)' : 'var(--text)',
+                        whiteSpace: 'nowrap',
+                        transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -911,16 +959,54 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             if (field.key === 'age' || field.key === 'party_size') return (
               <div key={`fut-${field.key}`}>
                 <label style={labelStyle}>{fLabelReq}</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={field.key === 'party_size' ? 50 : 150}
-                  value={val}
-                  onChange={(e) => setField(field.key, e.target.value)}
-                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
-                  placeholder={fLabel}
-                  style={inputStyle}
-                />
+                {field.key === 'party_size' ? (
+                  // Party size: 6 quick-pick chips + a small editable input
+                  // for larger groups. Faster to tap than typing for the 90%
+                  // case, still flexible for the 7+ outlier.
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {[1, 2, 3, 4, 5, 6].map((n) => {
+                      const selected = String(val) === String(n);
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setField('party_size', String(n))}
+                          aria-pressed={selected}
+                          style={{
+                            width: 36, height: 36, borderRadius: 8,
+                            border: `1.5px solid ${selected ? 'var(--primary, #6366f1)' : 'var(--border)'}`,
+                            background: selected ? 'var(--primary, #6366f1)' : 'transparent',
+                            color: selected ? '#fff' : 'var(--text)',
+                            fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                            transition: 'background 0.12s, border-color 0.12s',
+                          }}
+                        >{n}</button>
+                      );
+                    })}
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={val}
+                      onChange={(e) => setField('party_size', e.target.value)}
+                      onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                      placeholder={fLabel}
+                      aria-label={fLabel}
+                      style={{ ...inputStyle, width: 72, textAlign: 'center' }}
+                    />
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min={1}
+                    max={150}
+                    value={val}
+                    onChange={(e) => setField(field.key, e.target.value)}
+                    onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                    placeholder={fLabel}
+                    style={inputStyle}
+                  />
+                )}
               </div>
             );
 
@@ -984,7 +1070,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               {createdTicket.ticket_number}
             </div>
             {customerName.trim() && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{customerName.trim()}</div>}
-            {whatsappStatus && (
+            {whatsappStatus && !isLocalModePanel && (
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '3px 8px', borderRadius: 4, fontSize: 10, marginTop: 6,
@@ -998,7 +1084,21 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             )}
           </div>
 
-          {/* QR codes row */}
+          {/* QR codes row — only shown in Cloud mode. In Local + Backup mode
+              the track URL points at a cloud row that doesn't exist yet
+              (sync drains every 6h) and the WhatsApp/Messenger JOIN QRs
+              can't open the conversation either, so they would all just
+              confuse the customer. Hide them and show a small notice. */}
+          {isLocalModePanel ? (
+            <div style={{
+              padding: '8px 12px', borderRadius: 6,
+              background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+              color: '#f59e0b', fontSize: 11, fontWeight: 600, textAlign: 'center',
+              maxWidth: 280,
+            }}>
+              💾 {t('Local mode — no online tracking or WhatsApp for this ticket.')}
+            </div>
+          ) : (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
             {/* Track QR */}
             <div
@@ -1053,10 +1153,13 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               </div>
             )}
           </div>
+          )}
 
           {/* URL + New Ticket */}
           <div style={{ textAlign: 'center', width: '100%' }}>
-            <div style={{ fontSize: 9, color: 'var(--text3)', wordBreak: 'break-all', lineHeight: 1.3, marginBottom: 8 }}>{trackUrl}</div>
+            {!isLocalModePanel && (
+              <div style={{ fontSize: 9, color: 'var(--text3)', wordBreak: 'break-all', lineHeight: 1.3, marginBottom: 8 }}>{trackUrl}</div>
+            )}
             <button
               onClick={handleNewTicket}
               style={{
@@ -1091,20 +1194,51 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           )}
 
-          {/* Service */}
+          {/* Service — quick-pick buttons for fast walk-in intake.
+              One tap = service set, no dropdown drill. The active
+              selection is filled, others are outlined so the operator
+              sees the choice at a glance. "General" was removed because
+              the auto-select effect immediately bounces empty selections
+              back to the first real service, making the pill un-clickable. */}
           {selectedDept && deptServices.length > 0 && (
             <div>
               <label style={labelStyle}>{t('Service')}</label>
-              <select
-                value={selectedService}
-                onChange={(e) => setSelectedService(e.target.value)}
-                style={{ ...inputStyle, cursor: 'pointer' }}
+              <div
+                role="radiogroup"
+                aria-label={t('Service')}
+                style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
               >
-                <option value="">{t('General')}</option>
-                {deptServices.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                {deptServices.map((s) => {
+                  const active = (selectedService || '') === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setSelectedService(s.id)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 999,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: active ? 800 : 600,
+                        border: active
+                          ? '1px solid var(--primary, #6366f1)'
+                          : '1px solid var(--border)',
+                        background: active
+                          ? 'color-mix(in srgb, var(--primary, #6366f1) 18%, var(--surface))'
+                          : 'var(--surface)',
+                        color: active ? 'var(--primary, #6366f1)' : 'var(--text)',
+                        whiteSpace: 'nowrap',
+                        transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -1206,19 +1340,56 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             );
 
             // Age / Party size — numeric input with appropriate range.
+            // Party size shows 6 quick-pick chips + a small editable input
+            // so larger groups can still be typed.
             if (field.key === 'age' || field.key === 'party_size') return (
               <div key={field.key}>
                 <label style={labelStyle}>{fLabelReq}</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={field.key === 'party_size' ? 50 : 150}
-                  value={val}
-                  onChange={(e) => setField(field.key, e.target.value)}
-                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
-                  placeholder={fLabel}
-                  style={inputStyle}
-                />
+                {field.key === 'party_size' ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {[1, 2, 3, 4, 5, 6].map((n) => {
+                      const selected = String(val) === String(n);
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setField('party_size', String(n))}
+                          aria-pressed={selected}
+                          style={{
+                            width: 36, height: 36, borderRadius: 8,
+                            border: `1.5px solid ${selected ? 'var(--primary, #6366f1)' : 'var(--border)'}`,
+                            background: selected ? 'var(--primary, #6366f1)' : 'transparent',
+                            color: selected ? '#fff' : 'var(--text)',
+                            fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                            transition: 'background 0.12s, border-color 0.12s',
+                          }}
+                        >{n}</button>
+                      );
+                    })}
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={val}
+                      onChange={(e) => setField('party_size', e.target.value)}
+                      onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                      placeholder={fLabel}
+                      aria-label={fLabel}
+                      style={{ ...inputStyle, width: 72, textAlign: 'center' }}
+                    />
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min={1}
+                    max={150}
+                    value={val}
+                    onChange={(e) => setField(field.key, e.target.value)}
+                    onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                    placeholder={fLabel}
+                    style={inputStyle}
+                  />
+                )}
               </div>
             );
 
@@ -1706,6 +1877,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const { confirm: styledConfirm } = useConfirmDialog();
+  // Mode-aware UI: hide cloud-only entry points when the operator has
+  // switched the Station to Local + Backup. Re-renders live on mode change.
+  const syncMode = useSyncMode();
+  const isLocalMode = syncMode === 'local_backup';
   // ── DB recovery banner ────────────────────────────────────────────
   // Shown once per session when startup recovered from a corrupt local
   // DB. Dismiss is stored in sessionStorage so it doesn't re-appear on
@@ -1726,6 +1901,78 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  // Canvas-focused ticket id — the card the operator tapped to target keyboard shortcuts.
+  // Only used in the restaurant queue-canvas view; null when no card is focused.
+  const [canvasFocusedId, setCanvasFocusedId] = useState<string | null>(null);
+  // Collapsible takeout/delivery rail — docked to the right of the
+  // FloorMap so the operator can keep an eye on takeout + delivery
+  // orders without leaving the table view. Persists across reloads.
+  const [queueRailExpanded, setQueueRailExpanded] = useState<boolean>(() => {
+    try { return window.localStorage.getItem('qflo.queueRail.expanded') === 'true'; } catch { return false; }
+  });
+  const toggleQueueRail = () => {
+    setQueueRailExpanded((v) => {
+      const next = !v;
+      try { window.localStorage.setItem('qflo.queueRail.expanded', String(next)); } catch {}
+      return next;
+    });
+  };
+
+  // User-adjustable rail width. The FloorMap on the left flexes (flex:1) so
+  // shrinking/growing the rail auto-resizes the table canvas. Persisted in
+  // localStorage so the operator's preferred layout sticks across reloads.
+  const [queueRailWidth, setQueueRailWidth] = useState<number>(() => {
+    try {
+      const v = window.localStorage.getItem('qflo.queueRail.width');
+      const n = v ? parseInt(v, 10) : NaN;
+      return Number.isFinite(n) && n >= 280 ? n : 380;
+    } catch { return 380; }
+  });
+  const railDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const onRailResizeDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    railDragRef.current = { startX: e.clientX, startW: queueRailWidth };
+    const onMove = (ev: MouseEvent) => {
+      const start = railDragRef.current; if (!start) return;
+      // Rail is on the right; dragging LEFT grows it. Cap is dynamic:
+      // viewport width minus a 280px floor for the FloorMap on the left,
+      // so the operator can drag the rail well past 50% of the screen
+      // (previously hard-capped at 900 px which was ≈ half on most
+      // tablet/desktop widths).
+      const maxRail = Math.max(400, window.innerWidth - 280);
+      const next = Math.max(280, Math.min(maxRail, start.startW + (start.startX - ev.clientX)));
+      setQueueRailWidth(next);
+    };
+    const onUp = () => {
+      railDragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      try { window.localStorage.setItem('qflo.queueRail.width', String(queueRailWidth)); } catch { /* no-op */ }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [queueRailWidth]);
+  useEffect(() => {
+    try { window.localStorage.setItem('qflo.queueRail.width', String(queueRailWidth)); } catch { /* no-op */ }
+  }, [queueRailWidth]);
+  // PaymentModal for queue canvas tickets (mirrors FloorMap's payingFor).
+  // null = modal closed. Set to trigger payment capture before completing.
+  const [queuePayingFor, setQueuePayingFor] = useState<{
+    ticket: Ticket;
+    items: OrderPadTicketItem[];
+    total: number;
+  } | null>(null);
+  // Visit/order completion recap modal — fires after a queue-canvas
+  // ticket transitions to served (mirrors the FloorMap `completionSummary`
+  // for dine-in tables). Shows a thermal-receipt-style summary with timing,
+  // items, payment, and a Print button.
+  const [queueCompletionSummary, setQueueCompletionSummary] =
+    useState<CompletionSummaryData | null>(null);
+  // OrderPad state for tableless tickets — takeout / delivery flow.
+  // FloorMap-bound tickets open OrderPad through the table tile; this
+  // path is for active queue-view tickets (which never sit on a table)
+  // so the operator can attach menu items from the active-ticket panel.
+  const [orderPadFor, setOrderPadFor] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
     departments: {}, services: {}, desks: {},
   });
@@ -1736,6 +1983,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  // Ref on the booking panel root + ref on the "+ New Ticket" trigger so
+  // clicks elsewhere can dismiss the panel. Both refs are needed: clicking
+  // the trigger toggles the panel itself, so the outside-click handler must
+  // skip clicks that land on the trigger to avoid a same-tick close.
+  const bookingPanelRef = useRef<HTMLDivElement | null>(null);
+  const newTicketTriggerRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!showBookingModal) return;
+    const onDocDown = (ev: MouseEvent) => {
+      const panel = bookingPanelRef.current;
+      const trigger = newTicketTriggerRef.current;
+      const target = ev.target as Node;
+      if (panel && panel.contains(target)) return;
+      if (trigger && trigger.contains(target)) return;
+      // Allow clicks that land on portaled overlays the panel might open
+      // (date-picker popups, customer-search dropdowns, native browser
+      // chrome from `<select>`/`<input type=date>` etc.). Those render
+      // outside the panel ref but logically belong to it.
+      const closest = (target as HTMLElement).closest?.('[data-booking-overlay]');
+      if (closest) return;
+      setShowBookingModal(false);
+      setBookingPrefill(null);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      // Escape dismisses too. F6 already toggles via the keyboard handler
+      // above so we don't need to special-case it here.
+      if (ev.key === 'Escape') { setShowBookingModal(false); setBookingPrefill(null); }
+    };
+    // setTimeout 0 so the same pointerdown that opened the panel doesn't
+    // immediately close it (the listener attaches on the next tick).
+    const id = setTimeout(() => document.addEventListener('pointerdown', onDocDown), 0);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener('pointerdown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showBookingModal]);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [customerPhoneToOpen, setCustomerPhoneToOpen] = useState<string | undefined>();
   // showAppointmentsModal removed — unified into CalendarModal
@@ -1846,7 +2131,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
   // Main view: 'queue' shows active ticket/idle, 'calendar' shows embedded calendar,
   // 'customers' shows embedded customer list, 'kitchen' shows KDS (restaurant/café only).
-  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers' | 'kitchen'>('calendar');
+  // Default to 'queue' so launching the Station drops the operator straight into
+  // live order activity — Calendar / Customers / Kitchen are one tap away.
+  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers' | 'kitchen'>('queue');
   // Clear the "jump to appointment" target whenever we leave the calendar, so the
   // next Details click from the queue always triggers a fresh scroll/highlight
   // even when the same appointment is selected twice in a row.
@@ -2128,6 +2415,39 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       if (error) console.warn('[Station] desk status sync error:', error.message);
     })();
   }, [staffStatus, queuePaused, session.desk_id, session.staff_id]);
+
+  // ── Desk heartbeat ping ─────────────────────────────────────────
+  // POST /api/desk-heartbeat every 30s so the cloud's recover_stuck_tickets
+  // cron has accurate "is this desk alive" data. Without this, the cron
+  // can't tell offline desks from active ones, so it either over-requeues
+  // (treating every desk as stale) or never requeues (treating none as
+  // stale, depending on the row presence). Pinging puts the system into
+  // its designed state: desks with last_ping older than 3min are
+  // explicitly marked offline + their `called` tickets requeue.
+  // Best-effort — failures are logged at debug level only; the next tick
+  // tries again. Skipped while offline to avoid pointless network errors.
+  useEffect(() => {
+    if (!session.desk_id || !session.staff_id) return;
+    let cancelled = false;
+    const ping = async () => {
+      if (cancelled || !isOnline) return;
+      try {
+        await cloudFetch('https://qflo.net/api/desk-heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deskId: session.desk_id, staffId: session.staff_id }),
+        });
+      } catch {
+        // Silent — heartbeat is best-effort. The cron treats missing
+        // heartbeats as "unknown" rather than "definitely offline" thanks
+        // to the AND is_online = true guard, so a few missed pings are safe.
+      }
+    };
+    // Fire immediately on mount so the desk shows online without waiting 30s.
+    void ping();
+    const iv = setInterval(ping, 30_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [session.desk_id, session.staff_id, isOnline]);
 
   // ── Follow admin reassignment: if the logged-in staff has been moved
   // to a different desk via Business Admin, adopt that desk as the new
@@ -3078,6 +3398,23 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const callNext = async () => {
     // Double-click guard: prevent concurrent callNext invocations
     if (callingNextRef.current) return;
+
+    // Realtime-health gate. When the org has `realtime_required_for_calls`
+    // turned on (default for new businesses), refuse to call while we're
+    // offline — the operator's view of who-called-what is stale, and pushing
+    // a CALL on a stale snapshot is the #1 source of DESK_CONFLICT 409s.
+    // Walk-in tickets created locally still work; this only blocks the
+    // queue-driven Call Next button. Toggle off in Réservation & File for
+    // sites with intermittent Wi-Fi where waiting isn't acceptable.
+    const realtimeRequired = orgSettings?.realtime_required_for_calls !== false;
+    if (realtimeRequired && !isOnline) {
+      showToast(
+        t('Cannot call next while offline — realtime sync is required. Wait for the connection to come back, or disable the gate in settings.'),
+        'error',
+      );
+      return;
+    }
+
     callingNextRef.current = true;
     try {
       const result = await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
@@ -3103,6 +3440,46 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Serving'), ticket.id);
   };
 
+  // Takeout/delivery-only Call Next, used by the QueueOrdersCanvas rail.
+  // The generic db.callNext picks ANY waiting ticket regardless of service
+  // type — for restaurants, that means it can grab a dine-in ticket and
+  // call it without a table_id, leaving the ticket invisible (off the
+  // floor map AND off the takeout canvas, which only shows takeout/delivery).
+  // This filtered version walks waiting tickets in the same priority order
+  // and only calls the next takeout-or-delivery one.
+  const callNextTakeout = async () => {
+    if (callingNextRef.current) return;
+    if (!session.desk_id) {
+      showToast(t('Please select a desk first'), 'error');
+      return;
+    }
+    const realtimeRequired = orgSettings?.realtime_required_for_calls !== false;
+    if (realtimeRequired && !isOnline) {
+      showToast(
+        t('Cannot call next while offline — realtime sync is required. Wait for the connection to come back, or disable the gate in settings.'),
+        'error',
+      );
+      return;
+    }
+    // Pick the next takeout/delivery ticket from the already-sorted waiting
+    // list (the array is sorted by priority DESC + created_at ASC).
+    const next = waiting.find((tk) => {
+      const svcName = (tk.service_id && names.services?.[tk.service_id]) || '';
+      const svcType = resolveRestaurantServiceType(svcName);
+      return svcType === 'takeout' || svcType === 'delivery';
+    });
+    if (!next) {
+      showToast(t('No takeout or delivery orders waiting'), 'info');
+      return;
+    }
+    callingNextRef.current = true;
+    try {
+      await callSpecific(next.id);
+    } finally {
+      setTimeout(() => { callingNextRef.current = false; }, 500);
+    }
+  };
+
   const complete = (id: string) => {
     setActiveTicket(null); // Clear panel immediately
     // Flush any unsaved notes before completing
@@ -3111,6 +3488,156 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Completed'), ticket.id);
     showToast(t('{ticket} completed', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'success');
+  };
+
+  // Queue-canvas-specific complete: fetch items → if total > 0, open
+  // PaymentModal first (mirrors FloorMap finalizeComplete pattern).
+  // If no priced items, fall straight through to finalizeQueueComplete.
+  const handleQueueComplete = async (id: string) => {
+    try {
+      const rows: any[] = await (window as any).qf.ticketItems.list(id);
+      const items: OrderPadTicketItem[] = Array.isArray(rows)
+        ? rows.map((r: any) => ({
+            id: r.id,
+            ticket_id: r.ticket_id,
+            organization_id: r.organization_id ?? '',
+            menu_item_id: r.menu_item_id ?? null,
+            name: r.name ?? '',
+            price: r.unit_price ?? r.price ?? null,
+            qty: r.qty ?? 1,
+            note: r.note ?? null,
+            added_at: r.added_at ?? new Date().toISOString(),
+          }))
+        : [];
+      const total = items.reduce((s, i) => s + (i.price ?? 0) * i.qty, 0);
+      const ticket = tickets.find((tk) => tk.id === id);
+      if (!ticket) { complete(id); return; }
+      if (total > 0) {
+        setQueuePayingFor({ ticket, items, total });
+      } else {
+        await finalizeQueueComplete(ticket, items, null);
+      }
+    } catch {
+      complete(id);
+    }
+  };
+
+  // Run the actual served-state transition for a queue ticket AND open
+  // the completion-summary modal (Visit/Order complete). Called from both
+  // the no-payment path and PaymentModal.onPaid.
+  const finalizeQueueComplete = async (
+    ticket: Ticket,
+    items: OrderPadTicketItem[],
+    payment: { method: 'cash'; amount: number; tendered: number; change: number } | null,
+  ) => {
+    const completedAt = new Date().toISOString();
+    setActiveTicket(null);
+    const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
+    await updateTicketStatus(ticket.id, {
+      status: 'served',
+      completed_at: completedAt,
+      payment_status: payment ? 'paid' : null,
+      ...notesUpdate,
+    });
+    addActivity(ticket.ticket_number, translate(locale, 'Completed'), ticket.id);
+    showToast(t('{ticket} completed', { ticket: ticket.ticket_number }), 'success');
+
+    const svcName = names.services?.[ticket.service_id ?? ''] ?? '';
+    const svcType = resolveRestaurantServiceType(svcName);
+    const kind: 'takeout' | 'delivery' = svcType === 'delivery' ? 'delivery' : 'takeout';
+    const cd = (ticket.customer_data ?? {}) as Record<string, any>;
+    const itemsTotal = items.reduce((s, i) => s + (i.price ?? 0) * i.qty, 0);
+    setQueueCompletionSummary({
+      kind,
+      ticketNumber: ticket.ticket_number,
+      customerName: cd.name ?? cd.customer_name ?? null,
+      customerPhone: cd.phone ?? cd.customer_phone ?? null,
+      partySize: null,
+      tableCode: null,
+      calledAt: ticket.called_at ?? null,
+      seatedAt: null,
+      completedAt,
+      items: items.map((i) => ({
+        id: i.id,
+        name: i.name,
+        qty: i.qty,
+        price: i.price ?? null,
+        note: i.note ?? null,
+      })),
+      itemsTotal,
+      payment,
+    });
+  };
+
+  // Handler for per-item prep notes on queue canvas cards.
+  const handleQueueItemNote = async (itemId: string, note: string) => {
+    try {
+      const orgId = session?.organization_id ?? '';
+      await (window as any).qf.ticketItems.update(orgId, itemId, { note: note || null });
+    } catch (err) {
+      console.warn('[Station] handleQueueItemNote error', err);
+    }
+  };
+
+  // ── Online order Accept/Decline ─────────────────────────────────
+  // Online orders land in `pending_approval`. Operator clicks Accept (with
+  // ETA) or Decline (with reason) on the queue card; we POST to
+  // /api/orders/transition which updates the cloud ticket AND sends the
+  // customer a locale-aware WhatsApp message in one shot. Local SQLite
+  // gets the new status on the next pull / realtime tick — we do NOT
+  // also update locally to avoid double-write races.
+  const callOrderTransition = async (
+    ticketId: string,
+    body: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const token = await (window as any).qf?.auth?.getToken?.().catch(() => '');
+      const cloudUrl = 'https://qflo.net';
+      const res = await cloudFetch(`${cloudUrl}/api/orders/transition`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ticketId, ...body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Network error' };
+    }
+  };
+
+  const handleAcceptOrder = async (ticketId: string, etaMinutes: number) => {
+    const result = await callOrderTransition(ticketId, { action: 'accept', etaMinutes });
+    if (!result.ok) {
+      showToast(t('Could not accept order: {error}', { error: result.error ?? '' }), 'error');
+      return;
+    }
+    const tk = tickets.find((x) => x.id === ticketId);
+    showToast(t('Order {ticket} accepted (ETA ~{eta} min)', {
+      ticket: tk?.ticket_number ?? '',
+      eta: etaMinutes,
+    }), 'success');
+    addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Accepted'), ticketId);
+    // Optimistic refresh — cloud will catch up via realtime/pull but the
+    // operator wants to see the card flip to "serving" immediately.
+    fetchTickets();
+  };
+
+  const handleDeclineOrder = async (ticketId: string, reasonKey: string, note: string) => {
+    const result = await callOrderTransition(ticketId, { action: 'decline', declineReason: reasonKey, declineNote: note });
+    if (!result.ok) {
+      showToast(t('Could not decline order: {error}', { error: result.error ?? '' }), 'error');
+      return;
+    }
+    const tk = tickets.find((x) => x.id === ticketId);
+    showToast(t('Order {ticket} declined', { ticket: tk?.ticket_number ?? '' }), 'info');
+    addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Declined'), ticketId);
+    fetchTickets();
   };
 
   const noShow = async (id: string) => {
@@ -3146,6 +3673,71 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     if (t) {
       addActivity(t.ticket_number, translate(locale, 'Recalled'), t.id);
       announceTicket(t.ticket_number);
+    }
+  };
+
+  // Call a specific waiting ticket (out-of-order). Skips the FIFO queue
+  // — useful for restaurants where a takeout customer arrives before
+  // their position in line, or the operator wants to grab a delivery
+  // driver immediately. Mirrors callNext's effects: status → called,
+  // assigns this desk + staff, kicks off the call announcement.
+  const callSpecific = async (id: string) => {
+    const ticket = tickets.find((t) => t.id === id);
+    if (!ticket) return;
+    if (!session.desk_id) {
+      showToast(t('Please select a desk first'), 'error');
+      return;
+    }
+    await updateTicketStatus(id, {
+      status: 'called',
+      desk_id: session.desk_id,
+      called_by_staff_id: session.staff_id,
+      called_at: new Date().toISOString(),
+    });
+    addActivity(ticket.ticket_number, translate(locale, 'Called'), ticket.id);
+    announceTicket(ticket.ticket_number);
+  };
+
+  // Start serving a waiting ticket directly, skipping the call step.
+  // The state machine in @qflo/shared doesn't allow waiting → serving
+  // directly (waiting can only go to called/cancelled/no_show/...), so
+  // we chain two atomic transitions: waiting → called (CAS-protected),
+  // then called → serving. Both timestamps end up stamped consistently.
+  // No voice announcement — customer is already at the counter.
+  const serveSpecific = async (id: string) => {
+    const ticket = tickets.find((t) => t.id === id);
+    if (!ticket) return;
+    if (!session.desk_id) {
+      showToast(t('Please select a desk first'), 'error');
+      return;
+    }
+    const now = new Date().toISOString();
+    try {
+      // Step 1: waiting → called (atomic CAS — handles the case where
+      // another staff already called this ticket; in that case we don't
+      // forcibly take it).
+      const calledRow = await window.qf.db.updateTicket(id, {
+        status: 'called',
+        desk_id: session.desk_id,
+        called_by_staff_id: session.staff_id,
+        called_at: now,
+      });
+      if (!calledRow) {
+        showToast(t('Ticket already called by another desk'), 'error');
+        fetchTickets();
+        return;
+      }
+      // Step 2: called → serving with the same timestamps so the active-
+      // ticket panel and queue canvas immediately show "NOW SERVING".
+      await window.qf.db.updateTicket(id, {
+        status: 'serving',
+        serving_started_at: now,
+      });
+      addActivity(ticket.ticket_number, translate(locale, 'Serving'), ticket.id);
+      fetchTickets();
+    } catch (err: any) {
+      showToast(t('Failed to update ticket'), 'error');
+      console.error('[station] serveSpecific error:', err);
     }
   };
 
@@ -3264,6 +3856,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       const uuid = typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : ('10000000-1000-4000-8000-100000000000').replace(/[018]/g, (c) => (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16));
+      // In-house tickets (dine-in + takeout) skip the waiting → called →
+      // serving dance: the customer is physically here waiting for food
+      // — at a table, or at the counter. Nobody needs to be "called".
+      // Operator just marks Complete when the order is handed over.
+      // Delivery is the only restaurant flow that keeps the Call step,
+      // because the rider arrives later (not waiting in the room).
+      const svcName = (data.service_id && names.services?.[data.service_id]) || '';
+      const svcType = resolveRestaurantServiceType(svcName);
+      const initialStatus = (svcType === 'dine_in' || svcType === 'takeout') ? 'serving' : 'waiting';
       const result = await window.qf.db.createTicket({
         id: uuid,
         ticket_number: '', // auto-generated by IPC handler
@@ -3275,6 +3876,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         source: data.source,
         appointment_id: data.appointment_id ?? null,
         created_at: new Date().toISOString(),
+        initial_status: initialStatus,
       });
       console.log('[station] createTicket result:', JSON.stringify(result));
       fetchTickets();
@@ -3420,6 +4022,34 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
+  // Measured height of the .station-action-pills toolbar so the sidebar
+  // overlay can start BELOW it and not cover the action buttons.
+  const actionPillsRef = useRef<HTMLDivElement | null>(null);
+  const [actionPillsHeight, setActionPillsHeight] = useState<number>(56);
+  useEffect(() => {
+    const measure = () => {
+      const h = actionPillsRef.current?.getBoundingClientRect().height ?? 0;
+      if (h > 0) setActionPillsHeight(Math.round(h));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (actionPillsRef.current) ro.observe(actionPillsRef.current);
+    window.addEventListener('resize', measure);
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
+
+  // Track window width so we can clamp panel widths and avoid the floor
+  // map getting pushed off-screen when both the takeout rail and the queue
+  // sidebar are open at large widths.
+  const [windowWidth, setWindowWidth] = useState<number>(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1920
+  );
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1024px)');
     const handler = (e: MediaQueryListEvent) => { setIsSmallScreen(e.matches); if (!e.matches) setSidebarVisible(false); };
@@ -3554,14 +4184,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const isRestaurantFloor =
     orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe';
   // Per-device toggle: restaurants can switch between the floor map (tables
-  // grid) and the classic ticket queue view. Default 'tables' for restaurants;
-  // persisted in localStorage per office so each Station remembers its choice.
+  // grid) and the classic ticket queue view. Default 'queue' for restaurants
+  // so launching the Station drops the operator straight into the live order
+  // queue (walk-ins, takeout, delivery, dine-in cards). The Tables view is
+  // one tap away and persists in localStorage once the operator picks it.
   const floorViewStorageKey = `qflo.floorView.${session.office_id}`;
   const [floorView, setFloorView] = useState<'tables' | 'queue'>(() => {
     try {
       const v = typeof window !== 'undefined' ? window.localStorage.getItem(floorViewStorageKey) : null;
-      return v === 'queue' ? 'queue' : 'tables';
-    } catch { return 'tables'; }
+      return v === 'tables' ? 'tables' : 'queue';
+    } catch { return 'queue'; }
   });
   useEffect(() => {
     try { window.localStorage.setItem(floorViewStorageKey, floorView); } catch {}
@@ -3569,7 +4201,51 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // Non-restaurant orgs always render the classic queue; for restaurants we
   // only treat it as "floor mode" when the operator has tables view on.
   const effectiveRestaurantFloor = isRestaurantFloor && floorView === 'tables';
+
+  // In-flight takeout/delivery tickets for the queue canvas AND the
+  // docked rail on Tables view. Computed for any restaurant org
+  // regardless of floorView so the rail can show takeout cards while
+  // the operator is on the FloorMap (and the full canvas works in
+  // Queue view). Dine-in tickets are managed via the FloorMap, so we
+  // filter those out by checking whether their service name resolves
+  // to a tableless type.
+  const canvasTickets = useMemo(() => {
+    if (!isRestaurantFloor) return [];
+    return tickets.filter((tk) => {
+      // Include called / serving / parked AND fresh waiting tickets so the
+      // operator sees a new takeout/delivery order on the canvas the
+      // moment it's created — with Call + Serve buttons. Previously
+      // waiting tickets only lived in the right-rail and the canvas
+      // looked empty until someone manually called them.
+      // pending_approval is included so online orders awaiting Accept/Decline
+      // surface immediately on the canvas, not buried in another view.
+      const isOnCanvas =
+        tk.status === 'called' ||
+        tk.status === 'serving' ||
+        tk.status === 'waiting' || // covers fresh + parked
+        tk.status === 'pending_approval';
+      if (!isOnCanvas) return false;
+      // Resolve service type — takeout + delivery land on the canvas; dine_in goes to FloorMap
+      const svcName = names.services?.[tk.service_id ?? ''] ?? '';
+      const svcType = resolveRestaurantServiceType(svcName);
+      // Include ticket if it is explicitly takeout/delivery OR if no service (ambiguous — keep on canvas)
+      return svcType !== 'dine_in';
+    });
+  }, [tickets, isRestaurantFloor, floorView, names.services]);
+
   const waiting = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !t.parked_at), [tickets]);
+  // Takeout/delivery-only waiting count — used by the QueueOrdersCanvas
+  // "Call Next" button so it accurately reflects what that button can
+  // actually call (it skips dine-in). Without this, a queue full of dine-in
+  // tickets made the button look enabled but clicking did nothing.
+  const takeoutWaitingCount = useMemo(() => {
+    if (!isRestaurantFloor) return waiting.length;
+    return waiting.filter((tk) => {
+      const svcName = names.services?.[tk.service_id ?? ''] ?? '';
+      const svcType = resolveRestaurantServiceType(svcName);
+      return svcType === 'takeout' || svcType === 'delivery';
+    }).length;
+  }, [waiting, isRestaurantFloor, names.services]);
   const parked = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !!t.parked_at), [tickets]);
   const called = useMemo(
     () => (effectiveRestaurantFloor ? [] : tickets.filter((t) => t.status === 'called')),
@@ -3670,10 +4346,84 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showDevices, setShowDevices] = useState(false);
+  // Collapse state for the ACTIVE (called/serving/parked) section in the queue
+  // sidebar. Persists across reloads via localStorage so the operator's
+  // preference sticks. Defaults to expanded — operators usually want to see
+  // who's being served at a glance.
+  const [showActive, setShowActive] = useState<boolean>(() => {
+    try {
+      const v = window.localStorage.getItem('qflo.queueSidebar.showActive');
+      return v === null ? true : v === 'true';
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('qflo.queueSidebar.showActive', String(showActive)); } catch { /* no-op */ }
+  }, [showActive]);
   const visibleWaiting = useMemo(() => {
     if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
     return filteredWaiting.slice(0, VISIBLE_CHUNK);
   }, [filteredWaiting, showAllWaiting]);
+
+  // Group-by mode for the waiting list — operator can flip between
+  // a flat list (default) and grouped sections by service type
+  // (Dine in / Takeout / Delivery / Other) or by source channel
+  // (WhatsApp / Messenger / Kiosk / etc). Persists to localStorage so
+  // the operator's preferred view survives reloads.
+  type WaitingGroupBy = 'none' | 'service' | 'source';
+  const [waitingGroupBy, setWaitingGroupBy] = useState<WaitingGroupBy>(() => {
+    try {
+      const v = window.localStorage.getItem('qflo.waiting.groupBy');
+      return v === 'service' || v === 'source' ? v : 'none';
+    } catch { return 'none'; }
+  });
+  const cycleWaitingGroupBy = () => {
+    setWaitingGroupBy((prev) => {
+      const next: WaitingGroupBy = prev === 'none' ? 'service' : prev === 'service' ? 'source' : 'none';
+      try { window.localStorage.setItem('qflo.waiting.groupBy', next); } catch {}
+      return next;
+    });
+  };
+  // Build groups: returns an ordered list of { key, label, items }
+  // when grouping is on, or a single anonymous group when off.
+  const groupedWaiting = useMemo(() => {
+    if (waitingGroupBy === 'none') {
+      return [{ key: '', label: '', items: visibleWaiting }];
+    }
+    const buckets = new Map<string, { label: string; items: typeof visibleWaiting }>();
+    const labelFor = (t: any): { key: string; label: string } => {
+      if (waitingGroupBy === 'service') {
+        const svcName = (t.service_id && names.services?.[t.service_id]) || '';
+        const svcType = resolveRestaurantServiceType(svcName);
+        if (svcType === 'takeout') return { key: 'takeout', label: translate(locale, 'Takeout') };
+        if (svcType === 'delivery') return { key: 'delivery', label: translate(locale, 'Delivery') };
+        if (svcType === 'dine_in') return { key: 'dine_in', label: translate(locale, 'Dine in') };
+        return { key: 'other', label: svcName || translate(locale, 'Other') };
+      }
+      // by source
+      const src = String(t.source || 'walk_in');
+      const map: Record<string, string> = {
+        whatsapp: translate(locale, 'WhatsApp'),
+        messenger: translate(locale, 'Messenger'),
+        qr_code: translate(locale, 'QR Code'),
+        mobile_app: translate(locale, 'Mobile App'),
+        kiosk: translate(locale, 'Kiosk'),
+        in_house: translate(locale, 'In-House'),
+        walk_in: translate(locale, 'Walk-in'),
+        appointment: translate(locale, 'Booked'),
+      };
+      return { key: src, label: map[src] || src };
+    };
+    for (const t of visibleWaiting) {
+      const { key, label } = labelFor(t);
+      const bucket = buckets.get(key) ?? { label, items: [] as typeof visibleWaiting };
+      bucket.items.push(t);
+      buckets.set(key, bucket);
+    }
+    // Stable order: sort by label so groups are predictable
+    return Array.from(buckets.entries())
+      .sort(([, a], [, b]) => a.label.localeCompare(b.label))
+      .map(([key, { label, items }]) => ({ key, label, items }));
+  }, [visibleWaiting, waitingGroupBy, names.services, locale]);
 
   useEffect(() => {
     try {
@@ -3767,19 +4517,25 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       )}
       {/* Left panel — active ticket / calendar */}
       <div className="station-main" aria-label={t('Active tickets')} style={
+        // Style precedence (top to bottom = higher priority):
+        //   1. Non-queue views (calendar/customers) — full-bleed
+        //   2. Restaurant floor map — stretch + flush against the right rail
+        //      (must come BEFORE the showBookingModal branch so opening the
+        //      booking panel doesn't collapse the floor map's stretch
+        //      alignment, which made the table tiles shrink to a single
+        //      narrow column).
+        //   3. Booking modal open in queue view — kill right padding so the
+        //      booking panel sits flush against the queue sidebar.
+        //   4. Restaurant + queue view (no floor) — centered with scroll.
         mainView !== 'queue' && session.desk_id
           ? { padding: 0, justifyContent: 'flex-start', alignItems: 'stretch' }
-          : showBookingModal && mainView === 'queue'
-            ? { paddingRight: 0 }
-            : (orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe')
-              ? (effectiveRestaurantFloor
-                  ? { paddingLeft: 8, paddingRight: 8, alignItems: 'stretch', justifyContent: 'flex-start' }
-                  // Restaurant + Queue view: keep the panel centered but allow
-                  // vertical scroll so a tall active-ticket panel (number +
-                  // notes + seat chip + actions + toggle) isn't clipped when
-                  // the viewport is short.
-                  : { paddingTop: 64, paddingBottom: 24, overflowY: 'auto', justifyContent: 'flex-start' })
-              : undefined
+          : effectiveRestaurantFloor
+            ? { paddingLeft: 8, paddingRight: 0, alignItems: 'stretch', justifyContent: 'flex-start' }
+            : showBookingModal && mainView === 'queue'
+              ? { paddingRight: 0 }
+              : (orgSettings.business_category === 'restaurant' || orgSettings.business_category === 'cafe')
+                ? { paddingTop: 64, paddingBottom: 24, overflowY: 'auto', justifyContent: 'flex-start' }
+                : undefined
       }>
         {/* Timeline strip removed — Queue/Calendar tab toggle is sufficient */}
         {!session.desk_id ? (
@@ -3790,7 +4546,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         ) : (
           <>
           {/* Unified toolbar — always visible: pills-left (pause/status, idle only) + pills-right (tab capsule, always) */}
-          <div className="station-action-pills">
+          <div className="station-action-pills" ref={actionPillsRef}>
             <div className="pills-left">
               {/* Pause toggle + status — only when idle (no active ticket) */}
               {!activeTicket && staffStatus === 'available' && (
@@ -3940,22 +4696,27 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               {/* Primary action — standalone pill, visually distinct from the view tabs.
                   Opens the in-house booking side panel (walk-in + future in one form). */}
               <button
+                ref={newTicketTriggerRef}
                 onClick={() => setShowBookingModal(prev => !prev)}
                 title="F6"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5,
                   padding: '6px 14px', borderRadius: 20,
-                  border: `1.5px solid ${showBookingModal ? '#8b5cf6' : 'rgba(139,92,246,0.5)'}`,
-                  background: showBookingModal ? '#8b5cf6' : 'rgba(139,92,246,0.12)',
+                  border: `1.5px solid ${showBookingModal ? '#3b82f6' : 'rgba(59,130,246,0.5)'}`,
+                  background: showBookingModal ? '#3b82f6' : 'rgba(59,130,246,0.12)',
                   cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                  color: showBookingModal ? '#fff' : '#a78bfa',
+                  color: showBookingModal ? '#fff' : '#60a5fa',
                   transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
               >
                 + {t('New Ticket')} <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>F6</span>
               </button>
 
-              {/* QR Codes Hub — every public entry point for this business */}
+              {/* QR Codes Hub — every public entry point for this business.
+                  Hidden in Local + Backup mode: every link this opens
+                  (booking, tracking, public display) only works when the
+                  Station is pushing realtime to cloud. */}
+              {!isLocalMode && (
               <button
                 onClick={() => setShowQRHubModal(true)}
                 title={t('QR Codes')}
@@ -3972,6 +4733,25 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 📱 {t('QR Codes')}
               </button>
+              )}
+              {/* Compact Local Mode pill — keeps operators aware that
+                  cloud features are off so they don't expect WhatsApp /
+                  online booking to fire. */}
+              {isLocalMode && (
+                <span
+                  title={t('This Station runs offline. A backup is uploaded every 6 hours.')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '4px 10px', borderRadius: 20,
+                    border: '1.5px solid #f59e0b',
+                    background: 'rgba(245,158,11,0.12)',
+                    color: '#f59e0b',
+                    fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
+                  }}
+                >
+                  💾 {t('Local mode')}
+                </span>
+              )}
 
               {/* View-switcher capsule: Queue / Calendar / Customers */}
               <div style={{
@@ -4015,9 +4795,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   style={{
                     display: 'flex', alignItems: 'center', gap: 5,
                     padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
-                    background: mainView === 'calendar' ? 'rgba(99,102,241,0.2)' : 'transparent',
+                    background: mainView === 'calendar' ? 'rgba(59,130,246,0.2)' : 'transparent',
                     cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                    color: mainView === 'calendar' ? '#818cf8' : 'var(--text3, #64748b)',
+                    color: mainView === 'calendar' ? '#3b82f6' : 'var(--text3, #64748b)',
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
@@ -4058,9 +4838,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
-                      background: mainView === 'kitchen' ? 'rgba(239,68,68,0.18)' : 'transparent',
+                      background: mainView === 'kitchen' ? 'rgba(59,130,246,0.2)' : 'transparent',
                       cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                      color: mainView === 'kitchen' ? '#ef4444' : 'var(--text3, #64748b)',
+                      color: mainView === 'kitchen' ? '#3b82f6' : 'var(--text3, #64748b)',
                       transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                   >
@@ -4137,7 +4917,89 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             </div>
           )}
 
-          {activeTicket && !effectiveRestaurantFloor && (
+          {/* Restaurant queue canvas — shown when floorView=queue for restaurants */}
+          {isRestaurantFloor && mainView === 'queue' && floorView === 'queue' && (
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', width: '100%' }}>
+              <QueueOrdersCanvas
+                tickets={canvasTickets}
+                activeTicketId={canvasFocusedId ?? activeTicket?.id ?? null}
+                waitingCount={takeoutWaitingCount}
+                locale={locale}
+                serviceNames={names.services ?? {}}
+                currency={currencySymbol}
+                decimals={currencyDecimals}
+                queuePaused={queuePaused}
+                onFocus={(id) => {
+                  setCanvasFocusedId(id);
+                  // Also sync activeTicket for keyboard shortcuts
+                  const tk = tickets.find((x) => x.id === id);
+                  if (tk) setActiveTicket(tk);
+                }}
+                onCallNext={callNextTakeout}
+                onPark={park}
+                onResume={resumeParked}
+                onRecall={recall}
+                onAddItems={(tk) => setOrderPadFor(tk)}
+                onCall={callSpecific}
+                onStartServing={(id) => {
+                  // Smart serve: waiting → called → serving via serveSpecific,
+                  // called → serving via startServing.
+                  const tk = tickets.find((t) => t.id === id);
+                  if (tk && tk.status === 'waiting') serveSpecific(id);
+                  else startServing(id);
+                }}
+                onComplete={handleQueueComplete}
+                onNoShow={noShow}
+                onCancel={cancel}
+                onBan={banCustomer}
+                onTransfer={(id) => {
+                  const deskList = Object.entries(names.desks ?? {}).filter(([did]) => did !== session.desk_id);
+                  if (deskList.length === 0) { showToast(t('No other desks available'), 'error'); return; }
+                  // Focus the card first so TransferModal transfers the right ticket
+                  const tk = tickets.find((x) => x.id === id);
+                  if (tk) setActiveTicket(tk);
+                  setShowTransferModal(true);
+                }}
+                onRequeue={requeue}
+                onItemNote={handleQueueItemNote}
+                onAcceptOrder={handleAcceptOrder}
+                onDeclineOrder={handleDeclineOrder}
+              />
+            </div>
+          )}
+
+          {activeTicket && !effectiveRestaurantFloor && !(isRestaurantFloor && floorView === 'queue') && (() => {
+            // Service-type pill (Takeout / Delivery / Dine-in) — used
+            // in both called + serving branches. Restaurants only;
+            // takeout + delivery in particular need the visual cue
+            // because the active-ticket panel is the only surface
+            // where the operator handles them (FloorMap is dine-in).
+            const svcName = (activeTicket.service_id && names.services?.[activeTicket.service_id]) || '';
+            const svcType = resolveRestaurantServiceType(svcName);
+            const showSvcPill = isRestaurantFloor && shouldShowServicePill(svcType);
+            const svcVisuals = showSvcPill ? RESTAURANT_SERVICE_VISUALS[svcType] : null;
+            // Station's t() is keyed by English strings, not dotted i18n
+            // namespaces — pass the plain English label so it routes
+            // through the existing 'Takeout'/'Delivery' dictionary entries
+            // (added in apps/desktop/src/lib/i18n.ts) and renders FR/AR.
+            const svcEnglishLabel = svcType === 'takeout' ? 'Takeout'
+              : svcType === 'delivery' ? 'Delivery'
+              : svcType === 'dine_in' ? 'Dine in'
+              : '';
+            const ServicePill = svcVisuals && svcEnglishLabel ? (
+              <span
+                className="badge"
+                style={{
+                  background: 'var(--surface2)',
+                  color: 'var(--text2)',
+                  border: '1px solid var(--border)',
+                  fontWeight: 700,
+                }}
+              >
+                {t(svcEnglishLabel)}
+              </span>
+            ) : null;
+            return (
           <div
             className={`active-ticket-panel${isRestaurantFloor ? ' compact' : ''}`}
             style={{ display: mainView === 'queue' ? undefined : 'none' }}
@@ -4154,6 +5016,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {activeTicket.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
                   {activeTicket.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
                   {activeTicket.priority > 1 && <span className="badge priority">P{activeTicket.priority}</span>}
+                  {ServicePill}
                 </div>
                 {getTicketCustomerPhone(activeTicket.customer_data) ? (
                   <div
@@ -4296,6 +5159,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {activeTicket.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
                   {activeTicket.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
                   {activeTicket.priority > 1 && <span className="badge priority">P{activeTicket.priority}</span>}
+                  {ServicePill}
                 </div>
                 {getTicketCustomerPhone(activeTicket.customer_data) ? (
                   <div
@@ -4480,6 +5344,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)} title="F10">
                     {t('Complete Service')} <span className="shortcut-hint">F10</span>
                   </button>
+                  {/* Add items — restaurants only. Critical for takeout +
+                      delivery: those tickets never appear on the FloorMap
+                      (no table) so the only place the operator can attach
+                      menu items is here on the active-ticket panel. */}
+                  {isRestaurantFloor ? (
+                    <button
+                      className="btn-outline"
+                      onClick={() => setOrderPadFor(activeTicket)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <span style={{ fontSize: 16 }}>🛒</span>
+                      {t('Add items')}
+                    </button>
+                  ) : null}
                   <div className="secondary-actions">
                     <button className="btn-outline" onClick={() => park(activeTicket.id)}>
                       {t('Park')}
@@ -4498,32 +5376,192 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </>
             )}
           </div>
-          )}
+            );
+          })()}
 
           {/* Queue view: idle panel (or floor map for restaurants) + optional booking side panel.
               Restaurants/cafes render the floor map by default, but the operator
-              can toggle to the classic queue view via the Tables/Queue pill. */}
-          {(!activeTicket || effectiveRestaurantFloor) && (
+              can toggle to the classic queue view via the Tables/Queue pill.
+              When floorView=queue the QueueOrdersCanvas above handles the main area. */}
+          {(!activeTicket || effectiveRestaurantFloor) && !(isRestaurantFloor && floorView === 'queue') && (
           <div style={{
             display: mainView === 'queue' ? 'flex' : 'none',
-            flex: 1, width: '100%', alignItems: 'stretch', overflow: 'hidden',
+            flex: 1, minHeight: 0, width: '100%', alignItems: 'stretch', overflow: 'hidden',
           }}>
             {/* Floor map replaces the idle panel for restaurants/cafes when
                 the operator has "Tables" view selected. Otherwise (or for
                 non-restaurant orgs) the classic single-ticket idle panel is
                 shown. */}
             {effectiveRestaurantFloor ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <FloorMap
-                  officeId={session.office_id}
-                  staffId={session.staff_id}
-                  deskId={session.desk_id ?? null}
-                  locale={locale}
-                  orgId={session.organization_id ?? null}
-                  currency={currencySymbol}
-                  decimals={currencyDecimals}
-                  onOpenMenu={() => setShowMenuEditor(true)}
-                />
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'row', overflow: 'hidden', gap: 0 }}>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+                  <FloorMap
+                    officeId={session.office_id}
+                    staffId={session.staff_id}
+                    deskId={session.desk_id ?? null}
+                    locale={locale}
+                    orgId={session.organization_id ?? null}
+                    currency={currencySymbol}
+                    decimals={currencyDecimals}
+                    onOpenMenu={() => setShowMenuEditor(true)}
+                  />
+                </div>
+                {/* Right-docked takeout/delivery rail — collapses to a
+                    40px strip with a count chip when there are no in-flight
+                    tableless orders, expands to ~340px showing the full
+                    QueueOrdersCanvas. Operator never has to leave Tables
+                    view to glance at the takeout queue. */}
+                {canvasTickets.length > 0 || queueRailExpanded ? (
+                  (() => {
+                    // Clamp the takeout rail to whatever room is left after
+                    // the right Queue sidebar (when open) and a 280px floor-map
+                    // floor. Without this, dragging the rail wide and then
+                    // opening the Queue panel pushed the floor map off-screen.
+                    const sidebarUsed = sidebarCollapsed ? 0 : sidebarWidth;
+                    const maxRail = Math.max(280, windowWidth - sidebarUsed - 280);
+                    const effectiveRailWidth = queueRailExpanded
+                      ? Math.min(queueRailWidth, maxRail)
+                      : 44;
+                    return (
+                  <div
+                    style={{
+                      width: effectiveRailWidth,
+                      flexShrink: 0,
+                      minHeight: 0,
+                      borderInlineStart: '1px solid var(--border)',
+                      background: 'var(--surface)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      // Skip the width animation while dragging — feels laggy
+                      // otherwise. Toggle still animates because the click
+                      // handler fires synchronously and the drag doesn't.
+                      transition: railDragRef.current ? 'none' : 'width 0.18s ease',
+                      overflow: 'hidden',
+                      position: 'relative',
+                    }}
+                  >
+                    {/* Drag handle — only when expanded. Drag LEFT to widen
+                        the rail (and shrink the table canvas to its left). */}
+                    {queueRailExpanded && (
+                      <div
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={t('Resize panel')}
+                        onMouseDown={onRailResizeDown}
+                        title={t('Drag to resize')}
+                        style={{
+                          position: 'absolute', left: -3, top: 0, bottom: 0, width: 7,
+                          cursor: 'col-resize', zIndex: 5,
+                          background: 'linear-gradient(90deg, transparent 3px, var(--border, #475569) 3px, var(--border, #475569) 4px, transparent 4px)',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(90deg, transparent 2px, var(--primary, #3b82f6) 2px, var(--primary, #3b82f6) 5px, transparent 5px)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(90deg, transparent 3px, var(--border, #475569) 3px, var(--border, #475569) 4px, transparent 4px)'; }}
+                      />
+                    )}
+                    <button
+                      onClick={toggleQueueRail}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        // Bumped vertical padding from 8 → 14 because emoji
+                        // glyphs (🛍️ 🔒) have larger ascenders/descenders than
+                        // regular text and were being clipped by the rail's
+                        // overflow:hidden when packed too close to the top.
+                        padding: queueRailExpanded ? '14px 12px' : '14px 6px',
+                        minHeight: 48,
+                        flexShrink: 0,
+                        lineHeight: 1.2,
+                        background: 'transparent',
+                        border: 'none',
+                        borderBlockEnd: '1px solid var(--border)',
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.4,
+                        whiteSpace: 'nowrap',
+                        // When expanded: title + count cluster on the left,
+                        // chevron pinned to the right via marginInlineStart:auto
+                        // on the chevron itself. Drop space-between so the
+                        // count badge sits next to the title instead of getting
+                        // pushed all the way across the wide rail.
+                        justifyContent: queueRailExpanded ? 'flex-start' : 'center',
+                      }}
+                      title={queueRailExpanded ? t('Collapse') : t('Expand')}
+                    >
+                      {queueRailExpanded ? (
+                        <>
+                          <span>{'\u{1F6CD}\u{FE0F}'} {t('Takeout / Delivery')}</span>
+                          <span style={{
+                            background: 'var(--primary, #6366f1)', color: '#fff',
+                            borderRadius: 999, padding: '0 7px', fontSize: 10,
+                          }}>{canvasTickets.length}</span>
+                          <span style={{ marginInlineStart: 'auto', color: 'var(--text3)' }}>›</span>
+                        </>
+                      ) : (
+                        <span style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                        }}>
+                          <span style={{ fontSize: 14 }}>{'\u{1F6CD}\u{FE0F}'}</span>
+                          {canvasTickets.length > 0 && (
+                            <span style={{
+                              background: 'var(--primary, #6366f1)', color: '#fff',
+                              borderRadius: 999, padding: '0 6px', fontSize: 10, fontWeight: 800,
+                            }}>{canvasTickets.length}</span>
+                          )}
+                          <span style={{ color: 'var(--text3)', fontSize: 14 }}>‹</span>
+                        </span>
+                      )}
+                    </button>
+                    {queueRailExpanded && (
+                      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                        <QueueOrdersCanvas
+                          tickets={canvasTickets}
+                          activeTicketId={canvasFocusedId ?? activeTicket?.id ?? null}
+                          waitingCount={takeoutWaitingCount}
+                          locale={locale}
+                          serviceNames={names.services ?? {}}
+                          currency={currencySymbol}
+                          decimals={currencyDecimals}
+                          queuePaused={queuePaused}
+                          onFocus={(id) => {
+                            setCanvasFocusedId(id);
+                            const tk = tickets.find((x) => x.id === id);
+                            if (tk) setActiveTicket(tk);
+                          }}
+                          onCallNext={callNextTakeout}
+                          onPark={park}
+                          onResume={resumeParked}
+                          onRecall={recall}
+                          onAddItems={(tk) => setOrderPadFor(tk)}
+                          onCall={callSpecific}
+                          onStartServing={(id) => {
+                            const tk = tickets.find((t) => t.id === id);
+                            if (tk && tk.status === 'waiting') serveSpecific(id);
+                            else startServing(id);
+                          }}
+                          onComplete={handleQueueComplete}
+                          onNoShow={noShow}
+                          onCancel={cancel}
+                          onBan={banCustomer}
+                          onTransfer={(id) => {
+                            const deskList = Object.entries(names.desks ?? {}).filter(([did]) => did !== session.desk_id);
+                            if (deskList.length === 0) { showToast(t('No other desks available'), 'error'); return; }
+                            const tk = tickets.find((x) => x.id === id);
+                            if (tk) setActiveTicket(tk);
+                            setShowTransferModal(true);
+                          }}
+                          onRequeue={requeue}
+                          onItemNote={handleQueueItemNote}
+                          onAcceptOrder={handleAcceptOrder}
+                          onDeclineOrder={handleDeclineOrder}
+                        />
+                      </div>
+                    )}
+                  </div>
+                    );
+                  })()
+                ) : null}
               </div>
             ) : (
             <div className="idle-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -4700,7 +5738,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
         {/* In-House Booking — right side overlay, works across queue / calendar / customers views */}
         {showBookingModal && session.desk_id && (
-          <div style={{
+          <div
+            ref={bookingPanelRef}
+            style={{
             position: 'absolute', top: 42, right: 0, bottom: 0,
             width: bookingWidth,
             borderLeft: '1px solid var(--border)',
@@ -4801,6 +5841,61 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           />
         )}
 
+        {/* OrderPad for tableless tickets (takeout / delivery). Mirrors
+            the FloorMap-bound OrderPad except no table is passed —
+            ticket items still persist, kitchen display picks them up,
+            kitchen-ready alerts fire normally. */}
+        {orderPadFor && (
+          <OrderPad
+            orgId={session.organization_id}
+            staffId={session.staff_id}
+            ticketId={orderPadFor.id}
+            ticketNumber={orderPadFor.ticket_number}
+            tableCode={null}
+            locale={locale}
+            currency={currencySymbol}
+            decimals={currencyDecimals}
+            onClose={() => setOrderPadFor(null)}
+          />
+        )}
+
+        {/* PaymentModal for queue canvas (takeout/delivery) tickets.
+            Mirrors the FloorMap payingFor flow — opened by handleQueueComplete
+            when there are priced items to settle before marking served. */}
+        {queuePayingFor && session.organization_id && (
+          <PaymentModal
+            orgId={session.organization_id}
+            staffId={session.staff_id}
+            ticketId={queuePayingFor.ticket.id}
+            ticketNumber={queuePayingFor.ticket.ticket_number}
+            tableCode={null}
+            items={queuePayingFor.items}
+            locale={locale}
+            currency={currencySymbol}
+            decimals={currencyDecimals}
+            onClose={() => setQueuePayingFor(null)}
+            onPaid={(payment) => {
+              const snap = queuePayingFor;
+              setQueuePayingFor(null);
+              finalizeQueueComplete(snap.ticket, snap.items, payment);
+            }}
+          />
+        )}
+
+        {/* Completion summary modal — opened by finalizeQueueComplete after
+            a takeout/delivery ticket transitions to served. Mirrors the
+            FloorMap dine-in visit summary. Includes a Print receipt button
+            (uses the configured thermal printer when available). */}
+        <TicketCompletionSummaryModal
+          summary={queueCompletionSummary}
+          locale={locale}
+          currency={currencySymbol}
+          decimals={currencyDecimals}
+          orgName={orgSettings?.business_name ?? null}
+          staffName={session.full_name ?? null}
+          onClose={() => setQueueCompletionSummary(null)}
+        />
+
         {/* Customers Modal */}
         {showCustomersModal && (
           <CustomersModal
@@ -4850,11 +5945,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         aria-label={t('Queue Overview')}
         style={isSmallScreen ? undefined : { width: sidebarCollapsed ? 0 : sidebarWidth, minWidth: sidebarCollapsed ? 0 : undefined, overflow: sidebarCollapsed ? 'hidden' : undefined, borderLeft: sidebarCollapsed ? 'none' : undefined }}
       >
-        {/* Resize handle + toggle — overlaid on the left edge, zero layout width */}
+        {/* Resize handle + toggle — overlaid on the left edge, zero layout width.
+            The full-height vertical line shows in light gray and turns blue
+            on hover, matching the takeout rail / customer detail panel handles. */}
         {!isSmallScreen && !sidebarCollapsed && (
           <div
             onPointerDown={startSidebarResize}
-            style={{ position: 'absolute', top: 0, left: -3, width: 6, height: '100%', zIndex: 10, cursor: 'col-resize' }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('Resize panel')}
+            title={t('Drag to resize')}
+            style={{
+              position: 'absolute', top: 0, left: -3, width: 7, height: '100%',
+              zIndex: 10, cursor: 'col-resize',
+              background: 'linear-gradient(90deg, transparent 3px, var(--border, #475569) 3px, var(--border, #475569) 4px, transparent 4px)',
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(90deg, transparent 2px, var(--primary, #3b82f6) 2px, var(--primary, #3b82f6) 5px, transparent 5px)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(90deg, transparent 3px, var(--border, #475569) 3px, var(--border, #475569) 4px, transparent 4px)'; }}
           >
             <button
               type="button"
@@ -5370,6 +6478,30 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   aria-label={t('Search waiting queue by name, phone, or ticket number')}
                 />
               )}
+              {/* Group-by toggle — cycles None → Service → Source.
+                  Restaurants get the most value from "Service" grouping
+                  (Dine in / Takeout / Delivery sections). Source mode
+                  is useful for spotting WhatsApp-vs-walk-in patterns. */}
+              <button
+                onClick={cycleWaitingGroupBy}
+                title={t('Group by')}
+                aria-label={t('Group by')}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 14,
+                  border: '1.5px solid var(--border)',
+                  background: waitingGroupBy === 'none' ? 'transparent' : 'var(--surface2)',
+                  cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                  color: waitingGroupBy === 'none' ? 'var(--text3)' : 'var(--text)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {'\u{1F4D1}'} {waitingGroupBy === 'none'
+                  ? t('Group')
+                  : waitingGroupBy === 'service'
+                    ? t('By Service')
+                    : t('By Source')}
+              </button>
               <button
                 onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
                 title={t('Broadcast')}
@@ -5377,18 +6509,33 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
                   padding: '3px 10px', borderRadius: 14,
-                  border: '1.5px solid rgba(14,165,233,0.4)',
-                  background: 'rgba(14,165,233,0.12)',
+                  border: '1.5px solid var(--border)',
+                  background: 'transparent',
                   cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                  color: '#0ea5e9', whiteSpace: 'nowrap',
+                  color: 'var(--text2)', whiteSpace: 'nowrap',
                 }}
               >
-                {'\u{1F4E2}'} {t('Broadcast')}
+                {'\u{1F4E2}'}
               </button>
             </div>
           </div>
           <div className="ticket-list" role="list" aria-label={t('Waiting tickets')}>
-            {visibleWaiting.map((ticket, i) => {
+            {groupedWaiting.flatMap((group) => [
+              ...(group.label ? [(
+                <div
+                  key={`group-${group.key}`}
+                  style={{
+                    fontSize: 10, fontWeight: 800, color: 'var(--text3)',
+                    textTransform: 'uppercase', letterSpacing: 0.5,
+                    padding: '8px 4px 4px',
+                    borderTop: '1px solid var(--border)',
+                    marginTop: 4,
+                  }}
+                >
+                  {group.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>· {group.items.length}</span>
+                </div>
+              )] : []),
+              ...group.items.map((ticket, i) => {
               // Office-wide position in the canonically-sorted waiting list.
               // The full `waiting` array is sorted by priority DESC + created_at ASC,
               // matching the canonical getQueuePosition() formula on the server.
@@ -5419,7 +6566,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   )}
                 </div>
                 <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0, ...waitStyle(ticket.created_at) }}>{formatWait(ticket.created_at)}</span>
-                <div className="queue-item-badges">
+                {/* Tags column — only renders pills that carry real
+                    signal. "In-House" / "Remote" / generic "walk-in" are
+                    the defaults for restaurants; surfacing them on every
+                    row was pure noise. We keep priority + booking +
+                    explicit non-default channels (WhatsApp, Messenger,
+                    Kiosk, QR, Mobile) and the service type. */}
+                <div className="queue-item-badges" style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
                   {(ticket.appointment_id || ticket.source === 'appointment') && <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {translate(locale, 'Booked')}</span>}
                   {ticket.source === 'whatsapp' && <span className="badge whatsapp">{translate(locale, 'WhatsApp')}</span>}
@@ -5427,14 +6580,115 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}
                   {ticket.source === 'mobile_app' && <span className="badge mobile-app">{translate(locale, 'Mobile App')}</span>}
                   {ticket.source === 'kiosk' && <span className="badge kiosk">{translate(locale, 'Kiosk')}</span>}
-                  {ticket.source === 'in_house' && <span className="badge in-house">{translate(locale, 'In-House')}</span>}
-                  {ticket.is_remote && (!ticket.source || ticket.source === 'walk_in') && <span className="badge remote">{translate(locale, 'Remote')}</span>}
+                  {/* In-House / Remote / walk_in dropped — they're the
+                      default and add visual noise on every row. */}
+                  {isRestaurantFloor && (() => {
+                    const svcName = (ticket.service_id && names.services?.[ticket.service_id]) || '';
+                    const svcType = resolveRestaurantServiceType(svcName);
+                    if (svcType === 'other') return null;
+                    const lbl = svcType === 'takeout' ? 'Takeout'
+                      : svcType === 'delivery' ? 'Delivery' : 'Dine in';
+                    return (
+                      <span
+                        className="badge"
+                        style={{
+                          background: 'var(--surface2)',
+                          color: 'var(--text2)',
+                          border: '1px solid var(--border)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {translate(locale, lbl)}
+                      </span>
+                    );
+                  })()}
                 </div>
-                {/* Priority upgrade */}
+                {/* Actions — Call + Serve side-by-side as compact icon
+                    buttons (not stacked) to keep the row visually quiet.
+                    Tooltip on hover gives the verbose label. Priority
+                    chevron sits next to them, smaller than the action
+                    buttons so it doesn't compete for attention.
+                    For restaurant dine-in tickets we hide these — those
+                    tickets must be served via a table tile on the floor
+                    map (which assigns a table_id at the same time). The
+                    sidebar buttons would set status=serving without a
+                    table binding and the ticket would vanish from both
+                    the waiting list and the floor map. */}
+                {(() => {
+                  const svcName = (ticket.service_id && names.services?.[ticket.service_id]) || '';
+                  const svcType = isRestaurantFloor ? resolveRestaurantServiceType(svcName) : 'other';
+                  const isRestaurantDineIn = isRestaurantFloor && svcType === 'dine_in';
+                  if (isRestaurantDineIn) {
+                    return (
+                      <div
+                        style={{
+                          fontSize: 10, fontWeight: 700, color: 'var(--text3)',
+                          padding: '4px 8px', borderRadius: 6,
+                          border: '1px dashed var(--border)',
+                          flexShrink: 0, whiteSpace: 'nowrap',
+                        }}
+                        title={t('Use the floor map to seat this party')}
+                      >
+                        {t('→ Floor')}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <button
+                        className="btn-sm"
+                        style={{
+                          padding: '5px 9px',
+                          background: 'rgba(34, 197, 94, 0.14)',
+                          border: '1px solid rgba(34, 197, 94, 0.45)',
+                          color: '#22c55e',
+                          cursor: 'pointer',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          lineHeight: 1,
+                          minWidth: 28,
+                        }}
+                        title={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
+                        onClick={(e) => { e.stopPropagation(); callSpecific(ticket.id); }}
+                        aria-label={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
+                      >
+                        📢
+                      </button>
+                      <button
+                        className="btn-sm"
+                        style={{
+                          padding: '5px 9px',
+                          background: 'rgba(59, 130, 246, 0.14)',
+                          border: '1px solid rgba(59, 130, 246, 0.45)',
+                          color: '#3b82f6',
+                          cursor: 'pointer',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          lineHeight: 1,
+                          minWidth: 28,
+                        }}
+                        title={`${translate(locale, 'Serve')} ${ticket.ticket_number}`}
+                        onClick={(e) => { e.stopPropagation(); serveSpecific(ticket.id); }}
+                        aria-label={`${translate(locale, 'Serve')} ${ticket.ticket_number}`}
+                      >
+                        ▶
+                      </button>
+                    </div>
+                  );
+                })()}
+                {/* Priority upgrade — kept but de-emphasized */}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <button
                     className="btn-sm"
-                    style={{ padding: '2px 6px', fontSize: 13, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text3)', cursor: 'pointer', borderRadius: 4, lineHeight: 1 }}
+                    style={{ padding: '2px 5px', fontSize: 11, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text3)', cursor: 'pointer', borderRadius: 4, lineHeight: 1 }}
                     title={translate(locale, 'Set Priority')}
                     onClick={(e) => { e.stopPropagation(); setPriorityDropdownId(priorityDropdownId === ticket.id ? null : ticket.id); }}
                     aria-label={`${translate(locale, 'Set Priority')} ${ticket.ticket_number}`}
@@ -5463,24 +6717,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     </div>
                   )}
                 </div>
-                {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
-                  effectiveRestaurantFloor ? null : (
-                    <button
-                      className="btn-sm btn-call"
-                      aria-label={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
-                      onClick={() => updateTicketStatus(ticket.id, {
-                        status: 'called',
-                        desk_id: session.desk_id,
-                        called_by_staff_id: session.staff_id,
-                        called_at: new Date().toISOString(),
-                      })}
-                    >
-                      {translate(locale, 'Call')}
-                    </button>
-                  )
-                )}
+                {/* Old "Call" button removed — the green 📢 Call button above
+                    handles out-of-order calling without the activeTicket gate. */}
               </div>
-            );})}
+            );}),
+            ])}
             {!showAllWaiting && filteredWaiting.length > VISIBLE_CHUNK && (
               <button
                 onClick={() => setShowAllWaiting(true)}
@@ -5521,7 +6762,27 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         </div>
 
         <div className="sidebar-section queue-list queue-active">
-          <h4>{t('Active ({count})', { count: called.length + serving.length + parked.length })}</h4>
+          <button
+            type="button"
+            onClick={() => setShowActive((v) => !v)}
+            aria-expanded={showActive}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              width: '100%', padding: '6px 0', border: 'none', background: 'transparent',
+              cursor: 'pointer', userSelect: 'none',
+            }}
+          >
+            <h4 style={{ margin: 0, pointerEvents: 'none' }}>
+              {t('Active ({count})', { count: called.length + serving.length + parked.length })}
+            </h4>
+            <span style={{
+              fontSize: 12, color: 'var(--text3)',
+              minWidth: 24, minHeight: 24,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'none',
+            }}>{showActive ? '▲' : '▼'}</span>
+          </button>
+          {showActive && (
           <div className="ticket-list" role="list" aria-label={t('Active tickets')}>
             {[...called, ...serving].map((ticket) => (
               <div key={ticket.id} className={`queue-item ${ticket.desk_id === session.desk_id ? 'mine' : ''}`} role="listitem"
@@ -5596,6 +6857,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </div>
             ))}
           </div>
+          )}
         </div>
         </>)}
 

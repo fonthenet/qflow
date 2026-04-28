@@ -272,6 +272,17 @@ contextBridge.exposeInMainWorld('qf', {
     setEnabled: (enabled: boolean) => ipcRenderer.invoke('touch-mode:set-enabled', enabled),
   },
 
+  syncMode: {
+    get: () => ipcRenderer.invoke('sync-mode:get') as Promise<'cloud' | 'local_backup'>,
+    set: (mode: 'cloud' | 'local_backup') =>
+      ipcRenderer.invoke('sync-mode:set', mode) as Promise<{ ok: boolean; mode: 'cloud' | 'local_backup'; changed: boolean }>,
+    onChanged: (callback: (mode: 'cloud' | 'local_backup') => void) => {
+      const handler = (_: any, mode: 'cloud' | 'local_backup') => callback(mode);
+      ipcRenderer.on('sync-mode:changed', handler);
+      return () => ipcRenderer.removeListener('sync-mode:changed', handler);
+    },
+  },
+
   tickets: {
     onChange: (callback: () => void) => {
       const handler = () => callback();

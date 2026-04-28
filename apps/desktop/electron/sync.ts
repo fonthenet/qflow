@@ -98,6 +98,23 @@ export class SyncEngine {
   private realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   private autoResolveInterval: ReturnType<typeof setInterval> | null = null;
+  private lastReconcileAt = 0;
+  private static RECONCILE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  // ── Sync mode (cloud vs local_backup) ──
+  // 'local_backup' Stations run entirely from SQLite; sync only runs as a
+  // periodic safety-net upload (every BACKUP_SNAPSHOT_INTERVAL_MS) and
+  // pullLatest / Realtime are disabled. 'cloud' is the default real-time
+  // mode. Mode is per-Station, persisted in the session key-value table,
+  // toggled live via applyModeChange() — no restart needed.
+  private lastBackupAt = 0;
+  private static BACKUP_SNAPSHOT_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6h
+  private getMode(): 'cloud' | 'local_backup' {
+    try {
+      const row = this.db.prepare("SELECT value FROM session WHERE key = 'sync_mode'").get() as { value?: string } | undefined;
+      return row?.value === 'local_backup' ? 'local_backup' : 'cloud';
+    } catch { return 'cloud'; }
+  }
 
   // ── Rapid retry tracking for pushImmediate ──
   private rapidRetryInFlight = new Set<string>();
@@ -206,6 +223,16 @@ export class SyncEngine {
       if (this.isOnline) {
         this.triggerAutoResolve();
         this.reconcileLPrefixTickets();
+        // Verify-against-cloud reconciliation runs every 5 minutes, not every
+        // minute — it makes a network call so we don't want to hammer Supabase
+        // when the queue is healthy. Self-heals stuck UPDATE rows by querying
+        // cloud truth: if the cloud row is past or beyond our queued state,
+        // discard the row instead of letting it retry forever.
+        const now = Date.now();
+        if (now - this.lastReconcileAt >= SyncEngine.RECONCILE_INTERVAL_MS) {
+          this.lastReconcileAt = now;
+          void this.reconcileStuckSyncItems();
+        }
       }
       this.recoverStuckItems();
       this.revertStaleCalled();
@@ -292,12 +319,42 @@ export class SyncEngine {
     setSyncNotifier(null);
   }
 
+  /**
+   * Live mode-change hook. The IPC handler in main.ts persists the new
+   * mode in the session table and then calls this to apply runtime
+   * effects without a restart:
+   *   - cloud → local_backup: drop the realtime WS, run one final drain
+   *     of anything pending so the queue is empty entering local mode.
+   *   - local_backup → cloud: reset the backup throttle, reconnect
+   *     realtime, kick a sync + pull so anything that accumulated locally
+   *     gets pushed and any divergent cloud state is pulled back.
+   */
+  applyModeChange(target: 'cloud' | 'local_backup') {
+    logger.info('sync.applyModeChange', 'Mode change requested', { target });
+    if (target === 'local_backup') {
+      this.disconnectRealtime();
+      // One final drain so we don't carry the existing backlog into the
+      // first backup window. lastBackupAt stays at 0, so this drain runs
+      // ungated; subsequent syncNow ticks will be gated by the 6h window.
+      void this.syncNow();
+    } else {
+      // Switching back to cloud: reset throttle and resync from scratch.
+      this.lastBackupAt = 0;
+      void this.connectRealtime();
+      void this.syncNow();
+      void this.pullLatest();
+    }
+  }
+
   // ── Supabase Realtime: instant cloud→station push ──────────────
   // When mobile/web updates a ticket in Supabase, the station hears it immediately
   // via WebSocket instead of waiting for the next 5s poll.
 
   private async connectRealtime() {
     if (this.realtimeWs) return; // already connected
+    // local_backup mode: don't subscribe to realtime — Station is its own
+    // source of truth, no incoming cloud changes are wanted.
+    if (this.getMode() === 'local_backup') return;
 
     const sessionRow = this.db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
     const session = sessionRow ? JSON.parse(sessionRow.value) : null;
@@ -999,6 +1056,11 @@ export class SyncEngine {
    */
   async pushImmediate(syncQueueId: string, _retryAttempt = 0) {
     if (!this.isOnline) return;
+    // local_backup mode: don't push individual rows on enqueue. The row
+    // sits in sync_queue and goes out as part of the next scheduled
+    // backup drain. This is what makes the mode "feel offline" — no
+    // network traffic per ticket, no per-row failures lighting up the UI.
+    if (this.getMode() === 'local_backup') return;
 
     const item = this.db.prepare(
       "SELECT * FROM sync_queue WHERE id = ? AND synced_at IS NULL"
@@ -1354,6 +1416,25 @@ export class SyncEngine {
     if (!this.isOnline) return;
     if (!this.checkCircuitBreaker()) return; // circuit breaker open — skip
 
+    // ── Local + Backup mode: only run when the backup window is due ──
+    // Stations in local_backup mode don't push in real time. Instead, the
+    // sync_queue accumulates locally and we drain it once per backup
+    // interval (default 6h) as a safety-net upload to cloud. Between
+    // drains, syncNow is a no-op so the diagnostics panel stays quiet
+    // and the network is left alone.
+    const mode = this.getMode();
+    if (mode === 'local_backup') {
+      const now = Date.now();
+      if (now - this.lastBackupAt < SyncEngine.BACKUP_SNAPSHOT_INTERVAL_MS) {
+        return; // still inside the backup window — skip
+      }
+      // Window elapsed: continue into the regular drain loop, then mark
+      // the backup as complete at the bottom of this function.
+      logger.info('sync.syncNow', 'Local+Backup window elapsed — running scheduled drain', {
+        sinceLastBackupMs: now - this.lastBackupAt,
+      });
+    }
+
     // Watchdog: promote any row stuck at attempts=0 for >30s BEFORE
     // selecting. Guarantees no item can silently sit unprocessed.
     const thirtySecAgo = new Date(Date.now() - 30 * 1000).toISOString();
@@ -1483,9 +1564,38 @@ export class SyncEngine {
         const result = await this.replayMutation(item, authToken);
 
         if (result.status === 409) {
-          // Desk conflict — transient, don't count as failure.
-          // The prerequisite (COMPLETE) should be ahead in the queue and will sync first.
-          logger.info('sync.syncNow', 'Desk conflict — skipping for now, will retry next cycle', { recordId: item.record_id });
+          // Desk conflict — transient, don't count as a hard failure
+          // (no circuit-breaker tick), but we DO need to (a) bump
+          // last_error every cycle so diagnostics shows the real reason
+          // a row is sitting (not the stale 'watchdog:promoted'), and
+          // (b) cap the retry count so a row whose prerequisite COMPLETE
+          // is permanently lost can't sit looping for hours. After
+          // CONFLICT_MAX cycles we treat the CALL as a ghost — the
+          // operator has long since moved on, the desk in cloud is
+          // someone else's, our update is stale and pointless.
+          const CONFLICT_MAX = 12; // ~12 cycles ≈ 1 min of retries
+          const newAttempts = (item.attempts ?? 0) + 1;
+          if (newAttempts >= CONFLICT_MAX) {
+            this.db.prepare(
+              "UPDATE sync_queue SET synced_at = ?, last_error = ? WHERE id = ? AND synced_at IS NULL"
+            ).run(
+              new Date().toISOString(),
+              `GHOST_CALL: superseded after ${newAttempts} desk conflicts`,
+              item.id,
+            );
+            logger.warn('sync.syncNow', 'Auto-discarded ghost CALL after conflict cap', {
+              recordId: item.record_id,
+              attempts: newAttempts,
+            });
+          } else {
+            this.db.prepare(
+              "UPDATE sync_queue SET attempts = ?, last_error = ? WHERE id = ?"
+            ).run(newAttempts, `DESK_CONFLICT × ${newAttempts}`, item.id);
+            logger.info('sync.syncNow', 'Desk conflict — will retry next cycle', {
+              recordId: item.record_id,
+              attempts: newAttempts,
+            });
+          }
           continue;
         }
 
@@ -1549,9 +1659,16 @@ export class SyncEngine {
           // flag THIS item only and move on. Other items in the batch
           // (e.g. ticket_events that use anon-key inserts, or items that
           // happen to hit a server that revalidated) may still succeed.
+          // Counter tells the operator at a glance how persistent the
+          // auth issue is ("AUTH_EXPIRED × 47" vs a one-off blip).
+          const authBumpAttempts = (item.attempts ?? 0) + 1;
           this.db.prepare(
-            "UPDATE sync_queue SET last_error = ? WHERE id = ? AND synced_at IS NULL"
-          ).run('AUTH_EXPIRED: re-login required', item.id);
+            "UPDATE sync_queue SET attempts = ?, last_error = ? WHERE id = ? AND synced_at IS NULL"
+          ).run(
+            authBumpAttempts,
+            `AUTH_EXPIRED × ${authBumpAttempts}: re-login required`,
+            item.id,
+          );
           authExpiredCount++;
           continue;
         }
@@ -1575,21 +1692,63 @@ export class SyncEngine {
       } catch (err: any) {
         // Non-auth error: exponential backoff
         const newAttempts = (item.attempts ?? 0) + 1;
+        const errMsg = err?.message ?? 'Unknown error';
+
+        // ── Soft-fail cap for "cloud already past us" classes ──
+        // When the cloud row has already advanced past the local
+        // target state (e.g. ticket is `served` in cloud but we have
+        // a queued CALL because the operator clicked Call before sync
+        // caught up), the PATCH matches 0 rows. Without a cap, the
+        // critical-status carve-out in the SELECT keeps the row alive
+        // indefinitely — every cycle re-throws "PATCH 0 rows for
+        // called — needs retry". Same shape as the desk-conflict 409:
+        // the local intent is permanently superseded; auto-discard
+        // after a small cap and surface a clear ghost label.
+        const SOFT_FAIL_CAP = 12; // ~12 cycles ≈ 1 min after backoff kicks in
+        const isPatchGhost = /PATCH 0 rows/i.test(errMsg);
+        if (isPatchGhost && newAttempts >= SOFT_FAIL_CAP) {
+          this.db.prepare(
+            "UPDATE sync_queue SET synced_at = ?, last_error = ?, attempts = ? WHERE id = ? AND synced_at IS NULL"
+          ).run(
+            new Date().toISOString(),
+            `GHOST_PATCH: cloud row past target state after ${newAttempts} attempts`,
+            newAttempts,
+            item.id,
+          );
+          logger.warn('sync.syncNow', 'Auto-discarded ghost PATCH after soft-fail cap', {
+            recordId: item.record_id,
+            attempts: newAttempts,
+            error: errMsg.slice(0, 120),
+          });
+          continue; // don't tick circuit breaker — this is a stale-intent
+        }
+
         const delayMs = Math.min(15000 * Math.pow(2, newAttempts - 1), 300000);
         const nextRetry = new Date(Date.now() + delayMs).toISOString();
+        // Tag the error message with a counter for ghost-class failures
+        // so the diagnostics panel shows the recurrence ("PATCH 0 rows × 8")
+        // rather than a stale message that looks like a one-off.
+        const taggedErr = isPatchGhost
+          ? `PATCH 0 rows × ${newAttempts} (ghost): ${errMsg.slice(0, 120)}`
+          : errMsg;
         this.db.prepare(
           "UPDATE sync_queue SET attempts = ?, last_error = ?, next_retry_at = ? WHERE id = ?"
-        ).run(newAttempts, err.message ?? 'Unknown error', nextRetry, item.id);
+        ).run(newAttempts, taggedErr, nextRetry, item.id);
 
-        // Circuit breaker: track consecutive failures
-        this.recordPushFailure(err.message ?? 'Unknown error');
-        if (this.circuitOpen) break; // circuit tripped — stop processing
+        // Circuit breaker: track consecutive failures — but DON'T
+        // count ghost-class failures (cloud is already correct, we
+        // just have a stale local intent; tripping the breaker would
+        // pause every other healthy mutation for nothing).
+        if (!isPatchGhost) {
+          this.recordPushFailure(errMsg);
+          if (this.circuitOpen) break; // circuit tripped — stop processing
+        }
 
         // Notify UI on 3rd failure so staff knows something is stuck
-        if (newAttempts === 3 && item.table_name === 'tickets') {
+        if (newAttempts === 3 && item.table_name === 'tickets' && !isPatchGhost) {
           const payload = JSON.parse(item.payload || '{}');
           this.onTicketError({
-            message: `Sync failed for ticket ${payload.ticket_number ?? item.record_id}: ${err.message ?? 'Unknown error'}`,
+            message: `Sync failed for ticket ${payload.ticket_number ?? item.record_id}: ${errMsg}`,
             ticketNumber: payload.ticket_number,
             type: 'sync_failed',
           });
@@ -1615,6 +1774,14 @@ export class SyncEngine {
     this.lastSyncAt = new Date().toISOString();
     this.updatePendingCount();
     this.onStatus('online');
+
+    // In local_backup mode, this drain just satisfied the scheduled
+    // backup window. Stamp lastBackupAt so syncNow goes silent until
+    // the next backup interval elapses.
+    if (mode === 'local_backup') {
+      this.lastBackupAt = Date.now();
+      logger.info('sync.syncNow', 'Local+Backup snapshot complete', { successCount, total: pending.length });
+    }
 
     // Clean up old synced items (> 24h)
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -1827,6 +1994,42 @@ export class SyncEngine {
             const isCritical = ['called', 'serving', 'cancelled', 'served', 'no_show'].includes(payload.status);
             const hasDataUpdate = payload.notes !== undefined || payload.priority !== undefined;
             if (isCritical || hasDataUpdate) {
+              // ── IMMEDIATE GHOST DETECTION ──
+              // PATCH returned 0 rows. Don't blindly retry 12 cycles. Do a single
+              // HEAD lookup to find out WHY the row didn't match:
+              //   (a) row missing in cloud → orphan, discard now
+              //   (b) row exists but past target state → superseded, discard now
+              //   (c) row exists at expected prior state → genuine RLS/race, retry
+              // This collapses ~3 minutes of red diagnostics into one cycle for
+              // the two common ghost causes. Only case (c) — actual contention —
+              // still uses the retry path.
+              if (item.table_name === 'tickets') {
+                try {
+                  const headUrl = `${baseUrl}?id=eq.${item.record_id}&select=id,status`;
+                  const headRes = await fetch(headUrl, { headers, signal: AbortSignal.timeout(5000) });
+                  if (headRes.ok) {
+                    const rows = await headRes.json().catch(() => []);
+                    if (Array.isArray(rows) && rows.length === 0) {
+                      logger.warn('sync.replay', 'Ghost detected — row missing in cloud, discarding', { recordId: item.record_id, targetStatus: payload.status });
+                      return { status: 0 }; // orphan: row never made it to cloud
+                    }
+                    if (Array.isArray(rows) && rows[0]?.status) {
+                      const cloudStatus = rows[0].status as string;
+                      const terminal = ['served', 'cancelled', 'no_show'];
+                      const rank: Record<string, number> = { waiting: 0, called: 1, serving: 2, served: 3, no_show: 3, cancelled: 3 };
+                      const cloudRank = rank[cloudStatus] ?? 0;
+                      const targetRank = rank[payload.status] ?? 0;
+                      if (terminal.includes(cloudStatus) || cloudRank >= targetRank) {
+                        logger.info('sync.replay', 'Ghost detected — cloud past target state, discarding', { recordId: item.record_id, cloudStatus, targetStatus: payload.status });
+                        return { status: 0 }; // superseded: cloud already at/past where we wanted
+                      }
+                    }
+                  }
+                } catch (e: any) {
+                  // HEAD-check failed (network blip) — fall through to retry path
+                  logger.warn('sync.replay', 'Ghost HEAD-check failed, falling back to retry', { recordId: item.record_id, error: e?.message });
+                }
+              }
               logger.warn('sync.replay', 'PATCH returned 0 rows — will retry', { status: payload.status, hasNotes: !!payload.notes, recordId: item.record_id });
               throw new Error(`PATCH 0 rows for ${payload.status || 'data update'} — needs retry`);
             }
@@ -1859,6 +2062,11 @@ export class SyncEngine {
   // Pull latest data from cloud to local cache
   async pullLatest() {
     if (!this.isOnline) return;
+    // In local_backup mode the Station is the authoritative source for its
+    // own data — pulling cloud state would clobber legitimate local edits
+    // with whatever's in cloud (often older or stamped by the last backup).
+    // Skip entirely; cloud is a one-way backup destination in this mode.
+    if (this.getMode() === 'local_backup') return;
 
     const sessionRow = this.db.prepare(
       "SELECT value FROM session WHERE key = 'current'"
@@ -2129,8 +2337,8 @@ export class SyncEngine {
         INSERT OR REPLACE INTO tickets
         (id, ticket_number, office_id, department_id, service_id, desk_id, status, priority,
          customer_data, created_at, called_at, called_by_staff_id, serving_started_at,
-         completed_at, cancelled_at, parked_at, recall_count, notes, is_remote, appointment_id, source, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         completed_at, cancelled_at, parked_at, recall_count, notes, is_remote, appointment_id, source, synced_at, delivery_address)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       // IDs of locally-modified tickets — protect ALL unsynced items regardless of age.
@@ -2247,7 +2455,12 @@ export class SyncEngine {
             t.is_remote ? 1 : 0,
             t.appointment_id ?? null,
             t.source ?? 'walk_in',
-            new Date().toISOString()
+            new Date().toISOString(),
+            // delivery_address arrives from PostgREST as a parsed JSON object
+            // for JSONB columns. We store it as TEXT locally for portability.
+            t.delivery_address == null
+              ? null
+              : (typeof t.delivery_address === 'string' ? t.delivery_address : JSON.stringify(t.delivery_address)),
           );
         }
       });
@@ -2270,7 +2483,10 @@ export class SyncEngine {
 
         // 1. Active tickets — always pull ALL active tickets (no incremental cursor)
         // The tickets table has no updated_at column, and active ticket count is small enough
-        const activeUrl = `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${officeId}&status=in.(waiting,called,serving)&order=created_at.asc`;
+        // Include `pending_approval` so the Station receives online orders
+        // awaiting Accept/Decline. Without this they'd only show up after
+        // someone refreshed the cloud-truth side.
+        const activeUrl = `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${officeId}&status=in.(waiting,called,serving,pending_approval)&order=created_at.asc`;
         let activeTickets = await fetchTickets(headers, activeUrl);
         if (activeTickets === null) {
           // Token expired — force refresh (bypass cache) and retry once
@@ -2305,6 +2521,33 @@ export class SyncEngine {
         let histTickets = await fetchTickets(headers, histUrl);
         if (histTickets !== null) {
           upsertBatch(histTickets);
+
+          // ── PROACTIVE GHOST SWEEP ──
+          // Any ticket that pulled back in a terminal state (served / no_show /
+          // cancelled) cannot accept further status transitions. If sync_queue
+          // still has pending UPDATEs targeting non-terminal statuses for these
+          // tickets, they are guaranteed ghosts — discard them now instead of
+          // letting them retry 12 cycles. This kills the most common ghost
+          // source: realtime/cloud advanced past us before our local intent
+          // had a chance to push.
+          if (histTickets.length > 0) {
+            const terminalIds = histTickets.map((t: any) => t.id);
+            const placeholders = terminalIds.map(() => '?').join(',');
+            const sweep = this.db.prepare(
+              `UPDATE sync_queue
+               SET synced_at = ?, last_error = 'GHOST_SWEEP: cloud row in terminal state at pull time'
+               WHERE synced_at IS NULL
+                 AND table_name = 'tickets'
+                 AND operation IN ('UPDATE','CALL')
+                 AND record_id IN (${placeholders})
+                 AND json_extract(payload, '$.status') IN ('called','serving','waiting')`
+            );
+            const result = sweep.run(new Date().toISOString(), ...terminalIds);
+            if (result.changes > 0) {
+              logger.info('sync.pullLatest', 'Ghost sweep — discarded stale UPDATEs to terminal-state tickets', { discarded: result.changes });
+              this.updatePendingCount();
+            }
+          }
         }
 
         // ── AUTHORITATIVE MIRROR: local active set MUST equal cloud active set ──
@@ -2526,6 +2769,128 @@ export class SyncEngine {
     `).run(thirtyMinAgo);
     if (criticalRecovered.changes > 0) {
       logger.info('sync.recover', 'Unblocked critical items stuck at 10+ attempts', { count: criticalRecovered.changes });
+    }
+  }
+
+  /**
+   * Active reconciliation: query cloud truth for stuck queue rows and
+   * resolve them. This is the self-healing pass — it complements
+   * recoverStuckItems (which only resets retry timers) by actually
+   * verifying against Supabase whether further retries are pointless.
+   *
+   * Targets: tickets UPDATE/CALL rows with attempts >= 3 and >60s old.
+   * For each, checks the cloud row's current status:
+   *   - row missing → discard (orphan; INSERT was lost)
+   *   - cloud at/past queued status → discard (already realized or superseded)
+   *   - cloud at expected prior state → leave alone (genuine retry)
+   * Runs at most once every 5 minutes (rate-limited by lastReconcileAt).
+   */
+  private async reconcileStuckSyncItems() {
+    if (!this.isOnline) return;
+
+    // Pull stuck ticket UPDATEs. Only critical-status payloads — non-critical
+    // UPDATEs already auto-discard at attempts=10, but critical ones are
+    // immortal and need active resolution.
+    const sixtySecAgo = new Date(Date.now() - 60 * 1000).toISOString();
+    const stuck = this.db.prepare(
+      `SELECT id, record_id, payload, attempts, last_error
+         FROM sync_queue
+        WHERE synced_at IS NULL
+          AND table_name = 'tickets'
+          AND operation IN ('UPDATE','CALL')
+          AND attempts >= 3
+          AND created_at < ?
+          AND json_extract(payload, '$.status') IN ('called','serving','cancelled','served','no_show')
+        LIMIT 50`
+    ).all(sixtySecAgo) as Array<{ id: string; record_id: string; payload: string; attempts: number; last_error: string | null }>;
+
+    if (stuck.length === 0) return;
+
+    // Get a fresh token. If we can't, skip this pass — recover next cycle.
+    let token: string;
+    try {
+      token = await this.ensureFreshToken();
+    } catch {
+      return;
+    }
+
+    // Batch the cloud lookup: one PostgREST query for up to 50 ticket ids.
+    const idList = Array.from(new Set(stuck.map((s) => s.record_id)));
+    const url = `${this.supabaseUrl}/rest/v1/tickets?id=in.(${idList.join(',')})&select=id,status`;
+
+    let cloudRows: Array<{ id: string; status: string }> = [];
+    try {
+      const res = await fetch(url, {
+        headers: {
+          apikey: this.supabaseKey,
+          Authorization: `Bearer ${token}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        logger.warn('sync.reconcile', 'Lookup failed', { status: res.status });
+        return;
+      }
+      cloudRows = await res.json().catch(() => []);
+    } catch (err: any) {
+      logger.warn('sync.reconcile', 'Lookup network error', { error: err?.message });
+      return;
+    }
+
+    const cloudById = new Map(cloudRows.map((r) => [r.id, r.status]));
+    const rank: Record<string, number> = {
+      waiting: 0, called: 1, serving: 2, served: 3, no_show: 3, cancelled: 3, transferred: 3,
+    };
+    const terminal = new Set(['served', 'cancelled', 'no_show', 'transferred']);
+
+    let discarded = 0;
+    const now = new Date().toISOString();
+    const markGhost = this.db.prepare(
+      `UPDATE sync_queue SET synced_at = ?, last_error = ? WHERE id = ? AND synced_at IS NULL`
+    );
+
+    for (const item of stuck) {
+      let payload: { status?: string };
+      try { payload = JSON.parse(item.payload); } catch { continue; }
+      const targetStatus = payload.status;
+      if (!targetStatus) continue;
+
+      const cloudStatus = cloudById.get(item.record_id);
+
+      // Row missing in cloud — orphan. The INSERT must have failed and been
+      // discarded; this UPDATE has nothing to point at, ever.
+      if (cloudStatus === undefined) {
+        markGhost.run(now, `RECONCILE_GHOST: cloud row missing after ${item.attempts} attempts`, item.id);
+        discarded++;
+        continue;
+      }
+
+      // Cloud already terminal — our intent can never apply.
+      if (terminal.has(cloudStatus)) {
+        markGhost.run(now, `RECONCILE_GHOST: cloud terminal (${cloudStatus}) ≠ target ${targetStatus}`, item.id);
+        discarded++;
+        continue;
+      }
+
+      // Cloud already at or past our target status — duplicate or superseded.
+      const cloudRank = rank[cloudStatus] ?? 0;
+      const targetRank = rank[targetStatus] ?? 0;
+      if (cloudRank >= targetRank) {
+        markGhost.run(now, `RECONCILE_GHOST: cloud ${cloudStatus} ≥ target ${targetStatus}`, item.id);
+        discarded++;
+        continue;
+      }
+
+      // Otherwise: cloud is at the expected prior state. Genuine retry —
+      // leave it alone; next syncNow cycle will try again with a fresh token.
+    }
+
+    if (discarded > 0) {
+      logger.info('sync.reconcile', 'Discarded ghost queue rows after cloud verification', {
+        discarded,
+        examined: stuck.length,
+      });
+      this.updatePendingCount();
     }
   }
 

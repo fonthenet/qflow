@@ -272,6 +272,11 @@ export function setSyncStatusGetter(getter: () => { isOnline: boolean; pendingCo
 let onForceSync: (() => Promise<void>) | null = null;
 export function setOnForceSync(cb: () => Promise<void>) { onForceSync = cb; }
 
+// Broadcast callback — set from main.ts so kiosk-server HTTP routes can
+// send IPC messages to all BrowserWindows (e.g. kitchen:order-ready toast).
+let broadcastToWindows: ((channel: string, ...args: any[]) => void) | null = null;
+export function setBroadcastCallback(cb: (channel: string, ...args: any[]) => void) { broadcastToWindows = cb; }
+
 // Main window reference — set from main.ts for remote support screen capture
 
 // ── HTML entity escaping (prevent XSS) ──────────────────────────
@@ -506,14 +511,7 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       } else if (path === '/display' && req.method === 'GET') {
         void serveDisplayPage(url, res);
       } else if (path === '/kitchen' && req.method === 'GET') {
-        // Kitchen Display lives in the Next.js web app (full KDS with
-        // realtime + mutating buttons). The local Station HTTP server
-        // can't render Next.js routes, so we 302 the kitchen tablet to
-        // the cloud short alias /kd/<officeToken>. If the tablet is
-        // offline the redirect will fail and the browser shows its
-        // standard "no internet" page — kitchens are expected to have
-        // wifi to the same router as Station, so this works in practice.
-        serveKitchenRedirect(url, res);
+        serveKitchenPage(url, res);
       } else if (path.startsWith('/track/') && req.method === 'GET') {
         const ticketNumber = decodeURIComponent(path.replace('/track/', ''));
         serveTrackingPage(ticketNumber, res);
@@ -527,6 +525,12 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
         handleTrackTicket(url, res);
       } else if (path === '/api/display-data' && req.method === 'GET') {
         handleDisplayData(url, res);
+      } else if (path === '/api/kitchen-data' && req.method === 'GET') {
+        handleKitchenData(url, res);
+      } else if (path === '/api/kitchen-bump-item' && req.method === 'POST') {
+        handleKitchenBody(req, res, handleKitchenBumpItem);
+      } else if (path === '/api/kitchen-bulk' && req.method === 'POST') {
+        handleKitchenBody(req, res, handleKitchenBulk);
       } else if (path === '/api/events' && req.method === 'GET') {
         handleSSE(req, res);
       } else if (path === '/api/qr' && req.method === 'GET') {
@@ -1280,7 +1284,16 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
 
       // ── WhatsApp notification (fire-and-forget, don't block response) ──
       let whatsappStatus: { sent: boolean; error?: string } | undefined;
-      if (safePhone && isCloudReachable) {
+      // Local + Backup mode: the cloud doesn't have this ticket yet (it
+      // syncs every 6h), so notify-ticket would 404 or fire on a stale
+      // row. Skip cleanly. The ticket itself is still valid locally.
+      const localBackupMode = (() => {
+        try {
+          const r = getDB().prepare("SELECT value FROM session WHERE key = 'sync_mode'").get() as { value?: string } | undefined;
+          return r?.value === 'local_backup';
+        } catch { return false; }
+      })();
+      if (safePhone && isCloudReachable && !localBackupMode) {
         // Compute country dial code for phone normalization
         // resolveDialCode imported statically at top — dynamic require() breaks in asar
         let officeCC2: string | null = null;
@@ -2066,49 +2079,1402 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
 
 // ── Display Page (Waiting Room TV) ────────────────────────────────
 
-// Kitchen Display redirect — sends the kitchen tablet to the cloud
-// /kd/<officeToken> short URL where the full Next.js KDS lives. The
-// local server doesn't host the KDS itself because it requires the
-// Next.js app for realtime mutations + RLS-validated server actions.
-// Resolves the office from the optional ?officeId= query (mirrors how
-// the kiosk/display URLs work) or falls back to the current Station
-// session's office. Renders a tiny offline-friendly landing page if
-// no office can be resolved so the operator gets a clear message
-// rather than a confusing redirect to a 404.
-function serveKitchenRedirect(url: URL, res: http.ServerResponse) {
+// ── Kitchen Display System — local self-contained HTML page ───────
+// Served at GET /kitchen. No cloud dependency — works fully offline.
+// Mirrors the pattern of serveDisplayPage: single HTML response with
+// inline CSS + vanilla JS, polls /api/kitchen-data every 4 s.
+function serveKitchenPage(url: URL, res: http.ServerResponse) {
   try {
-    const queryOfficeId = url.searchParams.get('officeId');
-    let officeId: string | null = queryOfficeId && queryOfficeId.length > 0 ? queryOfficeId : null;
-
-    if (!officeId) {
-      const db = getDB();
-      const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
-      const session = sessionRow ? JSON.parse(sessionRow.value) : null;
-      officeId =
-        typeof session?.office_id === 'string' && session.office_id.length > 0
-          ? session.office_id
-          : Array.isArray(session?.office_ids) && typeof session.office_ids[0] === 'string'
-            ? session.office_ids[0]
-            : null;
-    }
+    const office = resolveRequestedOffice(url);
+    const officeId = office?.id ?? null;
 
     if (!officeId) {
       res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end('<!doctype html><meta charset="utf-8"><title>Qflo Kitchen</title><body style="font-family:system-ui;padding:40px;text-align:center;background:#0f172a;color:#fff"><h1>Kitchen Display unavailable</h1><p>No office bound to this Station yet. Sign in on the Station first.</p></body>');
+      res.end(`<!doctype html><meta charset="utf-8"><title>Qflo Kitchen</title>
+<body style="font-family:system-ui;padding:40px;text-align:center;color-scheme:light dark;background:Canvas;color:CanvasText">
+<h1>Kitchen Display</h1>
+<p>No office is bound to this Station yet. Sign in on the Station first, then reload this page.</p>
+</body>`);
       return;
     }
 
-    const officeToken = officeId.replace(/-/g, '').slice(0, 16);
-    const target = `${CLOUD_URL}/kd/${officeToken}`;
-    res.writeHead(302, {
-      Location: target,
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-    });
-    res.end();
-  } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Kitchen redirect failed');
+    // Resolve locale: query param > org locale > 'en'
+    let locale = url.searchParams.get('locale') ?? 'en';
+    if (!['en', 'fr', 'ar'].includes(locale)) locale = 'en';
+
+    const ip = getLocalIP();
+    const apiBase = `http://${ip}:${localPort}`;
+
+    const html = `<!DOCTYPE html>
+<html lang="${locale}" dir="${locale === 'ar' ? 'rtl' : 'ltr'}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Qflo Kitchen Display</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { overscroll-behavior: none; height: 100%; }
+
+    :root {
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --surface2: rgba(100,116,139,0.08);
+      --text: #0f172a;
+      --text3: #64748b;
+      --border: #e2e8f0;
+      --accent: #3b82f6;
+      --kds-new: #94a3b8;
+      --kds-warn: #f59e0b;
+      --kds-ready: #22c55e;
+      --kds-err: #ef4444;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --surface2: rgba(148,163,184,0.08);
+        --text: #f1f5f9;
+        --text3: #94a3b8;
+        --border: #334155;
+        --accent: #60a5fa;
+        --kds-new: #94a3b8;
+        --kds-warn: #fbbf24;
+        --kds-ready: #4ade80;
+        --kds-err: #f87171;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      color-scheme: light dark;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-block-end: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .toolbar-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text);
+      margin-inline-end: auto;
+    }
+    .conn-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color-scheme: light dark;
+    }
+    .conn-badge.local { background: color-mix(in srgb, var(--kds-warn) 18%, transparent); color: var(--kds-warn); border: 1px solid color-mix(in srgb, var(--kds-warn) 40%, transparent); }
+    .conn-badge.ok { background: color-mix(in srgb, var(--kds-ready) 18%, transparent); color: var(--kds-ready); border: 1px solid color-mix(in srgb, var(--kds-ready) 40%, transparent); }
+    .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
+    .conn-badge.ok .conn-dot { animation: pulse-dot 2s infinite; }
+
+    /* ── Filter tabs ── */
+    .filter-bar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--surface);
+      border-block-end: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .filter-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      color-scheme: light dark;
+    }
+    .filter-tab[data-active="true"] { font-weight: 800; }
+    .tab-count {
+      min-width: 18px;
+      height: 18px;
+      border-radius: 9px;
+      padding-inline: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    /* ── Scroll grid ── */
+    .grid-wrap {
+      flex: 1;
+      overflow: auto;
+      padding: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    /* Card font / spacing scales up when the kitchen has fewer orders.
+       Empty pass screen + one ticket = pass cook deserves giant readable
+       text from across the line. As more cards land, density takes over. */
+    .grid[data-count="1"] .card .card-ticket-label { font-size: 38px !important; }
+    .grid[data-count="1"] .card .card-meta-txt    { font-size: 16px !important; }
+    .grid[data-count="1"] .card .item-name        { font-size: 22px !important; }
+    .grid[data-count="1"] .card .item-row         { padding: 14px 10px !important; }
+    .grid[data-count="1"] .card .qty-badge        { width: 48px !important; height: 48px !important; }
+    .grid[data-count="1"] .card .qty-txt          { font-size: 22px !important; }
+    .grid[data-count="1"] .card .footer-btn       { font-size: 18px !important; padding: 14px !important; }
+    .grid[data-count="1"] .card .agg-label, .grid[data-count="1"] .card .age-pill-txt { font-size: 16px !important; }
+    .grid[data-count="2"] .card .card-ticket-label { font-size: 28px !important; }
+    .grid[data-count="2"] .card .item-name         { font-size: 17px !important; }
+    .grid[data-count="2"] .card .item-row          { padding: 10px !important; }
+    .grid[data-count="2"] .card .qty-badge         { width: 40px !important; height: 40px !important; }
+    .grid[data-count="2"] .card .qty-txt           { font-size: 18px !important; }
+    .grid[data-count="3"] .card .card-ticket-label { font-size: 24px !important; }
+    .grid[data-count="3"] .card .item-name         { font-size: 15px !important; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--text3);
+    }
+    .empty-icon { font-size: 52px; }
+    .empty-title { font-size: 18px; font-weight: 800; color: var(--text); }
+    .empty-sub { font-size: 13px; text-align: center; max-width: 320px; }
+
+    /* ── Ticket Card ── */
+    .card {
+      background: var(--surface);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      display: flex;
+      flex-direction: column;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+    }
+    .card-header-left { flex: 1; min-width: 0; }
+    .card-ticket-label { font-size: 22px; font-weight: 900; letter-spacing: 0.5px; }
+    .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-block-start: 2px; }
+    .card-meta-txt { font-size: 11px; color: var(--text3); font-weight: 600; }
+    .agg-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .agg-icon { font-size: 12px; }
+    .agg-label { font-size: 12px; font-weight: 800; }
+    .age-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .age-pill-txt { color: #fff; font-weight: 800; font-size: 13px; }
+    .header-pills-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .header-pills-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    /* ── Item rows ── */
+    .items-body { padding: 4px 8px; }
+    .item-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      outline: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .item-row:hover { background: var(--surface2); }
+    .item-row.busy { cursor: not-allowed; opacity: 0.6; }
+    .qty-badge {
+      min-width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .qty-txt { font-size: 14px; font-weight: 900; color: var(--accent); }
+    .item-name-wrap { flex: 1; min-width: 0; }
+    .item-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-name.crossed { text-decoration: line-through; color: var(--text3); }
+    .item-note { font-size: 11px; color: var(--kds-warn); font-style: italic; margin-block-start: 1px; }
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .status-label-txt { font-size: 11px; font-weight: 800; }
+
+    /* ── Card footer ── */
+    .card-footer {
+      padding: 8px 10px;
+      border-block-start: 1px solid var(--border);
+    }
+    .footer-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 0;
+      border-radius: 8px;
+      border: none;
+      font-weight: 800;
+      font-size: 14px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      color-scheme: light dark;
+    }
+    .footer-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+    .footer-btn.ready { background: var(--kds-ready); color: #fff; }
+    .footer-btn.served { background: var(--accent); color: #fff; }
+
+    /* ── Lang switcher ── */
+    .lang-btn {
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      color-scheme: light dark;
+    }
+
+    @media (max-width: 600px) {
+      .grid { grid-template-columns: 1fr; }
+      .toolbar-title { font-size: 14px; }
+    }
+
+    html[dir="rtl"] .agg-icon,
+    html[dir="rtl"] .age-pill-txt { letter-spacing: normal; }
+  </style>
+</head>
+<body>
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="toolbar-title" id="toolbar-title">Qflo Kitchen</span>
+    <button class="lang-btn" onclick="cycleLang()" id="lang-btn">EN</button>
+    <div class="conn-badge local" id="conn-badge">
+      <span class="conn-dot"></span>
+      <span id="conn-text">Local</span>
+    </div>
+  </div>
+
+  <!-- Status filter bar -->
+  <div class="filter-bar" id="filter-bar">
+    <button class="filter-tab" data-filter="all" data-active="true" onclick="setFilter('all')" id="tab-all">All</button>
+    <button class="filter-tab" data-filter="new" data-active="false" onclick="setFilter('new')" id="tab-new">New</button>
+    <button class="filter-tab" data-filter="in_progress" data-active="false" onclick="setFilter('in_progress')" id="tab-cooking">Preparing</button>
+    <button class="filter-tab" data-filter="ready" data-active="false" onclick="setFilter('ready')" id="tab-ready">Ready</button>
+  </div>
+  <!-- Service-type secondary filter bar -->
+  <div class="filter-bar" id="svc-filter-bar" style="padding-top:6px;padding-bottom:6px;">
+    <button class="filter-tab svc-filter-tab" data-svc="all" data-active="true" onclick="setSvcFilter('all')" id="tab-svc-all">All types</button>
+    <button class="filter-tab svc-filter-tab" data-svc="dine_in" data-active="false" onclick="setSvcFilter('dine_in')" id="tab-svc-dinein">Dine-in</button>
+    <button class="filter-tab svc-filter-tab" data-svc="takeout" data-active="false" onclick="setSvcFilter('takeout')" id="tab-svc-takeout">Takeout</button>
+    <button class="filter-tab svc-filter-tab" data-svc="delivery" data-active="false" onclick="setSvcFilter('delivery')" id="tab-svc-delivery">Delivery</button>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid-wrap">
+    <div class="grid" id="grid"></div>
+    <div class="empty-state" id="empty" style="display:none">
+      <div class="empty-icon">&#10004;</div>
+      <div class="empty-title" id="empty-title">All caught up</div>
+      <div class="empty-sub" id="empty-sub">No active orders right now.</div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  var OFFICE_ID = ${JSON.stringify(officeId)};
+  var API_BASE = ${JSON.stringify(apiBase)};
+  var POLL_MS = 4000;
+
+  // ── i18n ──
+  var LABELS = {
+    en: {
+      title: 'Kitchen Display',
+      filterAll: 'All',
+      filterNew: 'New',
+      filterCooking: 'Preparing',
+      filterReady: 'Ready',
+      allClear: 'All caught up',
+      noOrders: 'No active orders right now.',
+      markAllReady: 'Mark all ready',
+      markAllServed: 'Mark all served',
+      partyOf: function(n) { return 'Party of ' + n; },
+      statusNew: 'New',
+      statusCooking: 'Preparing',
+      statusReady: 'Ready',
+      statusPartial: 'Partial',
+      loading: 'Loading...',
+      localOnly: 'Local',
+      svcAllTypes: 'All types',
+      svcDineIn: 'Dine-in',
+      svcTakeout: 'Takeout',
+      svcDelivery: 'Delivery',
+    },
+    fr: {
+      title: 'Cuisine',
+      filterAll: 'Tout',
+      filterNew: 'Nouveau',
+      filterCooking: 'En pr\\u00e9paration',
+      filterReady: 'Pr\\u00eat',
+      allClear: 'Tout est servi',
+      noOrders: 'Aucune commande active en ce moment.',
+      markAllReady: 'Tout marquer pr\\u00eat',
+      markAllServed: 'Tout marquer servi',
+      partyOf: function(n) { return 'Table de ' + n; },
+      statusNew: 'Nouveau',
+      statusCooking: 'En pr\\u00e9paration',
+      statusReady: 'Pr\\u00eat',
+      statusPartial: 'Partiel',
+      loading: 'Chargement...',
+      localOnly: 'Local',
+      svcAllTypes: 'Tous types',
+      svcDineIn: 'Sur place',
+      svcTakeout: '\\u00c0 emporter',
+      svcDelivery: 'Livraison',
+    },
+    ar: {
+      title: '\\u0634\\u0627\\u0634\\u0629 \\u0627\\u0644\\u0645\\u0637\\u0628\\u062e',
+      filterAll: '\\u0627\\u0644\\u0643\\u0644',
+      filterNew: '\\u062c\\u062f\\u064a\\u062f',
+      filterCooking: '\\u0642\\u064a\\u062f \\u0627\\u0644\\u062a\\u062d\\u0636\\u064a\\u0631',
+      filterReady: '\\u062c\\u0627\\u0647\\u0632',
+      allClear: '\\u0643\\u0644 \\u0627\\u0644\\u0637\\u0644\\u0628\\u0627\\u062a \\u0645\\u0646\\u062c\\u0632\\u0629',
+      noOrders: '\\u0644\\u0627 \\u062a\\u0648\\u062c\\u062f \\u0637\\u0644\\u0628\\u0627\\u062a \\u0646\\u0634\\u0637\\u0629 \\u0627\\u0644\\u0622\\u0646.',
+      markAllReady: '\\u062a\\u062d\\u062f\\u064a\\u062f \\u0627\\u0644\\u0643\\u0644 \\u062c\\u0627\\u0647\\u0632\\u064b\\u0627',
+      markAllServed: '\\u062a\\u062d\\u062f\\u064a\\u062f \\u0627\\u0644\\u0643\\u0644 \\u0645\\u064f\\u0642\\u062f\\u0651\\u0645\\u064b\\u0627',
+      partyOf: function(n) { return '\\u0637\\u0627\\u0648\\u0644\\u0629 ' + n; },
+      statusNew: '\\u062c\\u062f\\u064a\\u062f',
+      statusCooking: '\\u0642\\u064a\\u062f \\u0627\\u0644\\u062a\\u062d\\u0636\\u064a\\u0631',
+      statusReady: '\\u062c\\u0627\\u0647\\u0632',
+      statusPartial: '\\u062c\\u0632\\u0626\\u064a',
+      loading: '\\u062c\\u0627\\u0631\\u064d \\u0627\\u0644\\u062a\\u062d\\u0645\\u064a\\u0644...',
+      localOnly: '\\u0645\\u062d\\u0644\\u064a',
+      svcAllTypes: '\\u0643\\u0644 \\u0627\\u0644\\u0623\\u0646\\u0648\\u0627\\u0639',
+      svcDineIn: '\\u062f\\u0627\\u062e\\u0644 \\u0627\\u0644\\u0645\\u0637\\u0639\\u0645',
+      svcTakeout: '\\u0633\\u0641\\u0631\\u064a',
+      svcDelivery: '\\u062a\\u0648\\u0635\\u064a\\u0644',
+    },
+  };
+  var LANGS = ['en', 'fr', 'ar'];
+  var lang = (localStorage.getItem('kds_lang') || '${locale}');
+  if (LANGS.indexOf(lang) < 0) lang = 'en';
+
+  function L(key) { return (LABELS[lang] || LABELS.en)[key] || key; }
+
+  function applyLang() {
+    var isRtl = lang === 'ar';
+    document.documentElement.lang = lang;
+    document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+    document.getElementById('lang-btn').textContent = lang.toUpperCase();
+    document.getElementById('toolbar-title').textContent = L('title');
+    document.getElementById('tab-all').childNodes[0].textContent = L('filterAll') + ' ';
+    document.getElementById('tab-new').childNodes[0].textContent = L('filterNew') + ' ';
+    document.getElementById('tab-cooking').childNodes[0].textContent = L('filterCooking') + ' ';
+    document.getElementById('tab-ready').childNodes[0].textContent = L('filterReady') + ' ';
+    document.getElementById('tab-svc-all').childNodes[0].textContent = L('svcAllTypes') + ' ';
+    document.getElementById('tab-svc-dinein').childNodes[0].textContent = L('svcDineIn') + ' ';
+    document.getElementById('tab-svc-takeout').childNodes[0].textContent = L('svcTakeout') + ' ';
+    document.getElementById('tab-svc-delivery').childNodes[0].textContent = L('svcDelivery') + ' ';
+    document.getElementById('empty-title').textContent = L('allClear');
+    document.getElementById('empty-sub').textContent = L('noOrders');
+    document.getElementById('conn-text').textContent = L('localOnly');
+    applySvcFilterTabStyles();
+    renderCards();
   }
+
+  function cycleLang() {
+    var idx = LANGS.indexOf(lang);
+    lang = LANGS[(idx + 1) % LANGS.length];
+    localStorage.setItem('kds_lang', lang);
+    applyLang();
+  }
+
+  // ── Service-type resolver (SHARED-COPY: keep in sync with packages/shared/src/restaurant-services.ts) ──
+  var TAKEOUT_RE  = /take.?out|à emporter|emporter|takeaway/i;
+  var DELIVERY_RE = /deliver|livrais/i;
+  var DINE_IN_RE  = /dine.?in|sur place|surplace/i;
+  function resolveServiceType(name) {
+    if (!name) return 'other';
+    var low = name.toLowerCase();
+    if (TAKEOUT_RE.test(low))  return 'takeout';
+    if (DELIVERY_RE.test(low)) return 'delivery';
+    if (DINE_IN_RE.test(low))  return 'dine_in';
+    return 'other';
+  }
+
+  // ── Filter state ──
+  var filter = localStorage.getItem('kds_filter') || 'all';
+  var svcFilter = localStorage.getItem('kds_service_filter') || 'all';
+
+  // Pure style application — does NOT call renderCards. Safe to call
+  // from inside renderCards without infinite recursion.
+  function applyFilterTabStyles() {
+    document.querySelectorAll('.filter-tab').forEach(function(btn) {
+      btn.setAttribute('data-active', btn.getAttribute('data-filter') === filter ? 'true' : 'false');
+      var acc = tabAccent(btn.getAttribute('data-filter'));
+      if (btn.getAttribute('data-filter') === filter) {
+        btn.style.border = '1px solid ' + acc;
+        btn.style.background = 'color-mix(in srgb, ' + acc + ' 14%, var(--surface))';
+        btn.style.color = acc;
+      } else {
+        btn.style.border = '1px solid var(--border)';
+        btn.style.background = 'var(--surface)';
+        btn.style.color = 'var(--text)';
+      }
+    });
+  }
+
+  function setFilter(f) {
+    filter = f;
+    localStorage.setItem('kds_filter', f);
+    applyFilterTabStyles();
+    renderCards();
+  }
+
+  function applySvcFilterTabStyles() {
+    document.querySelectorAll('.svc-filter-tab').forEach(function(btn) {
+      var f = btn.getAttribute('data-svc');
+      var acc = svcTabAccent(f);
+      btn.setAttribute('data-active', f === svcFilter ? 'true' : 'false');
+      if (f === svcFilter) {
+        btn.style.border = '1px solid ' + acc;
+        btn.style.background = 'color-mix(in srgb, ' + acc + ' 14%, var(--surface))';
+        btn.style.color = acc;
+        btn.style.fontWeight = '800';
+      } else {
+        btn.style.border = '1px solid var(--border)';
+        btn.style.background = 'var(--surface)';
+        btn.style.color = 'var(--text)';
+        btn.style.fontWeight = '600';
+      }
+    });
+  }
+
+  function setSvcFilter(f) {
+    svcFilter = f;
+    localStorage.setItem('kds_service_filter', f);
+    applySvcFilterTabStyles();
+    renderCards();
+  }
+
+  function svcTabAccent(f) {
+    if (f === 'takeout')  return '#f59e0b';
+    if (f === 'delivery') return '#8b5cf6';
+    if (f === 'dine_in')  return '#22c55e';
+    return 'var(--accent)';
+  }
+
+  function tabAccent(f) {
+    if (f === 'new') return 'var(--kds-new)';
+    if (f === 'in_progress') return 'var(--kds-warn)';
+    if (f === 'ready') return 'var(--kds-ready)';
+    return 'var(--accent)';
+  }
+
+  // ── Data ──
+  var tickets = [];
+  var prevItemIds = new Set();
+  var newItemIds = new Set();
+  var busyItemIds = new Set(); // items being bumped (optimistic)
+  var busyTicketIds = new Set(); // tickets being bulk-bumped
+  var beepCtx = null;
+
+  function ageMinutes(iso) {
+    var ms = Date.now() - new Date(iso).getTime();
+    if (isNaN(ms) || ms < 0) return 0;
+    return Math.floor(ms / 60000);
+  }
+
+  function formatAge(min) {
+    if (min < 1) return '<1m';
+    if (min < 60) return min + 'm';
+    var h = Math.floor(min / 60);
+    return h + 'h' + (min % 60 ? (min % 60) + 'm' : '');
+  }
+
+  function urgencyColor(min) {
+    if (min < 5) return 'var(--kds-ready)';
+    if (min < 10) return 'var(--kds-warn)';
+    return 'var(--kds-err)';
+  }
+
+  // ── Beep on order-ready ──
+  function beep() {
+    try {
+      if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var ctx = beepCtx;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.6);
+    } catch (e) { /* non-fatal */ }
+  }
+
+  // ── Poll ──
+  function poll() {
+    fetch(API_BASE + '/api/kitchen-data?officeId=' + encodeURIComponent(OFFICE_ID))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var incoming = Array.isArray(data.tickets) ? data.tickets : [];
+        // Diff for new items
+        var newIds = new Set();
+        var allIds = new Set();
+        for (var i = 0; i < incoming.length; i++) {
+          var tk = incoming[i];
+          for (var j = 0; j < tk.items.length; j++) {
+            var id = tk.items[j].id;
+            allIds.add(id);
+            if (prevItemIds.size > 0 && !prevItemIds.has(id)) newIds.add(id);
+          }
+        }
+        // Detect fully-ready tickets for beep
+        for (var ti = 0; ti < incoming.length; ti++) {
+          var card = incoming[ti];
+          var allReady = card.items.length > 0 && card.items.every(function(it) { return it.kitchen_status === 'ready'; });
+          if (allReady) {
+            var wasReady = tickets.some(function(old) {
+              return old.ticket_id === card.ticket_id && old.items.every(function(it) { return it.kitchen_status === 'ready'; });
+            });
+            if (!wasReady) beep();
+          }
+        }
+        prevItemIds = allIds;
+        newItemIds = newIds;
+        tickets = incoming;
+        renderCards();
+        setBadge(true);
+      })
+      .catch(function() {
+        setBadge(false);
+      });
+  }
+
+  function setBadge(ok) {
+    var el = document.getElementById('conn-badge');
+    var txt = document.getElementById('conn-text');
+    if (ok) {
+      el.className = 'conn-badge ok';
+      txt.textContent = L('localOnly');
+    } else {
+      el.className = 'conn-badge local';
+      txt.textContent = L('localOnly');
+    }
+  }
+
+  // ── Render ──
+  function renderCards() {
+    var visible = filterCards(tickets);
+    var counts = countItems(tickets);
+
+    // Update tab counts
+    updateTabCount('tab-new', counts.new);
+    updateTabCount('tab-cooking', counts.in_progress);
+    updateTabCount('tab-ready', counts.ready);
+
+    var grid = document.getElementById('grid');
+    var empty = document.getElementById('empty');
+    if (visible.length === 0) {
+      grid.style.display = 'none';
+      empty.style.display = 'flex';
+    } else {
+      grid.style.display = 'grid';
+      empty.style.display = 'none';
+      // Adapt the grid column count to the number of visible cards so a
+      // single sitting order doesn't render as a tiny chip on a 24-inch
+      // pass display. data-count drives the CSS scaling rules below.
+      //   1   → one max-width card centered (huge text, easy read)
+      //   2   → two columns at 50% each
+      //   3   → three columns at 33% each
+      //   4+  → auto-fill 280px min (current default packs many)
+      var n = visible.length;
+      grid.setAttribute('data-count', n <= 3 ? String(n) : 'many');
+      if (n === 1) {
+        grid.style.gridTemplateColumns = 'minmax(0, 720px)';
+        grid.style.justifyContent = 'center';
+      } else if (n === 2) {
+        grid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        grid.style.justifyContent = 'stretch';
+      } else if (n === 3) {
+        grid.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+        grid.style.justifyContent = 'stretch';
+      } else {
+        grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+        grid.style.justifyContent = 'stretch';
+      }
+      // Diff DOM — only replace cards that changed (by ticket_id)
+      var existingCards = {};
+      grid.querySelectorAll('[data-ticket-id]').forEach(function(el) { existingCards[el.getAttribute('data-ticket-id')] = el; });
+      var newOrder = [];
+      for (var i = 0; i < visible.length; i++) {
+        var card = visible[i];
+        var el = buildCardEl(card);
+        newOrder.push(el);
+      }
+      // Replace all children in order
+      while (grid.firstChild) grid.removeChild(grid.firstChild);
+      for (var ni = 0; ni < newOrder.length; ni++) grid.appendChild(newOrder[ni]);
+    }
+
+    // Reapply filter tab styles (in case label was re-set by applyLang).
+    // Critical: call applyFilterTabStyles, NOT setFilter — setFilter calls
+    // renderCards at the end, which would infinite-loop back here.
+    applyFilterTabStyles();
+  }
+
+  function filterCards(tks) {
+    var result = tks;
+    // Service-type filter (applied first)
+    if (svcFilter !== 'all') {
+      result = result.filter(function(c) {
+        return resolveServiceType(c.service_name || '') === svcFilter;
+      });
+    }
+    if (filter === 'all') return result;
+    return result.map(function(c) {
+      return { ticket_id: c.ticket_id, ticket_number: c.ticket_number, table_label: c.table_label,
+        party_size: c.party_size, customer_name: c.customer_name, ticket_status: c.ticket_status,
+        oldest_item_at: c.oldest_item_at, service_name: c.service_name,
+        items: c.items.filter(function(it) { return (it.kitchen_status || 'new') === filter; }) };
+    }).filter(function(c) { return c.items.length > 0; });
+  }
+
+  function countItems(tks) {
+    var c = { new: 0, in_progress: 0, ready: 0 };
+    for (var i = 0; i < tks.length; i++) {
+      for (var j = 0; j < tks[i].items.length; j++) {
+        var s = tks[i].items[j].kitchen_status || 'new';
+        if (s in c) c[s]++;
+      }
+    }
+    return c;
+  }
+
+  function updateTabCount(tabId, count) {
+    var tab = document.getElementById(tabId);
+    if (!tab) return;
+    var badge = tab.querySelector('.tab-count');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'tab-count';
+        tab.appendChild(badge);
+      }
+      badge.textContent = count;
+      badge.style.background = tabAccent(tab.getAttribute('data-filter'));
+    } else if (badge) {
+      tab.removeChild(badge);
+    }
+  }
+
+  function statusColor(s) {
+    if (s === 'ready') return 'var(--kds-ready)';
+    if (s === 'in_progress') return 'var(--kds-warn)';
+    return 'var(--kds-new)';
+  }
+
+  function statusLabel(s) {
+    if (s === 'ready') return L('statusReady');
+    if (s === 'in_progress') return L('statusCooking');
+    return L('statusNew');
+  }
+
+  function buildCardEl(card) {
+    var min = ageMinutes(card.oldest_item_at);
+    var urgColor = urgencyColor(min);
+    var cardBusy = busyTicketIds.has(card.ticket_id);
+
+    var allReady = card.items.length > 0 && card.items.every(function(it) { return it.kitchen_status === 'ready'; });
+
+    // Aggregate status
+    var statuses = new Set(card.items.map(function(it) { return it.kitchen_status || 'new'; }));
+    var agg, aggLabel, aggColor, aggIcon;
+    if (statuses.size === 0) { agg = 'new'; }
+    else if (statuses.size === 1) { agg = Array.from(statuses)[0]; }
+    else { agg = 'mixed'; }
+    if (agg === 'ready') { aggLabel = L('statusReady'); aggColor = 'var(--kds-ready)'; aggIcon = '\\u2713\\u2713'; }
+    else if (agg === 'in_progress') { aggLabel = L('statusCooking'); aggColor = 'var(--kds-warn)'; aggIcon = '\\uD83D\\uDD25'; }
+    else if (agg === 'mixed') { aggLabel = L('statusPartial'); aggColor = 'var(--accent)'; aggIcon = '\\u25D0'; }
+    else { aggLabel = L('statusNew'); aggColor = 'var(--kds-new)'; aggIcon = '\\u25CB'; }
+
+    var headerLabel = card.table_label ? card.table_label : '#' + card.ticket_number;
+
+    var div = document.createElement('div');
+    div.className = 'card';
+    div.setAttribute('data-ticket-id', card.ticket_id);
+    div.style.border = '2px solid color-mix(in srgb, ' + urgColor + ' 55%, var(--border))';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'card-header';
+    header.style.background = 'color-mix(in srgb, ' + urgColor + ' 10%, var(--surface))';
+
+    var left = document.createElement('div');
+    left.className = 'card-header-left';
+
+    var lblEl = document.createElement('div');
+    lblEl.className = 'card-ticket-label';
+    lblEl.textContent = headerLabel;
+    left.appendChild(lblEl);
+
+    var metaEl = document.createElement('div');
+    metaEl.className = 'card-meta';
+    if (card.table_label) {
+      var tnEl = document.createElement('span');
+      tnEl.className = 'card-meta-txt';
+      tnEl.textContent = '#' + card.ticket_number;
+      metaEl.appendChild(tnEl);
+    }
+    if (card.party_size) {
+      var psEl = document.createElement('span');
+      psEl.className = 'card-meta-txt';
+      psEl.textContent = L('partyOf')(card.party_size);
+      metaEl.appendChild(psEl);
+    }
+    if (card.customer_name) {
+      var cnEl = document.createElement('span');
+      cnEl.className = 'card-meta-txt';
+      cnEl.textContent = card.customer_name;
+      metaEl.appendChild(cnEl);
+    }
+    left.appendChild(metaEl);
+    header.appendChild(left);
+
+    // Right-side cluster, column layout. Rule: when multiple status
+    // pills exist (Ready/Preparing/etc + Takeout/Delivery), they sit
+    // SIDE-BY-SIDE on the top row. Age goes alone on the bottom row.
+    // This keeps related "what kind of order + what state" pills on
+    // the same line and the time pill in its own row underneath.
+    var pillsCol = document.createElement('div');
+    pillsCol.className = 'header-pills-col';
+
+    var topRow = document.createElement('div');
+    topRow.className = 'header-pills-row';
+
+    // Aggregate Ready / Preparing / New — leftmost on the top row
+    var aggEl = document.createElement('div');
+    aggEl.className = 'agg-pill';
+    aggEl.style.background = 'color-mix(in srgb, ' + aggColor + ' 18%, transparent)';
+    aggEl.style.border = '1px solid color-mix(in srgb, ' + aggColor + ' 50%, transparent)';
+    var aggIconEl = document.createElement('span');
+    aggIconEl.className = 'agg-icon';
+    aggIconEl.style.color = aggColor;
+    aggIconEl.textContent = aggIcon;
+    var aggLabelEl = document.createElement('span');
+    aggLabelEl.className = 'agg-label';
+    aggLabelEl.style.color = aggColor;
+    aggLabelEl.textContent = aggLabel;
+    aggEl.appendChild(aggIconEl);
+    aggEl.appendChild(aggLabelEl);
+    topRow.appendChild(aggEl);
+
+    // Service-type pill (takeout / delivery only — dine-in is implicit)
+    // Sits next to the agg pill on the same top row.
+    var svcType = resolveServiceType(card.service_name || '');
+    if (svcType === 'takeout' || svcType === 'delivery') {
+      var svcColor = svcType === 'takeout' ? '#f59e0b' : '#8b5cf6';
+      var svcEmoji = svcType === 'takeout' ? '\\uD83D\\uDECD\\uFE0F' : '\\uD83D\\uDEB4';
+      var svcLabelStr = svcType === 'takeout' ? L('svcTakeout') : L('svcDelivery');
+      var svcEl = document.createElement('div');
+      svcEl.className = 'agg-pill';
+      svcEl.style.background = 'color-mix(in srgb, ' + svcColor + ' 18%, transparent)';
+      svcEl.style.border = '1px solid color-mix(in srgb, ' + svcColor + ' 50%, transparent)';
+      var svcIconEl = document.createElement('span');
+      svcIconEl.className = 'agg-icon';
+      svcIconEl.style.color = svcColor;
+      svcIconEl.textContent = svcEmoji;
+      var svcLabelEl = document.createElement('span');
+      svcLabelEl.className = 'agg-label';
+      svcLabelEl.style.color = svcColor;
+      svcLabelEl.textContent = svcLabelStr;
+      svcEl.appendChild(svcIconEl);
+      svcEl.appendChild(svcLabelEl);
+      topRow.appendChild(svcEl);
+    }
+
+    pillsCol.appendChild(topRow);
+
+    // Age pill — own row on the bottom, right-aligned
+    var ageEl = document.createElement('div');
+    ageEl.className = 'age-pill';
+    ageEl.style.background = urgColor;
+    var ageIcon = document.createElement('span');
+    ageIcon.textContent = '\\u23F0';
+    var ageTxt = document.createElement('span');
+    ageTxt.className = 'age-pill-txt';
+    ageTxt.textContent = formatAge(min);
+    ageEl.appendChild(ageIcon);
+    ageEl.appendChild(ageTxt);
+    pillsCol.appendChild(ageEl);
+
+    header.appendChild(pillsCol);
+
+    div.appendChild(header);
+
+    // Items
+    var body = document.createElement('div');
+    body.className = 'items-body';
+    for (var i = 0; i < card.items.length; i++) {
+      body.appendChild(buildItemRow(card.items[i], card.ticket_id, cardBusy));
+    }
+    div.appendChild(body);
+
+    // Footer
+    var footer = document.createElement('div');
+    footer.className = 'card-footer';
+    var btn = document.createElement('button');
+    btn.className = 'footer-btn ' + (allReady ? 'served' : 'ready');
+    btn.disabled = cardBusy;
+    btn.textContent = allReady ? '\\u2713\\u2713 ' + L('markAllServed') : '\\uD83C\\uDF7D\\uFE0F ' + L('markAllReady');
+    btn.onclick = function() {
+      if (cardBusy) return;
+      bulkBump(card.ticket_id, allReady ? 'served' : 'ready');
+    };
+    footer.appendChild(btn);
+    div.appendChild(footer);
+
+    return div;
+  }
+
+  function buildItemRow(item, ticketId, cardBusy) {
+    var s = item.kitchen_status || 'new';
+    var sColor = statusColor(s);
+    var isBusy = busyItemIds.has(item.id) || cardBusy;
+    var isNew = newItemIds.has(item.id);
+    var isReady = s === 'ready';
+
+    var row = document.createElement('div');
+    row.className = 'item-row' + (isBusy ? ' busy' : '');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('role', 'button');
+    if (isNew) row.style.background = 'color-mix(in srgb, var(--kds-warn) 12%, transparent)';
+
+    row.onclick = function() {
+      if (isBusy) return;
+      var cur = item.kitchen_status || 'new';
+      var next = cur === 'new' ? 'in_progress' : cur === 'in_progress' ? 'ready' : 'in_progress';
+      bumpItem(item.id, ticketId, next, item);
+    };
+    row.onkeydown = function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.onclick(); }
+    };
+
+    // Qty badge
+    var qtyBadge = document.createElement('div');
+    qtyBadge.className = 'qty-badge';
+    var qtyTxt = document.createElement('span');
+    qtyTxt.className = 'qty-txt';
+    qtyTxt.textContent = '\\u00D7' + item.qty;
+    qtyBadge.appendChild(qtyTxt);
+    row.appendChild(qtyBadge);
+
+    // Name + note
+    var nameWrap = document.createElement('div');
+    nameWrap.className = 'item-name-wrap';
+    var nameEl = document.createElement('div');
+    nameEl.className = 'item-name' + (isReady ? ' crossed' : '');
+    nameEl.textContent = item.name;
+    nameWrap.appendChild(nameEl);
+    if (item.note) {
+      var noteEl = document.createElement('div');
+      noteEl.className = 'item-note';
+      noteEl.textContent = item.note;
+      nameWrap.appendChild(noteEl);
+    }
+    row.appendChild(nameWrap);
+
+    // Status pill
+    var pill = document.createElement('div');
+    pill.className = 'status-pill';
+    pill.style.background = 'color-mix(in srgb, ' + sColor + ' 16%, transparent)';
+    pill.style.border = '1px solid color-mix(in srgb, ' + sColor + ' 40%, transparent)';
+    var dot = document.createElement('div');
+    dot.className = 'status-dot';
+    dot.style.background = sColor;
+    var lbl = document.createElement('span');
+    lbl.className = 'status-label-txt';
+    lbl.style.color = sColor;
+    lbl.textContent = statusLabel(s);
+    pill.appendChild(dot);
+    pill.appendChild(lbl);
+    row.appendChild(pill);
+
+    return row;
+  }
+
+  // ── API calls ──
+  function bumpItem(itemId, ticketId, nextStatus, itemRef) {
+    // Optimistic update
+    busyItemIds.add(itemId);
+    for (var i = 0; i < tickets.length; i++) {
+      for (var j = 0; j < tickets[i].items.length; j++) {
+        if (tickets[i].items[j].id === itemId) {
+          tickets[i].items[j] = Object.assign({}, tickets[i].items[j], { kitchen_status: nextStatus, kitchen_status_at: new Date().toISOString() });
+        }
+      }
+    }
+    renderCards();
+
+    fetch(API_BASE + '/api/kitchen-bump-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId: itemId, nextStatus: nextStatus }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.ok) { revertAndRepoll(); }
+    })
+    .catch(revertAndRepoll)
+    .finally(function() {
+      busyItemIds.delete(itemId);
+    });
+  }
+
+  function bulkBump(ticketId, nextStatus) {
+    busyTicketIds.add(ticketId);
+    // Optimistic update
+    for (var i = 0; i < tickets.length; i++) {
+      if (tickets[i].ticket_id === ticketId) {
+        if (nextStatus === 'served') {
+          // Remove from list optimistically
+          tickets.splice(i, 1);
+        } else {
+          for (var j = 0; j < tickets[i].items.length; j++) {
+            tickets[i].items[j] = Object.assign({}, tickets[i].items[j], { kitchen_status: nextStatus, kitchen_status_at: new Date().toISOString() });
+          }
+        }
+        break;
+      }
+    }
+    renderCards();
+
+    fetch(API_BASE + '/api/kitchen-bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId: ticketId, nextStatus: nextStatus }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.ok) { revertAndRepoll(); }
+    })
+    .catch(revertAndRepoll)
+    .finally(function() {
+      busyTicketIds.delete(ticketId);
+    });
+  }
+
+  function revertAndRepoll() {
+    poll();
+  }
+
+  // Expose handlers used by inline onclick attrs in the static HTML
+  // (cycleLang, setFilter). Without this they live in the IIFE
+  // closure and inline onclick attributes throw ReferenceError.
+  window.cycleLang = cycleLang;
+  window.setFilter = setFilter;
+  window.setSvcFilter = setSvcFilter;
+
+  // ── Init ──
+  applyLang();
+  setFilter(filter);
+  applySvcFilterTabStyles();
+  poll();
+  setInterval(poll, POLL_MS);
+  // Refresh age badges every 30 s
+  setInterval(function() { renderCards(); }, 30000);
+
+})();
+</script>
+</body>
+</html>`;
+
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(html);
+  } catch (err: any) {
+    logger.error('KioskServer', 'serveKitchenPage failed', { error: err?.message });
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Kitchen page error');
+  }
+}
+
+// ── Kitchen API: GET /api/kitchen-data ────────────────────────────
+function handleKitchenData(url: URL, res: http.ServerResponse) {
+  try {
+    const db = getDB();
+    const office = resolveRequestedOffice(url);
+    if (!office) {
+      res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'no_office' }));
+      return;
+    }
+    const orgId: string = office.organization_id;
+    if (!orgId) {
+      res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'no_org' }));
+      return;
+    }
+
+    const tkRows = db.prepare(
+      `SELECT t.id, t.ticket_number, rt.label AS table_label, t.customer_data, t.status,
+              svc.name AS service_name
+       FROM tickets t
+       INNER JOIN offices o ON o.id = t.office_id
+       LEFT JOIN restaurant_tables rt ON rt.current_ticket_id = t.id
+       LEFT JOIN services svc ON svc.id = t.service_id
+       WHERE o.organization_id = ? AND t.status IN ('called', 'serving')
+       ORDER BY t.created_at ASC`
+    ).all(orgId) as any[];
+
+    if (!tkRows.length) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ tickets: [] }));
+      return;
+    }
+
+    const ids = tkRows.map((t: any) => t.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const itemRows = db.prepare(
+      `SELECT id, ticket_id, organization_id, name, price, qty, note, added_at,
+              COALESCE(kitchen_status, 'new') AS kitchen_status, kitchen_status_at
+       FROM ticket_items
+       WHERE ticket_id IN (${placeholders}) AND COALESCE(kitchen_status, 'new') != 'served'
+       ORDER BY added_at ASC`
+    ).all(...ids) as any[];
+
+    const byTicket = new Map<string, any[]>();
+    for (const it of itemRows) {
+      const arr = byTicket.get(it.ticket_id) ?? [];
+      arr.push(it);
+      byTicket.set(it.ticket_id, arr);
+    }
+
+    const cards: any[] = [];
+    for (const tk of tkRows) {
+      const its = byTicket.get(tk.id);
+      if (!its || its.length === 0) continue;
+      let customerData: any = {};
+      try { customerData = typeof tk.customer_data === 'string' ? JSON.parse(tk.customer_data) : (tk.customer_data ?? {}); } catch { /* */ }
+      const oldest = its.reduce((acc: string, it: any) => (it.added_at < acc ? it.added_at : acc), its[0].added_at);
+      cards.push({
+        ticket_id: tk.id,
+        ticket_number: tk.ticket_number,
+        table_label: tk.table_label ?? null,
+        party_size: customerData.party_size ?? null,
+        customer_name: customerData.name ?? null,
+        ticket_status: tk.status,
+        oldest_item_at: oldest,
+        service_name: tk.service_name ?? null,
+        items: its,
+      });
+    }
+    cards.sort((a: any, b: any) => a.oldest_item_at.localeCompare(b.oldest_item_at));
+
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ tickets: cards }));
+  } catch (err: any) {
+    logger.error('KioskServer', 'handleKitchenData failed', { error: err?.message });
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err?.message ?? 'Internal error' }));
+  }
+}
+
+// ── Shared body parser for kitchen POST routes ─────────────────────
+function handleKitchenBody(req: http.IncomingMessage, res: http.ServerResponse, handler: (body: any, res: http.ServerResponse) => void) {
+  let body = '';
+  let size = 0;
+  req.on('data', (chunk) => { size += chunk.length; if (size > 8192) { req.destroy(); return; } body += chunk; });
+  req.on('end', () => {
+    let parsed: any;
+    try { parsed = JSON.parse(body); }
+    catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid JSON' })); return; }
+    try { handler(parsed, res); }
+    catch (e: any) { logger.error('KioskServer', 'Kitchen handler error', { error: e?.message }); if (!res.writableEnded) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e?.message ?? 'Internal error' })); } }
+  });
+}
+
+// Resolve the session org — used for security checks in kitchen POST routes.
+function getSessionOrgId(): string | null {
+  try {
+    const db = getDB();
+    const sessionOfficeIds = getCurrentSessionOfficeIds();
+    if (!sessionOfficeIds?.primaryOfficeId) return null;
+    const office = db.prepare('SELECT organization_id FROM offices WHERE id = ?').get(sessionOfficeIds.primaryOfficeId) as any;
+    return office?.organization_id ?? null;
+  } catch { return null; }
+}
+
+// ── Kitchen API: POST /api/kitchen-bump-item ──────────────────────
+function handleKitchenBumpItem(body: any, res: http.ServerResponse) {
+  const { itemId, nextStatus } = body ?? {};
+  const VALID_STATUSES = new Set(['new', 'in_progress', 'ready', 'served']);
+  if (!itemId || typeof itemId !== 'string') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'missing_item_id' }));
+    return;
+  }
+  if (!nextStatus || !VALID_STATUSES.has(nextStatus)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'invalid_status' }));
+    return;
+  }
+
+  const orgId = getSessionOrgId();
+  if (!orgId) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'no_session' }));
+    return;
+  }
+
+  const db = getDB();
+  // Security: verify item belongs to this org
+  const item = db.prepare(
+    `SELECT ti.id, ti.kitchen_status, ti.ticket_id
+     FROM ticket_items ti
+     INNER JOIN tickets t ON t.id = ti.ticket_id
+     INNER JOIN offices o ON o.id = t.office_id
+     WHERE ti.id = ? AND o.organization_id = ?`
+  ).get(itemId, orgId) as any;
+
+  if (!item) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'not_found' }));
+    return;
+  }
+
+  // Idempotent: no-op if already at the requested status
+  if (item.kitchen_status === nextStatus) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, noop: true }));
+    return;
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE ticket_items SET kitchen_status = ?, kitchen_status_at = ? WHERE id = ? AND organization_id = ?`
+  ).run(nextStatus, now, itemId, orgId);
+
+  const syncId = enqueueSync({
+    id: `ticket_item-kds-http-${itemId}-${Date.now()}`,
+    operation: 'UPDATE',
+    table: 'ticket_items',
+    recordId: itemId,
+    payload: { id: itemId, kitchen_status: nextStatus, kitchen_status_at: now },
+    organizationId: orgId,
+  });
+  onTicketCreated?.(syncId);
+  notifyStationClients({ type: 'ticketItems_changed' });
+
+  // Check if all non-served items on the ticket are now 'ready'
+  if (nextStatus === 'ready') {
+    const remaining = db.prepare(
+      `SELECT COUNT(*) AS cnt FROM ticket_items WHERE ticket_id = ? AND organization_id = ? AND COALESCE(kitchen_status, 'new') != 'served' AND kitchen_status != 'ready'`
+    ).get(item.ticket_id, orgId) as any;
+    if (remaining?.cnt === 0) {
+      emitKitchenOrderReady(db, item.ticket_id, orgId, now);
+    }
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+}
+
+// ── Kitchen API: POST /api/kitchen-bulk ───────────────────────────
+function handleKitchenBulk(body: any, res: http.ServerResponse) {
+  const { ticketId, nextStatus } = body ?? {};
+  const VALID_STATUSES = new Set(['in_progress', 'ready', 'served']);
+  if (!ticketId || typeof ticketId !== 'string') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'missing_ticket_id' }));
+    return;
+  }
+  if (!nextStatus || !VALID_STATUSES.has(nextStatus)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'invalid_status' }));
+    return;
+  }
+
+  const orgId = getSessionOrgId();
+  if (!orgId) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'no_session' }));
+    return;
+  }
+
+  const db = getDB();
+  // Security: verify ticket belongs to this org
+  const ticket = db.prepare(
+    `SELECT t.id FROM tickets t
+     INNER JOIN offices o ON o.id = t.office_id
+     WHERE t.id = ? AND o.organization_id = ?`
+  ).get(ticketId, orgId) as any;
+
+  if (!ticket) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'not_found' }));
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const rows = db.prepare(
+    `SELECT id, kitchen_status FROM ticket_items WHERE ticket_id = ? AND organization_id = ? AND COALESCE(kitchen_status, 'new') != 'served'`
+  ).all(ticketId, orgId) as any[];
+
+  // Filter out rows already at the requested status (idempotency)
+  const toUpdate = rows.filter((r: any) => (r.kitchen_status ?? 'new') !== nextStatus);
+
+  if (toUpdate.length > 0) {
+    const update = db.prepare(
+      `UPDATE ticket_items SET kitchen_status = ?, kitchen_status_at = ? WHERE id = ? AND organization_id = ?`
+    );
+    for (const row of toUpdate) {
+      update.run(nextStatus, now, row.id, orgId);
+      const syncId = enqueueSync({
+        id: `ticket_item-kds-bulk-${row.id}-${Date.now()}`,
+        operation: 'UPDATE',
+        table: 'ticket_items',
+        recordId: row.id,
+        payload: { id: row.id, kitchen_status: nextStatus, kitchen_status_at: now },
+        organizationId: orgId,
+      });
+      onTicketCreated?.(syncId);
+    }
+    notifyStationClients({ type: 'ticketItems_changed' });
+
+    if (nextStatus === 'ready' && toUpdate.length > 0) {
+      emitKitchenOrderReady(db, ticketId, orgId, now);
+    }
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, updated: toUpdate.length }));
+}
+
+// ── Shared: broadcast kitchen:order-ready to all Station windows ──
+function emitKitchenOrderReady(db: ReturnType<typeof getDB>, ticketId: string, orgId: string, now: string) {
+  try {
+    const tk = db.prepare(
+      `SELECT t.id, t.ticket_number, t.customer_data, t.office_id, rt.label AS table_label
+       FROM tickets t
+       LEFT JOIN restaurant_tables rt ON rt.current_ticket_id = t.id
+       WHERE t.id = ?`
+    ).get(ticketId) as any;
+    const items = db.prepare(
+      `SELECT name, qty FROM ticket_items WHERE ticket_id = ? AND organization_id = ? ORDER BY added_at ASC`
+    ).all(ticketId, orgId) as any[];
+    let customer: any = {};
+    try { customer = typeof tk?.customer_data === 'string' ? JSON.parse(tk.customer_data) : (tk?.customer_data ?? {}); } catch { /* */ }
+    const payload = {
+      ticket_id: ticketId,
+      ticket_number: tk?.ticket_number ?? null,
+      table_label: tk?.table_label ?? null,
+      office_id: tk?.office_id ?? null,
+      organization_id: orgId,
+      party_size: customer.party_size ?? null,
+      customer_name: customer.name ?? null,
+      items: items.map((i: any) => ({ name: i.name, qty: i.qty })),
+      ready_at: now,
+    };
+    broadcastToWindows?.('kitchen:order-ready', payload);
+    // Cloud-side notification for cross-device delivery
+    const notifId = randomUUID();
+    const notifSyncId = enqueueSync({
+      id: `notif-kr-http-${notifId}`,
+      operation: 'INSERT',
+      table: 'notifications',
+      recordId: notifId,
+      payload: {
+        id: notifId,
+        ticket_id: ticketId,
+        type: 'kitchen_ready',
+        channel: 'in_app',
+        payload,
+        sent_at: now,
+        created_at: now,
+      },
+      organizationId: orgId,
+    });
+    onTicketCreated?.(notifSyncId);
+  } catch { /* non-fatal */ }
 }
 
 async function serveDisplayPage(url: URL, res: http.ServerResponse) {

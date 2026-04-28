@@ -5,6 +5,7 @@ interface PendingItem {
   operation: string;
   table_name: string;
   record_id: string;
+  ticket_number: string | null;
   attempts: number;
   last_error: string | null;
   created_at: string;
@@ -267,6 +268,16 @@ export function DiagnosticsPanel({ t }: { t: (k: string, v?: Record<string, any>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {it.operation} → {it.table_name}
+                      {it.ticket_number && (
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+                          background: 'var(--surface, #1e293b)', color: 'var(--text, #e2e8f0)',
+                          border: '1px solid var(--border, #334155)',
+                          fontFamily: 'ui-monospace, monospace',
+                        }}>
+                          #{it.ticket_number}
+                        </span>
+                      )}
                       <span style={tagStyle}>
                         {orgStatus === 'active' ? t('active')
                           : orgStatus === 'unresolved' ? t('no org')

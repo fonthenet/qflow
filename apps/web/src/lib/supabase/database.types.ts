@@ -1487,8 +1487,11 @@ export type Database = {
           created_at: string
           discount_percent: number
           id: string
+          image_url: string | null
+          is_available: boolean
           name: string
           organization_id: string
+          prep_time_minutes: number | null
           price: number | null
           sort_order: number
           updated_at: string
@@ -1499,8 +1502,11 @@ export type Database = {
           created_at?: string
           discount_percent?: number
           id?: string
+          image_url?: string | null
+          is_available?: boolean
           name: string
           organization_id: string
+          prep_time_minutes?: number | null
           price?: number | null
           sort_order?: number
           updated_at?: string
@@ -1511,8 +1517,11 @@ export type Database = {
           created_at?: string
           discount_percent?: number
           id?: string
+          image_url?: string | null
+          is_available?: boolean
           name?: string
           organization_id?: string
+          prep_time_minutes?: number | null
           price?: number | null
           sort_order?: number
           updated_at?: string
@@ -2857,6 +2866,7 @@ export type Database = {
           customer_data: Json | null
           customer_id: string | null
           daily_sequence: number | null
+          delivery_address: Json | null
           department_id: string
           desk_id: string | null
           estimated_wait_minutes: number | null
@@ -2889,6 +2899,7 @@ export type Database = {
           customer_data?: Json | null
           customer_id?: string | null
           daily_sequence?: number | null
+          delivery_address?: Json | null
           department_id: string
           desk_id?: string | null
           estimated_wait_minutes?: number | null
@@ -2921,6 +2932,7 @@ export type Database = {
           customer_data?: Json | null
           customer_id?: string | null
           daily_sequence?: number | null
+          delivery_address?: Json | null
           department_id?: string
           desk_id?: string | null
           estimated_wait_minutes?: number | null

@@ -5,6 +5,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { QLogo } from './QLogo';
 import { PendingSignupBanner } from './PendingSignupBanner';
 import { PendingSyncBanner } from './PendingSyncBanner';
+import { useSyncMode } from '../lib/use-sync-mode';
 
 /**
  * Humanize a raw role slug (e.g. "desk_operator" → "Desk Operator").
@@ -139,6 +140,13 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
     try { return (localStorage.getItem('qflo_theme') as 'light' | 'dark') ?? 'light'; } catch { return 'light'; }
   });
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
+  // In Local + Backup mode the queue is intentionally accumulating between
+  // 6h backup windows. The "Sync lagging" / "Sync error" alarms and the
+  // shouty "{N} pending sync" link don't apply — they would scare the
+  // operator about behavior that's by design. We replace them with a
+  // calmer "{N} pending backup" indicator and skip the alarm pills.
+  const statusBarMode = useSyncMode();
+  const isLocalModeStatus = statusBarMode === 'local_backup';
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -407,7 +415,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
               🔒 {t('Sign in to resume sync')}
             </span>
           )}
-          {syncStatus.oldestPendingAgeMs != null && syncStatus.oldestPendingAgeMs > 5 * 60 * 1000 && !syncStatus.circuitOpen && !syncStatus.authExpired && (
+          {!isLocalModeStatus && syncStatus.oldestPendingAgeMs != null && syncStatus.oldestPendingAgeMs > 5 * 60 * 1000 && !syncStatus.circuitOpen && !syncStatus.authExpired && (
             <span
               style={{
                 padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
@@ -436,16 +444,32 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
             </span>
           )}
           {syncStatus.pendingCount > 0 && (
-            <span
-              className="pending-badge"
-              onClick={openPanel}
-              style={{ cursor: 'pointer', textDecoration: 'underline' }}
-              title={t('Click to copy')}
-            >
-              {t('{count} pending sync', { count: syncStatus.pendingCount })}
-            </span>
+            isLocalModeStatus ? (
+              <span
+                className="pending-badge"
+                onClick={openPanel}
+                style={{
+                  cursor: 'pointer', padding: '3px 10px', borderRadius: 6,
+                  fontSize: 11, fontWeight: 700,
+                  background: 'rgba(245,158,11,0.12)', color: '#d97706',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                }}
+                title={t('These items are queued for the next backup upload (every 6 hours).')}
+              >
+                💾 {t('{count} pending backup', { count: syncStatus.pendingCount })}
+              </span>
+            ) : (
+              <span
+                className="pending-badge"
+                onClick={openPanel}
+                style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                title={t('Click to copy')}
+              >
+                {t('{count} pending sync', { count: syncStatus.pendingCount })}
+              </span>
+            )
           )}
-          {syncStatus.lastError && (
+          {!isLocalModeStatus && syncStatus.lastError && (
             <span
               style={{
                 padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,

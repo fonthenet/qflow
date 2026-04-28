@@ -10,7 +10,7 @@ import { SyncEngine } from './sync';
 import { getTtsAudio, pickVoice as pickTtsVoice } from './tts-cache';
 import { scheduleTtsPrewarm, triggerTtsPrewarmNow } from './tts-prewarmer';
 import { getChimePath, getChimeDurationMs, getSilenceWarmupPath, cleanupLegacyChimeFiles } from './chime';
-import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
+import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, setBroadcastCallback, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 
 
@@ -121,6 +121,27 @@ function hasActiveCall(officeId: string): boolean {
     const row = getDB().prepare("SELECT COUNT(*) AS n FROM tickets WHERE office_id = ? AND status IN ('called','serving')").get(officeId) as { n?: number } | undefined;
     return (row?.n ?? 0) > 0;
   } catch { return false; }
+}
+
+// ── Sync mode (cloud vs local + nightly backup) ───────────────────
+// Per-Station setting. 'cloud' = real-time push/pull, online booking,
+// WhatsApp, public displays. 'local_backup' = Station runs entirely
+// from local SQLite; sync drains in batches every ~6h as a backup
+// safety net only — cloud-dependent UI is hidden in this mode.
+//
+// Default is 'cloud' (matches existing behavior). Switching is one
+// click in Settings; no reinstall, no data migration.
+export type SyncMode = 'cloud' | 'local_backup';
+export function getSyncMode(): SyncMode {
+  try {
+    const row = getDB().prepare("SELECT value FROM session WHERE key = 'sync_mode'").get() as { value?: string } | undefined;
+    return row?.value === 'local_backup' ? 'local_backup' : 'cloud';
+  } catch { return 'cloud'; }
+}
+function setSyncMode(mode: SyncMode) {
+  try {
+    getDB().prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('sync_mode', ?)").run(mode);
+  } catch {}
 }
 
 // ── Desktop notifications (Windows toast) ─────────────────────────
@@ -595,6 +616,32 @@ ipcMain.handle('touch-mode:set-enabled', (_e, enabled: boolean) => {
   return true;
 });
 
+ipcMain.handle('sync-mode:get', () => getSyncMode());
+ipcMain.handle('sync-mode:set', async (_e, mode: SyncMode) => {
+  const current = getSyncMode();
+  const target = mode === 'local_backup' ? 'local_backup' : 'cloud';
+  if (current === target) return { ok: true, mode: target, changed: false };
+
+  setSyncMode(target);
+
+  // Notify SyncEngine so it picks up the mode change without a restart.
+  // - cloud → local_backup: drain anything currently pending so the queue
+  //   isn't left with stale items, then go silent.
+  // - local_backup → cloud: kick a full sync immediately to push anything
+  //   that accumulated locally.
+  try {
+    syncEngine?.applyModeChange?.(target);
+  } catch (err: any) {
+    logger.warn('sync-mode', 'Mode-switch side effects failed', { error: err?.message });
+  }
+
+  // Tell every renderer so they can re-render cloud-only UI.
+  for (const w of BrowserWindow.getAllWindows()) {
+    try { w.webContents.send('sync-mode:changed', target); } catch {}
+  }
+  return { ok: true, mode: target, changed: true };
+});
+
 ipcMain.handle('notifications:get-enabled', () => getDesktopNotificationsEnabled());
 ipcMain.handle('notifications:set-enabled', (_e, enabled: boolean) => {
   setDesktopNotificationsEnabled(!!enabled);
@@ -887,12 +934,22 @@ function setupIPC() {
     // Unify notes: extract customer_data.reason into tickets.notes (single source of truth)
     const ticketNotes = (ticket.customer_data?.reason ?? ticket.customer_data?.reason_of_visit ?? ticket.customer_data?.notes ?? ticket.notes ?? '').trim() || null;
 
+    // Optional initial status from caller. Dine-in tickets pass 'serving'
+    // so the customer (already at a table) doesn't sit in 'waiting' until
+    // someone manually clicks Call — there's nobody to call. Defaults to
+    // 'waiting' for everything else (queue, takeout, delivery, kiosk).
+    const allowedInitial = new Set(['waiting', 'serving']);
+    const initialStatus = (typeof ticket.initial_status === 'string' && allowedInitial.has(ticket.initial_status))
+      ? ticket.initial_status
+      : 'waiting';
+    const servingStartedAt = initialStatus === 'serving' ? now : null;
+
     // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id, locale, notes)
-        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null, resolvedLocale, ticketNotes);
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, serving_started_at, is_offline, source, daily_sequence, appointment_id, locale, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, initialStatus, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, servingStartedAt, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null, resolvedLocale, ticketNotes);
 
       // Build clean sync payload with all Supabase NOT NULL fields
       const syncPayload: Record<string, any> = {
@@ -901,7 +958,7 @@ function setupIPC() {
         office_id: ticket.office_id,
         department_id: ticket.department_id,
         service_id: ticket.service_id || null,
-        status: 'waiting',
+        status: initialStatus,
         priority: ticket.priority ?? 0,
         customer_data: ticket.customer_data ?? {},
         created_at: now,
@@ -909,6 +966,7 @@ function setupIPC() {
         daily_sequence: ticket.daily_sequence,
         source: ticket.source ?? 'walk_in',
       };
+      if (servingStartedAt) syncPayload.serving_started_at = servingStartedAt;
       if (ticket.appointment_id) syncPayload.appointment_id = ticket.appointment_id;
       if (resolvedLocale) syncPayload.locale = resolvedLocale;
       if (ticketNotes) syncPayload.notes = ticketNotes;
@@ -925,7 +983,7 @@ function setupIPC() {
 
     logTicketEvent(ticket.id, 'created', {
       ticketNumber: ticket.ticket_number,
-      toStatus: 'waiting',
+      toStatus: initialStatus,
       source: ticket.source ?? 'station_offline',
       details: { officeId: ticket.office_id, departmentId: ticket.department_id, serviceId: ticket.service_id, isOffline: true },
     });
@@ -1003,7 +1061,13 @@ function setupIPC() {
             }).catch(() => {});
           }).catch(() => {});
 
-          // Send "joined" WhatsApp notification with feedback
+          // Send "joined" WhatsApp notification with feedback. In Local +
+          // Backup mode the cloud doesn't have this ticket yet (sync drains
+          // every 6h), so the notify edge function would either 404 or
+          // fire against a stale row — skip cleanly with a noted status.
+          if (getSyncMode() === 'local_backup') {
+            whatsappStatus = { sent: false, error: 'local_mode' };
+          } else
           try {
             const pos = db.prepare(`SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND status = 'waiting' AND parked_at IS NULL`).get(ticket.office_id, ticket.department_id) as any;
             const waRes = await fetch(`${SUPABASE_URL}/functions/v1/notify-ticket`, {
@@ -1913,9 +1977,15 @@ function setupIPC() {
   }, 4000);
 
   ipcMain.handle('sync:pending-details', () => {
+    // LEFT JOIN tickets so the diagnostics panel can show the human-readable
+    // ticket_number alongside the UUID — operators can identify which order
+    // is stuck without having to dig through SQLite.
     return db.prepare(
-      `SELECT id, operation, table_name, record_id, attempts, last_error, created_at, organization_id
-       FROM sync_queue WHERE synced_at IS NULL ORDER BY created_at ASC`
+      `SELECT q.id, q.operation, q.table_name, q.record_id, q.attempts, q.last_error, q.created_at, q.organization_id,
+              CASE WHEN q.table_name = 'tickets' THEN t.ticket_number ELSE NULL END AS ticket_number
+       FROM sync_queue q
+       LEFT JOIN tickets t ON q.table_name = 'tickets' AND t.id = q.record_id
+       WHERE q.synced_at IS NULL ORDER BY q.created_at ASC`
     ).all();
   });
 
@@ -2148,7 +2218,7 @@ function setupIPC() {
   ipcMain.handle('menu:list-items', (_e, orgId: string) => {
     if (!orgId) return [];
     return db.prepare(
-      "SELECT id, organization_id, category_id, name, price, discount_percent, sort_order, active FROM menu_items WHERE organization_id = ? AND active = 1 ORDER BY sort_order, name"
+      "SELECT id, organization_id, category_id, name, price, discount_percent, sort_order, active, prep_time_minutes, is_available, image_url FROM menu_items WHERE organization_id = ? AND active = 1 ORDER BY sort_order, name"
     ).all(orgId);
   });
 
@@ -2210,6 +2280,9 @@ function setupIPC() {
     if (!orgId || !item?.name || !item?.category_id) return null;
     const id = item.id || randomUUID();
     const now = new Date().toISOString();
+    const prepTime = item.prep_time_minutes == null || item.prep_time_minutes === ''
+      ? null
+      : Math.max(0, Math.min(180, Math.round(Number(item.prep_time_minutes)) || 0));
     const payload = {
       id,
       organization_id: orgId,
@@ -2219,24 +2292,33 @@ function setupIPC() {
       discount_percent: Math.max(0, Math.min(100, Math.round(Number(item.discount_percent ?? 0)) || 0)),
       sort_order: Number(item.sort_order ?? 0),
       active: item.active === false ? 0 : 1,
+      prep_time_minutes: prepTime,
+      is_available: item.is_available === false ? 0 : 1,
+      image_url: typeof item.image_url === 'string' && item.image_url.trim() ? item.image_url.trim() : null,
       updated_at: now,
     };
     const exists = db.prepare('SELECT id FROM menu_items WHERE id = ?').get(id) as any;
     if (exists) {
       db.prepare(
-        'UPDATE menu_items SET category_id = ?, name = ?, price = ?, discount_percent = ?, sort_order = ?, active = ?, updated_at = ? WHERE id = ?'
-      ).run(payload.category_id, payload.name, payload.price, payload.discount_percent, payload.sort_order, payload.active, payload.updated_at, id);
+        'UPDATE menu_items SET category_id = ?, name = ?, price = ?, discount_percent = ?, sort_order = ?, active = ?, prep_time_minutes = ?, is_available = ?, image_url = ?, updated_at = ? WHERE id = ?'
+      ).run(payload.category_id, payload.name, payload.price, payload.discount_percent, payload.sort_order, payload.active, payload.prep_time_minutes, payload.is_available, payload.image_url, payload.updated_at, id);
     } else {
       db.prepare(
-        'INSERT INTO menu_items (id, organization_id, category_id, name, price, discount_percent, sort_order, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(id, orgId, payload.category_id, payload.name, payload.price, payload.discount_percent, payload.sort_order, payload.active, now, now);
+        'INSERT INTO menu_items (id, organization_id, category_id, name, price, discount_percent, sort_order, active, prep_time_minutes, is_available, image_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, orgId, payload.category_id, payload.name, payload.price, payload.discount_percent, payload.sort_order, payload.active, payload.prep_time_minutes, payload.is_available, payload.image_url, now, now);
     }
     const syncId = enqueueSync({
       id: `menu_item-${id}-${Date.now()}`,
       operation: exists ? 'UPDATE' : 'INSERT',
       table: 'menu_items',
       recordId: id,
-      payload: { ...payload, active: payload.active === 1 },
+      // Cloud columns are booleans, locally we store as 0/1 INTEGER. Coerce
+      // back so the cloud insert lands cleanly through PostgREST.
+      payload: {
+        ...payload,
+        active: payload.active === 1,
+        is_available: payload.is_available === 1,
+      },
       organizationId: orgId,
     });
     syncEngine?.pushImmediate(syncId);
@@ -2270,8 +2352,13 @@ function setupIPC() {
   ipcMain.handle('ticket-items:list-for-tickets', (_e, ticketIds: string[]) => {
     if (!Array.isArray(ticketIds) || ticketIds.length === 0) return [];
     const placeholders = ticketIds.map(() => '?').join(',');
+    // COALESCE so legacy rows (added before kitchen_status existed) read
+    // as 'new' rather than NULL. The QueueOrderCard relies on this field
+    // to color items + drive the aggregate "READY" pill — without it,
+    // every item renders as muted-grey and the order never shows ready.
     return db.prepare(
-      `SELECT id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at
+      `SELECT id, ticket_id, organization_id, menu_item_id, name, price, qty, note, added_at,
+              COALESCE(kitchen_status, 'new') AS kitchen_status, kitchen_status_at
        FROM ticket_items WHERE ticket_id IN (${placeholders}) ORDER BY added_at ASC`
     ).all(...ticketIds);
   });
@@ -3531,6 +3618,10 @@ app.whenReady().then(async () => {
     setOnForceSync(async () => {
       await syncEngine?.syncNow();
       await syncEngine?.pullLatest();
+    });
+    // Allow kitchen HTTP routes to broadcast IPC events to all Station windows
+    setBroadcastCallback((channel: string, ...args: any[]) => {
+      broadcast(channel, ...args);
     });
   } catch (err) {
     logger.error('kiosk', 'Failed to start kiosk server', { error: (err as Error)?.message });

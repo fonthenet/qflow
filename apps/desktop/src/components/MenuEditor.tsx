@@ -38,7 +38,20 @@ export function MenuEditor({ orgId, locale, currency = '', decimals = 2, onClose
   const [items, setItems] = useState<MenuItem[]>([]);
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [editingCat, setEditingCat] = useState<{ id?: string; name: string; color: string; icon: string } | null>(null);
-  const [editingItem, setEditingItem] = useState<{ id?: string; category_id: string; name: string; price: string; discount_percent: string } | null>(null);
+  const [editingItem, setEditingItem] = useState<{
+    id?: string;
+    category_id: string;
+    name: string;
+    price: string;
+    discount_percent: string;
+    /** Prep time in minutes — used to compute the ETA when an online order
+     *  is accepted on Station. Empty string = no prep (drinks, desserts). */
+    prep_time_minutes: string;
+    /** Hides the item from the public ordering page without deleting it. */
+    is_available: boolean;
+    /** Optional photo URL displayed on the public menu page. */
+    image_url: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -102,6 +115,9 @@ export function MenuEditor({ orgId, locale, currency = '', decimals = 2, onClose
         name: editingItem.name.trim(),
         price: editingItem.price === '' ? null : Number(editingItem.price),
         discount_percent: editingItem.discount_percent === '' ? 0 : Math.max(0, Math.min(100, Math.round(Number(editingItem.discount_percent)))),
+        prep_time_minutes: editingItem.prep_time_minutes === '' ? null : Math.max(0, Math.min(180, Math.round(Number(editingItem.prep_time_minutes)))),
+        is_available: editingItem.is_available,
+        image_url: editingItem.image_url.trim() || null,
         sort_order: nextSort,
       });
       setEditingItem(null);
@@ -251,7 +267,7 @@ export function MenuEditor({ orgId, locale, currency = '', decimals = 2, onClose
               </div>
               {activeCat && (
                 <button
-                  onClick={() => setEditingItem({ category_id: activeCat, name: '', price: '', discount_percent: '' })}
+                  onClick={() => setEditingItem({ category_id: activeCat, name: '', price: '', discount_percent: '', prep_time_minutes: '', is_available: true, image_url: '' })}
                   style={primaryBtn}
                 >
                   + {t('Add item')}
@@ -290,7 +306,16 @@ export function MenuEditor({ orgId, locale, currency = '', decimals = 2, onClose
                     })()}
                   </div>
                   <button
-                    onClick={() => setEditingItem({ id: it.id, category_id: it.category_id, name: it.name, price: it.price?.toString() ?? '', discount_percent: (it as any).discount_percent ? String((it as any).discount_percent) : '' })}
+                    onClick={() => setEditingItem({
+                      id: it.id,
+                      category_id: it.category_id,
+                      name: it.name,
+                      price: it.price?.toString() ?? '',
+                      discount_percent: (it as any).discount_percent ? String((it as any).discount_percent) : '',
+                      prep_time_minutes: (it as any).prep_time_minutes != null ? String((it as any).prep_time_minutes) : '',
+                      is_available: (it as any).is_available !== false,
+                      image_url: (it as any).image_url ?? '',
+                    })}
                     style={iconBtn(false)}
                   >✎</button>
                   <button
@@ -412,6 +437,43 @@ export function MenuEditor({ orgId, locale, currency = '', decimals = 2, onClose
                   </div>
                 );
               })()}
+
+              {/* Prep time — used only on the operator's Accept-modal ETA
+                  estimate for online orders. Drinks / cold dishes can leave
+                  it blank. Capped at 180 (anything longer is unrealistic). */}
+              <label style={fieldLabel}>{t('Prep time (min) — optional')}</label>
+              <input
+                value={editingItem.prep_time_minutes}
+                onChange={(e) => setEditingItem({ ...editingItem, prep_time_minutes: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveItem(); }}
+                placeholder={t('e.g. 15')}
+                style={inputStyle}
+                inputMode="numeric"
+              />
+
+              {/* Image URL — shows alongside the item on /m/<slug>. */}
+              <label style={fieldLabel}>{t('Image URL — optional')}</label>
+              <input
+                value={editingItem.image_url}
+                onChange={(e) => setEditingItem({ ...editingItem, image_url: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveItem(); }}
+                placeholder="https://..."
+                style={inputStyle}
+              />
+
+              {/* Availability toggle — when off, the item is hidden from the
+                  public ordering page without being deleted. Kitchen runs
+                  out of an item: flip this off until it's back in stock. */}
+              <label style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={editingItem.is_available}
+                  onChange={(e) => setEditingItem({ ...editingItem, is_available: e.target.checked })}
+                  style={{ width: 16, height: 16, accentColor: '#22c55e' }}
+                />
+                <span>{t('Available for online orders')}</span>
+              </label>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
                 <button onClick={() => setEditingItem(null)} style={ghostBtn}>{t('Cancel')}</button>
                 <button onClick={saveItem} disabled={busy || !editingItem.name.trim()} style={primaryBtn}>{t('Save')}</button>

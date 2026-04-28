@@ -108,6 +108,62 @@ export function enqueueSync(opts: {
 }): string {
   const createdAt = opts.createdAt ?? new Date().toISOString();
   const orgId = opts.organizationId ?? deriveOrgIdForSyncItem(db, opts.table, opts.recordId, opts.payload);
+
+  // ── COALESCING: merge UPDATE/CALL into a pending INSERT for the same row ──
+  // If there is an unsynced INSERT for this record, the cloud row does not
+  // exist yet — a separate UPDATE replay would 0-rows because the target
+  // isn't there. Merge our payload into the INSERT's payload so a single
+  // POST captures the final state. Fewer round-trips, no orphan UPDATEs,
+  // no "ghost" failures from update-before-insert ordering.
+  //
+  // Race note: there is a small window where syncNow may have already
+  // started pushing the INSERT (await fetch in flight) when this merge
+  // runs. In that window the merged payload would land in the queue but
+  // the in-flight POST already serialized the prior payload. We accept
+  // this — the window is one HTTP round-trip (~200ms) and the worst case
+  // is one missed status transition that the operator notices and re-issues.
+  if (opts.operation === 'UPDATE' || opts.operation === 'CALL') {
+    const pendingInsert = db.prepare(
+      `SELECT id, payload FROM sync_queue
+       WHERE synced_at IS NULL AND table_name = ? AND record_id = ? AND operation = 'INSERT'
+       ORDER BY created_at ASC LIMIT 1`
+    ).get(opts.table, opts.recordId) as { id: string; payload: string } | undefined;
+
+    if (pendingInsert) {
+      let merged: Record<string, unknown>;
+      try {
+        const existing = JSON.parse(pendingInsert.payload) as Record<string, unknown>;
+        merged = { ...existing, ...opts.payload };
+      } catch {
+        merged = { ...opts.payload };
+      }
+      db.prepare(
+        `UPDATE sync_queue SET payload = ?, attempts = 0, last_error = NULL, next_retry_at = NULL
+         WHERE id = ? AND synced_at IS NULL`
+      ).run(JSON.stringify(merged), pendingInsert.id);
+      try { syncNotifier?.(pendingInsert.id); } catch { /* non-fatal */ }
+      return pendingInsert.id;
+    }
+  }
+
+  // DELETE against a pending INSERT: both can be retired locally — the
+  // cloud never saw the row, so the DELETE has nothing to delete. Mark
+  // the INSERT as resolved with a clear COALESCED tag.
+  if (opts.operation === 'DELETE') {
+    const pendingInsert = db.prepare(
+      `SELECT id FROM sync_queue
+       WHERE synced_at IS NULL AND table_name = ? AND record_id = ? AND operation = 'INSERT'
+       ORDER BY created_at ASC LIMIT 1`
+    ).get(opts.table, opts.recordId) as { id: string } | undefined;
+
+    if (pendingInsert) {
+      db.prepare(
+        `UPDATE sync_queue SET synced_at = ?, last_error = ? WHERE id = ? AND synced_at IS NULL`
+      ).run(new Date().toISOString(), 'COALESCED: created and deleted before sync', pendingInsert.id);
+      return pendingInsert.id;
+    }
+  }
+
   db.prepare(`
     INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at, organization_id)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -186,6 +242,7 @@ export function initDB() {
       priority_category_id TEXT,
       locale TEXT,
       qr_token TEXT,
+      delivery_address TEXT,
       checked_in_at TEXT,
       estimated_wait_minutes INTEGER
     );
@@ -344,6 +401,9 @@ export function initDB() {
       discount_percent INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
+      prep_time_minutes INTEGER,
+      is_available INTEGER NOT NULL DEFAULT 1,
+      image_url TEXT,
       created_at TEXT,
       updated_at TEXT
     );
@@ -455,6 +515,7 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN daily_sequence INTEGER DEFAULT 0`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN priority_category_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN locale TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN delivery_address TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN qr_token TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN checked_in_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN estimated_wait_minutes INTEGER`); } catch { /* already exists */ }
@@ -644,6 +705,9 @@ export function initDB() {
     updated_at TEXT
   )`);
   try { db.exec(`ALTER TABLE menu_items ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE menu_items ADD COLUMN prep_time_minutes INTEGER`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE menu_items ADD COLUMN is_available INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE menu_items ADD COLUMN image_url TEXT`); } catch { /* already exists */ }
   db.exec(`CREATE TABLE IF NOT EXISTS ticket_items (
     id TEXT PRIMARY KEY,
     ticket_id TEXT NOT NULL,

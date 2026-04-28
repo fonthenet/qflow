@@ -8,6 +8,88 @@ import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 import { resolveWilaya, formatWilaya } from '@/lib/wilayas';
 import { APP_BASE_URL } from '@/lib/config';
+import { getOfficePublicSlug } from '@/lib/office-links';
+import { resolveRestaurantServiceType } from '@qflo/shared';
+
+/**
+ * If the org has any active office with at least one takeout or delivery
+ * service configured, return the public menu URL for that office. Phone
+ * is appended as ?p= so the order page pre-fills the customer's number.
+ *
+ * Returns null when no office offers online ordering — used by the WA
+ * greeting handler to decide whether to send the menu-link follow-up.
+ */
+/**
+ * If the picked service is takeout or delivery, send the public menu
+ * link instead of running the queue-intake flow (name, party size, …).
+ * Returns true when the routing was handled and the caller should NOT
+ * fall through to the standard JOIN confirmation. Returns false for
+ * dine-in or non-restaurant services.
+ */
+async function routeRestaurantServiceToOrdering(
+  serviceName: string,
+  supabase: any,
+  organizationId: string,
+  identifier: string,
+  locale: Locale,
+  sendMessage: SendFn,
+): Promise<boolean> {
+  const t = resolveRestaurantServiceType(serviceName);
+  if (t !== 'takeout' && t !== 'delivery') return false;
+  const link = await resolvePublicMenuLink(supabase, organizationId, identifier);
+  if (!link) {
+    // Office has the service flagged as takeout/delivery but no slug or
+    // setup yet — fall back to standard intake so the customer isn't
+    // stranded mid-flow with nothing actionable.
+    return false;
+  }
+  const body = locale === 'ar'
+    ? `🍽️ لطلب ${t === 'delivery' ? 'التوصيل' : 'الاستلام'}، اضغط على الرابط واختر الأصناف:\n${link}`
+    : locale === 'fr'
+      ? `🍽️ Pour ${t === 'delivery' ? 'la livraison' : "l'emporter"}, ouvrez le lien et sélectionnez vos articles :\n${link}`
+      : `🍽️ For ${t === 'delivery' ? 'delivery' : 'takeout'}, open the link and pick your items:\n${link}`;
+  await sendMessage({ to: identifier, body });
+  return true;
+}
+
+async function resolvePublicMenuLink(
+  supabase: any,
+  organizationId: string,
+  customerPhone: string,
+): Promise<string | null> {
+  try {
+    const { data: offices } = await supabase
+      .from('offices')
+      .select('id, name, settings, slug, is_active, organization_id')
+      .eq('organization_id', organizationId)
+      .eq('is_active', true);
+    if (!offices?.length) return null;
+
+    // For each office, check whether it has a takeout/delivery service.
+    for (const office of offices) {
+      const { data: depts } = await supabase
+        .from('departments')
+        .select('id, services(id, name, is_active)')
+        .eq('office_id', office.id)
+        .eq('is_active', true);
+      const allServices = (depts ?? []).flatMap((d: any) =>
+        (d.services ?? []).filter((s: any) => s.is_active),
+      );
+      const hasOrderingService = allServices.some((s: any) => {
+        const t = resolveRestaurantServiceType(s.name);
+        return t === 'takeout' || t === 'delivery';
+      });
+      if (!hasOrderingService) continue;
+      const slug = getOfficePublicSlug(office as any);
+      const baseUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+      const phoneParam = customerPhone ? `?p=${encodeURIComponent(customerPhone)}` : '';
+      return `${baseUrl}/m/${encodeURIComponent(slug)}${phoneParam}`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Phone normalization ──────────────────────────────────────────────
 // Single source of truth for WhatsApp phone identifiers. Stores E.164
@@ -2128,6 +2210,24 @@ export async function handleInboundMessage(
             code: greet.code ?? '',
           }),
         });
+        // Online ordering follow-up: if this org has at least one office
+        // with a takeout/delivery service configured, send the public
+        // menu link in a separate message. Phone is pre-filled so the
+        // customer's order pre-populates with their WA contact.
+        try {
+          const orderLink = await resolvePublicMenuLink(supabaseGreet, greetOrg.id, identifier);
+          if (orderLink) {
+            const orderHint =
+              greetLocale === 'ar'
+                ? `🍽️ لطلب الاستلام أو التوصيل عبر الإنترنت:\n${orderLink}`
+                : greetLocale === 'fr'
+                  ? `🍽️ Pour commander à emporter ou en livraison :\n${orderLink}`
+                  : `🍽️ To order takeout or delivery online:\n${orderLink}`;
+            await sendMessage({ to: identifier, body: orderHint });
+          }
+        } catch (e) {
+          console.warn('[messaging-commands] menu link follow-up failed', (e as any)?.message);
+        }
       } else {
         await sendMessage({
           to: identifier,
@@ -2811,7 +2911,17 @@ async function handleDepartmentChoice(
   }
 
   if (services.length === 1) {
-    // Auto-select single service → go to confirmation
+    // Auto-select single service → either short-circuit to ordering page
+    // (takeout/delivery) or go to standard JOIN confirmation (everything
+    // else, including dine-in which still uses the queue intake).
+    const onlyService = services[0];
+    if (await routeRestaurantServiceToOrdering(
+      onlyService.name, supabase, session.organization_id,
+      identifier, locale, sendMessage,
+    )) {
+      await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+      return;
+    }
     await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
 
     const { data: orgRow } = await supabase
@@ -2819,7 +2929,7 @@ async function handleDepartmentChoice(
     if (!orgRow) return;
 
     await askJoinConfirmationDirect(identifier, orgRow, locale, channel, sendMessage, bsuid, {
-      officeId: session.office_id, departmentId: dept.id, serviceId: services[0].id,
+      officeId: session.office_id, departmentId: dept.id, serviceId: onlyService.id,
     });
     return;
   }
@@ -2853,6 +2963,19 @@ async function handleServiceChoice(
   }
 
   const service = services[idx - 1];
+
+  // Restaurant short-circuit: takeout/delivery skip the queue-intake
+  // entirely (no name, no party_size — that flow doesn't fit pickup or
+  // delivery). Customer gets the public ordering link, picks items there,
+  // and the order arrives back on Station as a pending_approval ticket.
+  // Dine-in keeps the existing intake flow (party size matters there).
+  if (await routeRestaurantServiceToOrdering(
+    service.name, supabase, session.organization_id,
+    identifier, locale, sendMessage,
+  )) {
+    await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+    return;
+  }
 
   // Clean up selection session, proceed to confirmation
   await supabase.from('whatsapp_sessions').delete().eq('id', session.id);

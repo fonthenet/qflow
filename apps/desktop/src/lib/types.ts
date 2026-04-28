@@ -5,7 +5,7 @@ export interface Ticket {
   department_id?: string;
   service_id?: string;
   desk_id?: string;
-  status: 'waiting' | 'called' | 'serving' | 'served' | 'no_show' | 'cancelled';
+  status: 'waiting' | 'called' | 'serving' | 'served' | 'no_show' | 'cancelled' | 'pending_approval';
   priority: number;
   customer_data: Record<string, any>;
   created_at: string;
@@ -20,6 +20,10 @@ export interface Ticket {
   source?: string | null;
   is_offline: boolean;
   appointment_id?: string;
+  /** JSON-stringified delivery address — only set for delivery orders.
+   *  Shape: { street, city, instructions, lat?, lng? }. Stored as TEXT
+   *  locally; cloud column is JSONB. */
+  delivery_address?: string | null;
 }
 
 export interface SyncStatus {
