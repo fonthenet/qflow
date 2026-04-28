@@ -320,12 +320,20 @@ export default function OrderStatus(props: OrderStatusProps) {
           40% { transform: translateY(-7px); opacity: 1; }
         }
         @keyframes qfo-ride {
-          /* The 🛵 emoji on iOS/Apple is drawn rider-facing-LEFT, so we
-             pre-flip with scaleX(-1) on the element and counter-flip in
-             the keyframe — the bike now faces right and rides forward. */
-          0%   { transform: scaleX(-1) translateX(30%)  rotate(4deg); }
-          50%  { transform: scaleX(-1) translateX(-45%) rotate(-2deg); }
-          100% { transform: scaleX(-1) translateX(-120%) rotate(4deg); }
+          /* In-place idle-bob instead of horizontal travel. Earlier we
+             slid the bike across the icon box, but the start and end
+             positions didn't match — the loop teleported the emoji
+             back into view mid-frame, looking like the bike was
+             skipping. A gentle vertical bob (think: riding over road
+             bumps) loops perfectly because start === end, costs almost
+             nothing on the GPU (single transform property), and reads
+             as forward motion since the actual journey is shown by
+             the live map below. The 🛵 emoji on iOS is rider-facing-
+             LEFT, so we apply scaleX(-1) to point it right. */
+          0%, 100% { transform: scaleX(-1) translateY(0)    rotate(0deg); }
+          25%      { transform: scaleX(-1) translateY(-1px) rotate(-1.5deg); }
+          50%      { transform: scaleX(-1) translateY(-2px) rotate(0deg); }
+          75%      { transform: scaleX(-1) translateY(-1px) rotate(1.5deg); }
         }
         @keyframes qfo-pop-in {
           0%   { transform: scale(0.4); opacity: 0; }
@@ -544,11 +552,12 @@ function PhaseIcon({ phase, tint }: { phase: string; tint: string }) {
   if (phase === 'on_the_way') {
     return (
       <div style={wrap}>
-        {/* Motorcycle riding left → right inside the icon box. The slight
-            tilt on the keyframes simulates the bike leaning into a turn. */}
+        {/* Motorcycle bobbing in place — see qfo-ride keyframes. Uses
+            ease-in-out so each bump feels organic; 1.6s cadence is
+            slow enough to feel relaxed, fast enough to feel alive. */}
         <span style={{
           fontSize: 30,
-          animation: 'qfo-ride 2.6s linear infinite',
+          animation: 'qfo-ride 1.6s ease-in-out infinite',
           display: 'inline-block',
           willChange: 'transform',
         }}>🛵</span>
