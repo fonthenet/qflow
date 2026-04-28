@@ -478,7 +478,14 @@ export async function startWhatsappOrderFlow(
 // ── State handlers ───────────────────────────────────────────────────
 
 function isCancel(input: string): boolean {
-  return /^(cancel|annuler|annul|إلغاء|الغاء|stop|exit|quit|0)$/i.test(input.trim());
+  // Match the FIRST TOKEN as a cancel word, not the whole input. This
+  // way "cancel all", "cancel order", "annuler la commande" all bail
+  // out cleanly. The earlier exact-match version trapped customers
+  // who typed anything beyond a bare "cancel" — their input was
+  // captured as a note instead of cancelling the order. The bare "0"
+  // / "stop" / "quit" forms still work because they're single-word.
+  const first = input.trim().split(/\s+/)[0] ?? '';
+  return /^(cancel|annuler|annul|إلغاء|الغاء|stop|exit|quit|0)$/i.test(first);
 }
 
 function isAdd(input: string): boolean {
@@ -513,6 +520,41 @@ function detectGlobalCommand(input: string): string | null {
     'qr',
   ]);
   return known.has(first) ? first : null;
+}
+
+/**
+ * The customer typed a global command (JOIN, STATUS, HELP, MENU, LIST,
+ * BOOK, RDV, QR) while inside the order flow. Earlier we just sent a
+ * polite "you're in an order" hint, but that traps people who genuinely
+ * want to abandon the order and run the command — they have no way out
+ * short of typing CANCEL first. Now we drop the session and tell them
+ * to retry the command, so the next webhook fires the real handler.
+ *
+ * State-locked DELETE so a duplicate webhook delivery doesn't try to
+ * delete a row another instance already removed.
+ */
+async function escapeOrderViaGlobalCmd(
+  supabase: any,
+  sessionId: string,
+  expectedState: string,
+  identifier: string,
+  locale: Locale,
+  cmd: string,
+  sendMessage: SendFn,
+): Promise<void> {
+  const { data: dropped } = await supabase.from('whatsapp_sessions')
+    .delete()
+    .eq('id', sessionId)
+    .eq('state', expectedState)
+    .select('id');
+  if (!dropped || dropped.length === 0) return; // duplicate — bail
+  const upper = cmd.toUpperCase();
+  const msg = locale === 'ar'
+    ? `🛑 تم إلغاء الطلب. أرسل *${upper}* مرة أخرى للمتابعة.`
+    : locale === 'en'
+      ? `🛑 Order cancelled. Send *${upper}* again to continue.`
+      : `🛑 Commande annulée. Renvoyez *${upper}* pour continuer.`;
+  await sendMessage({ to: identifier, body: msg });
 }
 
 /** Extract explicit "NAME Faycel" / "NOM Faycel" / "الاسم فيصل" → "Faycel" */
@@ -662,16 +704,12 @@ export async function handleOrderReviewInput(
     return;
   }
 
-  // Stray global command (JOIN, STATUS, HELP…) — refuse politely so
-  // we don't half-cancel the order or treat it as a name.
+  // Global command mid-flow (JOIN, STATUS, …) — drop the order session
+  // and tell the customer to retry. They explicitly want to do
+  // something else, so trapping them is hostile.
   const globalCmd = detectGlobalCommand(input);
   if (globalCmd) {
-    const hint = locale === 'ar'
-      ? `👉 أنت في وسط طلب جارٍ. أرسل اسمك للمتابعة، أو *إلغاء* للتخلي عن السلة.`
-      : locale === 'en'
-        ? `👉 You're in the middle of an order. Send your name to continue, or *CANCEL* to drop the cart.`
-        : `👉 Vous êtes au milieu d'une commande. Envoyez votre nom pour continuer, ou *ANNULER* pour abandonner.`;
-    await sendMessage({ to: identifier, body: hint });
+    await escapeOrderViaGlobalCmd(supabase, session.id, 'pending_order_review', identifier, locale, globalCmd, sendMessage);
     return;
   }
 
@@ -866,15 +904,11 @@ export async function handleOrderNotesInput(
     return;
   }
 
-  // Stray global commands (JOIN, STATUS) — refuse politely. No state
-  // mutation so safe to send unconditionally.
-  if (detectGlobalCommand(input)) {
-    const hint = locale === 'ar'
-      ? '👉 أنت في وسط طلب. اكتب ملاحظتك للمطعم أو أرسل *تخطي*.'
-      : locale === 'en'
-        ? "👉 You're in the middle of an order. Type a note for the restaurant or send *SKIP*."
-        : '👉 Vous êtes au milieu d\'une commande. Tapez une note ou envoyez *PASSER*.';
-    await sendMessage({ to: identifier, body: hint });
+  // Global command mid-flow → drop the order and let the customer
+  // re-send the command (which will then hit the real handler).
+  const notesGlobal = detectGlobalCommand(input);
+  if (notesGlobal) {
+    await escapeOrderViaGlobalCmd(supabase, session.id, 'pending_order_notes', identifier, locale, notesGlobal, sendMessage);
     return;
   }
 
@@ -923,14 +957,12 @@ export async function handleOrderConfirmInput(
     await sendMessage({ to: identifier, body: tplCancelled(locale) });
     return;
   }
-  // Stray global command at the confirm step — tell them clearly.
-  if (detectGlobalCommand(input)) {
-    const hint = locale === 'ar'
-      ? '👉 أنت على وشك إرسال طلبك. أرسل *نعم* للتأكيد أو *لا* للإلغاء.'
-      : locale === 'en'
-        ? '👉 You\'re about to send your order. Reply *YES* to confirm or *NO* to cancel.'
-        : "👉 Vous êtes sur le point d'envoyer la commande. Répondez *OUI* pour confirmer ou *NON* pour annuler.";
-    await sendMessage({ to: identifier, body: hint });
+  // Global command at the confirm step → escape rather than trap. If
+  // the customer types JOIN here they meant to leave the order, not
+  // press a phantom confirm button.
+  const confirmGlobal = detectGlobalCommand(input);
+  if (confirmGlobal) {
+    await escapeOrderViaGlobalCmd(supabase, session.id, 'pending_order_confirm', identifier, locale, confirmGlobal, sendMessage);
     return;
   }
   if (!isYes(input)) {
