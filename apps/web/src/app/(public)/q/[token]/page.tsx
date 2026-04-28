@@ -374,7 +374,10 @@ function CashBadge({ locale }: { locale: string }) {
           className="fixed bottom-3 left-3 z-[60] sm:bottom-4 sm:left-4"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          <LanguageSwitcher />
+          {/* menuPlacement="top-left" → dropdown opens UPWARD and aligns
+              left, so the locale options stay visible above the button
+              instead of being clipped below the viewport. */}
+          <LanguageSwitcher menuPlacement="top-left" />
         </div>
         {content}
         <div

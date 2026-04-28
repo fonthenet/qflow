@@ -22,7 +22,22 @@ function persistLocale(locale: AppLocale) {
   try { localStorage.setItem(STORAGE_KEY, locale); } catch {}
 }
 
-export function LanguageSwitcher({ variant = 'floating' }: { variant?: 'floating' | 'embedded' }) {
+/**
+ * `menuPlacement` controls where the dropdown opens relative to the
+ * trigger:
+ *   - 'bottom-right' (default) — opens DOWN, aligned to the right edge.
+ *     Right for the top-right floating switcher used on most pages.
+ *   - 'top-left' — opens UP, aligned to the left edge. Used by the
+ *     public ticket page where the switcher sits in the bottom-left
+ *     corner; opening down would clip the menu off the viewport.
+ */
+export function LanguageSwitcher({
+  variant = 'floating',
+  menuPlacement = 'bottom-right',
+}: {
+  variant?: 'floating' | 'embedded';
+  menuPlacement?: 'bottom-right' | 'top-left';
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { locale } = useI18n();
@@ -79,10 +94,17 @@ export function LanguageSwitcher({ variant = 'floating' }: { variant?: 'floating
     variant === 'embedded'
       ? 'h-4 w-4 text-slate-300'
       : 'h-3.5 w-3.5 text-muted-foreground';
+  // Position classes flip when the switcher is anchored to the
+  // bottom-left of the viewport: the menu must open UPWARDS (bottom-full
+  // + mb-2) and align LEFT (left-0) so it stays on-screen.
+  const placementClasses =
+    menuPlacement === 'top-left'
+      ? 'left-0 bottom-full mb-2'
+      : 'right-0 top-full mt-2';
   const menuClassName =
     variant === 'embedded'
-      ? 'absolute right-0 top-full z-50 mt-2 min-w-[84px] rounded-2xl border border-white/10 bg-slate-950/95 p-1 shadow-lg backdrop-blur'
-      : 'absolute right-0 top-full z-50 mt-2 min-w-[72px] rounded-2xl border border-border bg-background/95 p-1 shadow-lg backdrop-blur';
+      ? `absolute ${placementClasses} z-50 min-w-[84px] rounded-2xl border border-white/10 bg-slate-950/95 p-1 shadow-lg backdrop-blur`
+      : `absolute ${placementClasses} z-50 min-w-[72px] rounded-2xl border border-border bg-background/95 p-1 shadow-lg backdrop-blur`;
   const itemClassName =
     variant === 'embedded'
       ? 'block rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/8 hover:text-white'
