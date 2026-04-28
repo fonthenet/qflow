@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendWhatsAppMessage, sendWhatsAppLocationRequest } from '@/lib/whatsapp';
 import { resolveRestaurantServiceType, computeOrderEtaMinutes, type CartItem } from '@qflo/shared';
 import { nanoid } from 'nanoid';
 import type { Locale, SendFn } from '@/lib/messaging-commands';
@@ -146,7 +146,23 @@ function tplCart(payload: OrderSessionPayload, locale: Locale, currency: string)
   return lines.join('\n');
 }
 
-function tplAskAddress(locale: Locale): string {
+/**
+ * Short prompt shown above the interactive "Send Location" button on
+ * Meta. Intentionally tight — the button itself carries the action.
+ */
+function tplAskAddressInteractive(locale: Locale): string {
+  if (locale === 'ar') return '📍 شاركنا عنوان التوصيل بنقرة واحدة:';
+  if (locale === 'en') return '📍 Share the delivery address — one tap:';
+  return "📍 Partagez l'adresse de livraison en un clic :";
+}
+
+/**
+ * Long fallback prompt used on Twilio / older WA clients that can't
+ * render the interactive Location Request. Walks the customer through
+ * the manual paperclip → Location flow and offers a typed-address
+ * alternative so the journey doesn't dead-end.
+ */
+function tplAskAddressFallback(locale: Locale): string {
   if (locale === 'ar') {
     return [
       '📍 *أرسل عنوان التوصيل*',
@@ -592,7 +608,13 @@ export async function handleOrderReviewInput(
       await supabase.from('whatsapp_sessions')
         .update({ custom_intake_data: payload, state: 'pending_order_address' })
         .eq('id', session.id);
-      await sendMessage({ to: identifier, body: tplAskAddress(locale) });
+      // One-tap "Send Location" interactive bubble on Meta; long
+      // text-instructions fallback on Twilio / old clients.
+      await sendWhatsAppLocationRequest({
+        to: identifier,
+        bodyText: tplAskAddressInteractive(locale),
+        fallbackText: tplAskAddressFallback(locale),
+      });
       return;
     }
     await supabase.from('whatsapp_sessions')
@@ -681,7 +703,13 @@ export async function handleOrderAddressInput(
 
   const trimmed = input.trim().slice(0, 500);
   if (trimmed.length < 5) {
-    await sendMessage({ to: identifier, body: tplAskAddress(locale) });
+    // Re-prompt with the same one-tap interactive button so customers
+    // who fat-fingered a 1-char address aren't stuck typing a long form.
+    await sendWhatsAppLocationRequest({
+      to: identifier,
+      bodyText: tplAskAddressInteractive(locale),
+      fallbackText: tplAskAddressFallback(locale),
+    });
     return;
   }
   payload.delivery_address = { street: trimmed };

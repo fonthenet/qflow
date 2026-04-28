@@ -278,3 +278,81 @@ export async function sendWhatsAppMessage({
     error: 'No WhatsApp provider configured (set WHATSAPP_META_ACCESS_TOKEN or TWILIO credentials)',
   };
 }
+
+// ── Location Request Message ────────────────────────────────────────
+//
+// Meta Cloud API supports a special interactive message type that renders
+// a tappable "📍 Send Location" button inside the chat bubble. One tap
+// opens WhatsApp's native picker, the customer chooses Send Current
+// Location (one-tap permission grant) or pins a spot, and the reply
+// arrives at our webhook as a regular `location` message — already
+// handled by handleOrderAddressInput.
+//
+// This is the lowest-friction way to ask for an address. Twilio doesn't
+// support this interactive type, so we degrade to plain text. Old WA
+// clients without interactive support also get the text fallback
+// automatically (Meta's degradation, not ours).
+//
+// Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-location-request-messages
+export async function sendWhatsAppLocationRequest({
+  to,
+  bodyText,
+  fallbackText,
+  timezone,
+}: {
+  to: string;
+  /** Bubble text shown above the Send Location button. */
+  bodyText: string;
+  /** Plain-text version sent when Meta isn't configured (Twilio fallback)
+   *  or when the interactive call fails. Should include explicit
+   *  alternative instructions ("Or just type the address…"). */
+  fallbackText: string;
+  timezone?: string;
+}): Promise<WhatsAppSendResult> {
+  const metaConfig = getMetaWhatsAppConfig();
+  if (metaConfig) {
+    const normalizedTo = normalizePhone(to, timezone);
+    if (!normalizedTo) {
+      return { ok: false, provider: 'meta', error: 'Phone number is not valid' };
+    }
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v22.0/${metaConfig.phoneNumberId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${metaConfig.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+              type: 'location_request_message',
+              body: { text: bodyText.slice(0, 1024) },
+              action: { name: 'send_location' },
+            },
+          }),
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15000),
+        },
+      );
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: true, provider: 'meta', to: normalizedTo, sid: data?.messages?.[0]?.id };
+      }
+      // Interactive send failed — Meta sometimes rejects when the
+      // 24h customer-initiated window has lapsed. Fall through to a
+      // plain text send so the customer at least sees a usable prompt.
+      const errBody = await res.text().catch(() => '');
+      console.warn('[whatsapp:locationRequest] Meta failed, falling back to text:', errBody.slice(0, 200));
+    } catch (e: any) {
+      console.warn('[whatsapp:locationRequest] Meta call threw, falling back to text:', e?.message);
+    }
+  }
+  // Twilio path or Meta failure → plain text. The fallback copy carries
+  // its own instructions (paperclip → Location → Send Current Location)
+  // so the customer can still complete the flow.
+  return sendWhatsAppMessage({ to, body: fallbackText, timezone });
+}
