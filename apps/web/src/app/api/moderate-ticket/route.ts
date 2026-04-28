@@ -5,6 +5,7 @@ import { sendMessengerMessage } from '@/lib/messenger';
 import { getQueuePosition } from '@/lib/queue-position';
 import { formatPosition, formatNowServing, t as tMsg, type Locale } from '@/lib/messaging-commands';
 import { APP_BASE_URL } from '@/lib/config';
+import { resolveRestaurantServiceType } from '@qflo/shared';
 
 /**
  * POST /api/moderate-ticket
@@ -91,10 +92,35 @@ export async function POST(request: NextRequest) {
     || (cd.locale as Locale)
     || 'fr';
 
-  // Resolved here, after `locale` exists. Substituted into the approve /
-  // declined templates so restaurants get "réservation" + table-ready
-  // copy and salons get "rendez-vous" + ✂️ instead of the default.
-  const apptVocabModerate = _getApptVocabVarsModerate(orgCategory, locale);
+  // Resolve the service name once up-front so we can both:
+  //   1. Pass it as the {service} substitution in approve/decline templates
+  //   2. Detect takeout/delivery for restaurants → swap "reservation" copy
+  //      for "order" copy (a takeout customer reads "Your reservation has
+  //      been approved" as nonsensical — nothing was reserved).
+  // Falls back to '—' if the row was deleted or unreadable.
+  let resolvedServiceName = '—';
+  let serviceTypeHint: 'dine_in' | 'takeout' | 'delivery' | null = null;
+  if (ticket.service_id) {
+    try {
+      const { data: svc } = await supabase
+        .from('services')
+        .select('name')
+        .eq('id', ticket.service_id)
+        .maybeSingle();
+      if (svc?.name) {
+        resolvedServiceName = svc.name;
+        if (orgCategory && /restaurant|cafe|café|food|resto|bistro/i.test(orgCategory)) {
+          // resolveRestaurantServiceType returns 'dine_in' | 'takeout'
+          // | 'delivery' | null based on the service name.
+          serviceTypeHint = resolveRestaurantServiceType(svc.name) ?? null;
+        }
+      }
+    } catch { /* ignore — vocab will use the default reservation/appointment branch */ }
+  }
+  // Restaurant takeout/delivery → "order" vocab; restaurant dine-in →
+  // "reservation"; salons → "appointment"/"rendez-vous"; everything else
+  // keeps the default appointment/RDV/موعد copy.
+  const apptVocabModerate = _getApptVocabVarsModerate(orgCategory, locale, serviceTypeHint);
 
   if (action === 'approve') {
     const { error: updErr } = await supabase
@@ -123,14 +149,8 @@ export async function POST(request: NextRequest) {
       // One combined message: "approved" header + full ticket details.
       // Ticket already exists (JOIN flow), so use the sameday template
       // which doesn't say "you'll receive a ticket when you arrive".
-      // Resolve service name + ticket time so {time}/{service} render properly.
-      let approvedServiceName = '—';
-      if (ticket.service_id) {
-        try {
-          const { data: svc } = await supabase.from('services').select('name').eq('id', ticket.service_id).maybeSingle();
-          if (svc?.name) approvedServiceName = svc.name;
-        } catch { /* ignore */ }
-      }
+      // Service name was resolved earlier (see top of handler) — reuse
+      // it here instead of round-tripping the DB again.
       const apprLocTag = locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR';
       const apprWhenDt = (ticket as any).checked_in_at ? new Date((ticket as any).checked_in_at) : new Date();
       const approvedTime = apprWhenDt.toLocaleTimeString(apprLocTag, { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -138,7 +158,7 @@ export async function POST(request: NextRequest) {
         ...apptVocabModerate,
         name: orgName,
         time: approvedTime,
-        service: approvedServiceName,
+        service: resolvedServiceName,
       });
       const joinedBody = approvedHeader + tMsg('joined_details', locale, {
         ticket: ticket.ticket_number,
@@ -201,15 +221,7 @@ export async function POST(request: NextRequest) {
     // don't ship a message that ends in "\n\n" with nothing after it.
     const reasonText = declineReason
       || (locale === 'ar' ? 'لم يتم تقديم سبب.' : locale === 'en' ? 'No reason provided.' : 'Aucune raison fournie.');
-    // Resolve service name + use ticket check-in time for {date}/{time} so the
-    // decline message matches the pending_approval message the customer got.
-    let declinedServiceName = '—';
-    if (ticket.service_id) {
-      try {
-        const { data: svc } = await supabase.from('services').select('name').eq('id', ticket.service_id).maybeSingle();
-        if (svc?.name) declinedServiceName = svc.name;
-      } catch { /* ignore */ }
-    }
+    // Service name resolved at top of handler — reuse here.
     const locTag = locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR';
     const whenDt = (ticket as any).checked_in_at ? new Date((ticket as any).checked_in_at) : new Date();
     const declinedDate = whenDt.toLocaleDateString(locTag, { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -219,7 +231,7 @@ export async function POST(request: NextRequest) {
       name: orgName,
       date: declinedDate,
       time: declinedTime,
-      service: declinedServiceName,
+      service: resolvedServiceName,
       reason: reasonText,
     });
     if (channel === 'whatsapp' && toPhone) {

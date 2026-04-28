@@ -53,9 +53,45 @@ function normalizeCategory(raw: string | null | undefined): 'restaurant' | 'salo
 export function getApptVocab(
   category: string | null | undefined,
   locale: string,
+  /**
+   * Restaurant tickets split into three sub-flows that expect different
+   * customer-facing nouns:
+   *   - dine_in           → "reservation" (booking a table)
+   *   - takeout / delivery → "order"      (food being prepared, no table)
+   *
+   * Pass the resolved service type so the approval / declined / cancelled
+   * templates render the right noun. Without this, takeout & delivery
+   * orders read "Your reservation has been approved" — confusing because
+   * nothing was reserved. Default (undefined / null) → reservation copy
+   * to keep dine-in behaviour unchanged.
+   */
+  serviceTypeHint?: 'dine_in' | 'takeout' | 'delivery' | null,
 ): ApptVocab {
   const c = normalizeCategory(category);
   const L = narrow(locale);
+
+  // Restaurant + takeout / delivery → ORDER vocabulary
+  if (c === 'restaurant' && (serviceTypeHint === 'takeout' || serviceTypeHint === 'delivery')) {
+    const isDeliv = serviceTypeHint === 'delivery';
+    return {
+      noun: L === 'ar' ? 'طلب' : L === 'en' ? 'order' : 'commande',
+      service_emoji: isDeliv ? '🛵' : '🥡',
+      // After approval the customer wants to know what happens next —
+      // delivery: driver leaves shortly; takeout: ready-for-pickup ping.
+      arrival_line: isDeliv
+        ? (L === 'ar'
+            ? '🛵 سنُعلمك عند مغادرة السائق.'
+            : L === 'en'
+              ? "🛵 We'll notify you when the driver leaves."
+              : '🛵 Nous vous préviendrons au départ du livreur.')
+        : (L === 'ar'
+            ? '🥡 سنُعلمك عندما يصبح طلبك جاهزًا للاستلام.'
+            : L === 'en'
+              ? "🥡 We'll notify you when your order is ready for pickup."
+              : '🥡 Nous vous préviendrons quand votre commande sera prête à emporter.'),
+      cancel_cmd: L === 'ar' ? 'إلغاء الطلب' : L === 'en' ? 'CANCEL ORDER' : 'ANNULER COMMANDE',
+    };
+  }
 
   if (c === 'restaurant') {
     return {
@@ -103,8 +139,9 @@ export function getApptVocab(
 export function getApptVocabVars(
   category: string | null | undefined,
   locale: string,
+  serviceTypeHint?: 'dine_in' | 'takeout' | 'delivery' | null,
 ): Record<string, string> {
-  const v = getApptVocab(category, locale);
+  const v = getApptVocab(category, locale, serviceTypeHint);
   return {
     appt: v.noun,
     appt_capital: v.noun.charAt(0).toUpperCase() + v.noun.slice(1),
