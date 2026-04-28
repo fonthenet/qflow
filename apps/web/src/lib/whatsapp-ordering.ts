@@ -45,7 +45,13 @@ interface OrderSessionPayload {
   cart: Record<string, { qty: number; name: string; unit_price: number; prep_time_minutes: number | null }>;
   /** Captured progressively. */
   customer_name?: string;
-  delivery_address?: { street: string; instructions?: string };
+  delivery_address?: {
+    street: string;
+    instructions?: string;
+    /** Optional lat/lng captured from a WhatsApp location pin. */
+    lat?: number;
+    lng?: number;
+  };
 }
 
 // ── Templates ────────────────────────────────────────────────────────
@@ -141,9 +147,40 @@ function tplCart(payload: OrderSessionPayload, locale: Locale, currency: string)
 }
 
 function tplAskAddress(locale: Locale): string {
-  if (locale === 'ar') return '📍 أرسل عنوان التوصيل (الشارع، التفاصيل، تعليمات السائق…).';
-  if (locale === 'en') return '📍 Please send the delivery address (street, details, driver instructions…).';
-  return "📍 Envoyez l'adresse de livraison (rue, détails, instructions pour le livreur…).";
+  if (locale === 'ar') {
+    return [
+      '📍 *أرسل عنوان التوصيل*',
+      '',
+      'أسهل طريقة:',
+      '   1. اضغط على 📎',
+      '   2. اختر *الموقع*',
+      '   3. أرسل *الموقع الحالي* أو حدد عنوانك',
+      '',
+      'أو فقط اكتب العنوان (الشارع، التفاصيل، تعليمات السائق).',
+    ].join('\n');
+  }
+  if (locale === 'en') {
+    return [
+      '📍 *Send the delivery address*',
+      '',
+      'Easiest way:',
+      '   1. Tap 📎',
+      '   2. Choose *Location*',
+      '   3. Send *Current Location* or pick the spot',
+      '',
+      'Or just type the address (street, details, driver instructions).',
+    ].join('\n');
+  }
+  return [
+    "📍 *Envoyez l'adresse de livraison*",
+    '',
+    'Le plus simple :',
+    '   1. Appuyez sur 📎',
+    '   2. Choisissez *Localisation*',
+    '   3. Envoyez *Position actuelle* ou choisissez l\'endroit',
+    '',
+    'Ou tapez simplement l\'adresse (rue, détails, instructions livreur).',
+  ].join('\n');
 }
 
 function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: string, orgName: string): string {
@@ -586,6 +623,7 @@ export async function handleOrderReviewInput(
 
 export async function handleOrderAddressInput(
   session: any, input: string, identifier: string, sendMessage: SendFn,
+  locationData?: InboundLocationData,
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const locale: Locale = (session.locale as Locale) || 'fr';
@@ -594,6 +632,50 @@ export async function handleOrderAddressInput(
   if (isCancel(input)) {
     await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
     await sendMessage({ to: identifier, body: tplCancelled(locale) });
+    return;
+  }
+
+  // Location-pin path: customer tapped 📎 → Location → Send. Skip the
+  // text-address ask entirely, store lat/lng on the order, and show a
+  // human-readable summary so the operator can verify on the Station
+  // card before accepting. The webhook synthesises a "[location]" body
+  // for these messages so the dispatcher routes them here.
+  if (locationData) {
+    const { latitude, longitude, name, address } = locationData;
+    // Synthesize a `street` so the existing render code (which just shows
+    // delivery_address.street) has something useful even if the customer
+    // didn't pick a labelled place. Operator gets the lat/lng + Maps link
+    // on the Station card regardless.
+    const synthesizedStreet = address
+      ? address
+      : name
+        ? name
+        : (locale === 'ar' ? `موقع مشترك (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
+          : locale === 'en' ? `Shared location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
+          : `Position partagée (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
+    payload.delivery_address = {
+      street: synthesizedStreet,
+      instructions: name && address && name !== address ? name : undefined,
+    } as any;
+    // Stash lat/lng on the payload so placeWhatsappOrder reads them when
+    // it builds the ticket's delivery_address JSONB.
+    (payload as any).delivery_address.lat = latitude;
+    (payload as any).delivery_address.lng = longitude;
+
+    await supabase.from('whatsapp_sessions')
+      .update({ custom_intake_data: payload, state: 'pending_order_confirm' })
+      .eq('id', session.id);
+
+    // Echo back so the customer can sanity-check before confirming.
+    const echo = locale === 'ar'
+      ? `📍 تم استلام الموقع.\n${synthesizedStreet}`
+      : locale === 'en'
+        ? `📍 Got your pin.\n${synthesizedStreet}`
+        : `📍 Position reçue.\n${synthesizedStreet}`;
+    await sendMessage({ to: identifier, body: echo });
+
+    const { currency, orgName } = await loadOrgCurrency(supabase, payload.organization_id);
+    await sendMessage({ to: identifier, body: tplAskConfirm(payload, locale, currency, orgName) });
     return;
   }
 
@@ -709,7 +791,14 @@ export async function handleOrderConfirmInput(
   if (phone) customerData.phone = phone;
 
   const deliveryAddress = payload.service === 'delivery' && payload.delivery_address
-    ? { street: payload.delivery_address.street, instructions: payload.delivery_address.instructions ?? null }
+    ? {
+        street: payload.delivery_address.street,
+        instructions: payload.delivery_address.instructions ?? null,
+        // lat/lng — present only when the customer shared a WA location
+        // pin. Operator gets a one-tap "Open in Maps" link when set.
+        lat: typeof payload.delivery_address.lat === 'number' ? payload.delivery_address.lat : null,
+        lng: typeof payload.delivery_address.lng === 'number' ? payload.delivery_address.lng : null,
+      }
     : null;
 
   // Insert ticket as pending_approval — operator on Station accepts/declines.
@@ -775,11 +864,21 @@ export async function handleOrderConfirmInput(
  * handler, and returns true if an order-flow message was handled. The
  * dispatcher should `return` immediately when this is true.
  */
+export interface InboundLocationData {
+  latitude: number;
+  longitude: number;
+  /** Optional place name from the WhatsApp location picker (e.g. "Hassan Bar"). */
+  name?: string;
+  /** Optional formatted address from the WA picker. */
+  address?: string;
+}
+
 export async function tryHandleWhatsappOrderState(
   identifier: string,
   channel: 'whatsapp' | 'messenger',
   rawInput: string,
   sendFn: SendFn,
+  locationData?: InboundLocationData,
 ): Promise<boolean> {
   const supabase = createAdminClient() as any;
   const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
@@ -827,7 +926,7 @@ export async function tryHandleWhatsappOrderState(
       await handleOrderReviewInput(session, rawInput, identifier, send);
       return true;
     case 'pending_order_address':
-      await handleOrderAddressInput(session, rawInput, identifier, send);
+      await handleOrderAddressInput(session, rawInput, identifier, send, locationData);
       return true;
     case 'pending_order_confirm':
       await handleOrderConfirmInput(session, rawInput, identifier, send);

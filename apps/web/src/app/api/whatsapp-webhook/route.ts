@@ -63,6 +63,11 @@ export async function POST(request: NextRequest) {
     // Dedup key: Meta message.id (guaranteed unique per delivery); Twilio uses
     // a composite derived from phone+timestamp as a best-effort fallback.
     let messageId: string | null = null;
+    // Location share (paperclip → Location → Send / Live Location). Captured
+    // from Meta's `message.location` or Twilio's Latitude/Longitude form fields,
+    // then forwarded to the message handler so the in-WhatsApp ordering flow
+    // can drop it straight into delivery_address without asking for text.
+    let locationData: { latitude: number; longitude: number; name?: string; address?: string } | null = null;
 
     // For Meta Cloud API (JSON), verify x-hub-signature-256 if app secret is set
     if (contentType.includes('application/json')) {
@@ -94,6 +99,23 @@ export async function POST(request: NextRequest) {
         bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
         // Meta provides a stable per-delivery message ID — primary dedup key.
         messageId = (message.id as string) || null;
+        // Location-share message: Meta delivers it as message.type === 'location'
+        // with latitude/longitude (always) and optional name/address (the latter
+        // only when the customer picked a labelled place from the WA picker
+        // rather than raw GPS). We synthesize a placeholder body so downstream
+        // dedup + empty-body checks don't bail.
+        if (message.type === 'location' && message.location) {
+          const loc = message.location as { latitude?: number; longitude?: number; name?: string; address?: string };
+          if (typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+            locationData = {
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+              name: typeof loc.name === 'string' ? loc.name : undefined,
+              address: typeof loc.address === 'string' ? loc.address : undefined,
+            };
+            if (!messageBody) messageBody = '[location]';
+          }
+        }
       } else {
         // No app secret configured — fail closed (reject unverified payloads)
         console.error('[whatsapp-webhook] WHATSAPP_APP_SECRET/MESSENGER_APP_SECRET not set — rejecting unverified webhook. Set the env var to enable webhook processing.');
@@ -108,6 +130,26 @@ export async function POST(request: NextRequest) {
       // Twilio SID is a stable message identifier
       const twilioSid = formData.get('MessageSid') as string | null;
       messageId = twilioSid || null;
+      // Twilio location-share messages arrive as Latitude/Longitude form
+      // fields plus an optional Address/Label. Same handling as the Meta
+      // path so the order flow can pick up the pin and skip text-address.
+      const twLat = formData.get('Latitude');
+      const twLng = formData.get('Longitude');
+      if (typeof twLat === 'string' && typeof twLng === 'string') {
+        const lat = Number(twLat);
+        const lng = Number(twLng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          const twAddr = formData.get('Address');
+          const twLabel = formData.get('Label');
+          locationData = {
+            latitude: lat,
+            longitude: lng,
+            name: typeof twLabel === 'string' ? twLabel : undefined,
+            address: typeof twAddr === 'string' ? twAddr : undefined,
+          };
+          if (!messageBody) messageBody = '[location]';
+        }
+      }
 
       // Validate Twilio signature if auth token is available
       const twilioSignature = request.headers.get('x-twilio-signature');
@@ -166,7 +208,8 @@ export async function POST(request: NextRequest) {
 
     // Handle the message with shared-number routing
     // Phone is primary identifier; BSUID is passed alongside for storage/fallback
-    await handleWhatsAppMessage(fromPhone, messageBody, profileName, bsuid);
+    // locationData is forwarded for the in-WhatsApp ordering flow's address step.
+    await handleWhatsAppMessage(fromPhone, messageBody, profileName, bsuid, locationData ?? undefined);
 
     console.log(`[whatsapp-webhook] Handled successfully`);
     return NextResponse.json({ ok: true });

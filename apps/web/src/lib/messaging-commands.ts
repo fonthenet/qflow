@@ -1331,6 +1331,10 @@ export async function handleInboundMessage(
   sendMessage: SendFn,
   profileName?: string,
   bsuid?: string,
+  /** Optional WhatsApp location-share payload — forwarded to the in-WA
+   *  ordering flow so customers can drop a pin instead of typing the
+   *  street at the address step. */
+  locationData?: { latitude: number; longitude: number; name?: string; address?: string },
 ): Promise<void> {
   // Strip invisible Unicode characters (ZWJ, ZWNJ, LTR/RTL marks, BOM, Arabic marks, diacritics, etc.)
   // Then normalize Arabic Alef variants (أ إ آ ٱ → ا) and Taa Marbuta/Haa (ه ← ة kept distinct)
@@ -1389,7 +1393,7 @@ export async function handleInboundMessage(
   // to the appropriate state handler. Returns true when handled.
   if (channel === 'whatsapp') {
     const handledByOrder = await tryHandleWhatsappOrderState(
-      identifier, channel, messageBody, sendMessage,
+      identifier, channel, messageBody, sendMessage, locationData,
     );
     if (handledByOrder) return;
   }

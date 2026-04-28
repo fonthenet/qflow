@@ -2118,7 +2118,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [upcomingAppointments, setUpcomingAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null; source: string | null }>>([]);
   const [queueTab, setQueueTab] = useState<'queue' | 'rdv' | 'pending'>('queue');
   const [rdvBusyId, setRdvBusyId] = useState<string | null>(null);
-  const [pendingTickets, setPendingTickets] = useState<Array<{ id: string; ticket_number: string; source: string | null; customer_data: any; created_at: string; department_id: string | null; service_id: string | null }>>([]);
+  const [pendingTickets, setPendingTickets] = useState<Array<{ id: string; ticket_number: string; source: string | null; customer_data: any; created_at: string; department_id: string | null; service_id: string | null; delivery_address: any }>>([]);
+  // Cached ticket_items for pending-approval tickets, fetched lazily when
+  // the operator expands a card. Keyed by ticket_id so each card loads
+  // once and only once. Map<id, items[] | 'loading' | 'error'>.
+  const [pendingItemsByTicket, setPendingItemsByTicket] = useState<Record<string, Array<{ id: string; name: string; qty: number; price: number | null; note: string | null }> | 'loading' | 'error'>>({});
   const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
   const [expandedPendingId, setExpandedPendingId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
@@ -2637,7 +2641,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         const sb = await getSupabase();
         const { data, error } = await sb
           .from('tickets')
-          .select('id, ticket_number, source, customer_data, created_at, department_id, service_id')
+          .select('id, ticket_number, source, customer_data, created_at, department_id, service_id, delivery_address')
           .eq('office_id', session.office_id)
           .eq('status', 'pending_approval')
           .order('created_at', { ascending: true })
@@ -6287,7 +6291,26 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     >
                       <div
                         style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-                        onClick={() => setExpandedPendingId(prev => prev === expKey ? null : expKey)}
+                        onClick={async () => {
+                          const willOpen = expandedPendingId !== expKey;
+                          setExpandedPendingId(prev => prev === expKey ? null : expKey);
+                          // Lazy-fetch ticket_items the first time this card
+                          // opens. Cached after the first hit so toggling the
+                          // arrow doesn't re-query on every click. Uses the
+                          // existing IPC that reads from local SQLite (kept
+                          // in sync with cloud by sync.ts).
+                          if (willOpen && pendingItemsByTicket[p.id] === undefined) {
+                            setPendingItemsByTicket(prev => ({ ...prev, [p.id]: 'loading' }));
+                            try {
+                              const orgId = session.organization_id ?? '';
+                              const items = await (window as any).qf?.ticketItems?.list?.(p.id);
+                              setPendingItemsByTicket(prev => ({ ...prev, [p.id]: Array.isArray(items) ? items : [] }));
+                              void orgId;
+                            } catch {
+                              setPendingItemsByTicket(prev => ({ ...prev, [p.id]: 'error' }));
+                            }
+                          }
+                        }}
                       >
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
@@ -6401,6 +6424,107 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                               <span>{cd.email}</span>
                             </div>
                           )}
+                          {/* Delivery address — surfaces when the customer
+                              ordered delivery via WhatsApp / web. delivery_address
+                              is JSONB on cloud, may arrive as object or string.
+                              When lat/lng are present (customer shared a WA
+                              location pin), render an "Open in Maps" link so
+                              the operator / rider gets one-tap directions. */}
+                          {(() => {
+                            const da = (() => {
+                              const raw = (p as any).delivery_address;
+                              if (!raw) return null;
+                              if (typeof raw === 'object') return raw as Record<string, any>;
+                              try { return JSON.parse(raw) as Record<string, any>; } catch { return null; }
+                            })();
+                            if (!da?.street && !(da?.lat && da?.lng)) return null;
+                            const hasPin = typeof da?.lat === 'number' && typeof da?.lng === 'number';
+                            // Universal `?q=lat,lng` link — Android opens
+                            // Google Maps, iOS opens Apple Maps, desktop falls
+                            // back to a Google Maps web tab. One link, every
+                            // platform.
+                            const mapsHref = hasPin
+                              ? `https://www.google.com/maps/?q=${encodeURIComponent(`${da.lat},${da.lng}`)}`
+                              : null;
+                            return (
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>📍 {t('Address')}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <span dir="auto" style={{ unicodeBidi: 'isolate', wordBreak: 'break-word' }}>
+                                    {da.street}
+                                    {da.city ? `, ${da.city}` : ''}
+                                    {da.instructions ? ` — ${da.instructions}` : ''}
+                                  </span>
+                                  {mapsHref && (
+                                    <a
+                                      href={mapsHref}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        display: 'inline-block', marginTop: 3,
+                                        fontSize: 10, fontWeight: 700,
+                                        padding: '2px 8px', borderRadius: 5,
+                                        background: 'rgba(59,130,246,0.18)',
+                                        color: '#3b82f6',
+                                        border: '1px solid rgba(59,130,246,0.4)',
+                                        textDecoration: 'none',
+                                      }}
+                                    >
+                                      🗺️ {t('Open in Maps')}
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {/* Ordered items + running total. Lazy-loaded from
+                              local SQLite when the card was expanded. Items
+                              are most of the operator's decision context for
+                              an online order (does the kitchen have these,
+                              is it worth my time?), so they belong here. */}
+                          {(() => {
+                            const items = pendingItemsByTicket[p.id];
+                            if (items === undefined) return null;
+                            if (items === 'loading') {
+                              return (
+                                <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(245,158,11,0.2)', fontSize: 10, color: 'var(--text3, #94a3b8)' }}>
+                                  {t('Loading items...')}
+                                </div>
+                              );
+                            }
+                            if (items === 'error' || (Array.isArray(items) && items.length === 0)) {
+                              return null; // walk-in tickets have no items; don't show an empty section
+                            }
+                            const total = items.reduce((s, i) => s + (typeof i.price === 'number' ? i.price : 0) * (i.qty || 0), 0);
+                            return (
+                              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(245,158,11,0.25)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700 }}>
+                                  🛒 {t('Order')} ({items.length})
+                                </div>
+                                {items.map((it) => (
+                                  <div key={it.id} style={{ display: 'flex', gap: 6, fontSize: 11, color: 'var(--text2, #cbd5e1)' }}>
+                                    <span style={{ minWidth: 22, fontWeight: 700, textAlign: 'end' }}>{it.qty}×</span>
+                                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto">
+                                      {it.name}
+                                      {it.note ? <span style={{ color: 'var(--text3, #94a3b8)', fontStyle: 'italic' }}> · {it.note}</span> : null}
+                                    </span>
+                                    {typeof it.price === 'number' && (
+                                      <span style={{ color: 'var(--text3, #94a3b8)' }}>
+                                        {((it.price * it.qty) || 0).toFixed(currencyDecimals)} {currencySymbol}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2, paddingTop: 4, borderTop: '1px solid rgba(245,158,11,0.25)', fontSize: 11 }}>
+                                  <span style={{ color: 'var(--text3, #94a3b8)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.4 }}>{t('Total')}</span>
+                                  <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)' }}>
+                                    {total.toFixed(currencyDecimals)} {currencySymbol}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
