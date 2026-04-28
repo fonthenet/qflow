@@ -423,22 +423,71 @@ export function QueueOrderCard({
       </div>
 
       {/* Delivery address — shown for delivery orders so the rider knows
-          where to go without digging through customer notes. */}
-      {svcType === 'delivery' && deliveryAddress?.street && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 6,
-          fontSize: 12, color: 'var(--text2)',
-          padding: '6px 8px', borderRadius: 6,
-          background: 'var(--surface2)', border: '1px solid var(--border)',
-        }}>
-          <span>📍</span>
-          <div style={{ flex: 1, lineHeight: 1.4 }}>
-            <div style={{ fontWeight: 600, color: 'var(--text)' }}>{deliveryAddress.street}</div>
-            {deliveryAddress.city && <div>{deliveryAddress.city}</div>}
-            {deliveryAddress.instructions && (
-              <div style={{ marginTop: 2, fontStyle: 'italic' }}>{deliveryAddress.instructions}</div>
-            )}
+          where to go without digging through customer notes. When the
+          customer shared a WA location pin (lat + lng), we surface a
+          clickable "Open in Maps" pill that opens the right map app on
+          the operator's device — Google Maps on Android / desktop, Apple
+          Maps on iOS — for one-tap navigation. */}
+      {svcType === 'delivery' && (deliveryAddress?.street || (deliveryAddress?.lat && deliveryAddress?.lng)) && (() => {
+        const lat = typeof deliveryAddress?.lat === 'number' ? deliveryAddress.lat : null;
+        const lng = typeof deliveryAddress?.lng === 'number' ? deliveryAddress.lng : null;
+        const hasPin = lat != null && lng != null;
+        const mapsHref = hasPin
+          ? `https://www.google.com/maps/?q=${encodeURIComponent(`${lat},${lng}`)}`
+          : null;
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 6,
+            fontSize: 12, color: 'var(--text2)',
+            padding: '6px 8px', borderRadius: 6,
+            background: 'var(--surface2)', border: '1px solid var(--border)',
+          }}>
+            <span>📍</span>
+            <div style={{ flex: 1, lineHeight: 1.4, minWidth: 0 }}>
+              {deliveryAddress?.street && (
+                <div style={{ fontWeight: 600, color: 'var(--text)', wordBreak: 'break-word' }} dir="auto">
+                  {deliveryAddress.street}
+                </div>
+              )}
+              {deliveryAddress?.city && <div>{deliveryAddress.city}</div>}
+              {deliveryAddress?.instructions && (
+                <div style={{ marginTop: 2, fontStyle: 'italic' }}>{deliveryAddress.instructions}</div>
+              )}
+              {mapsHref && (
+                <a
+                  href={mapsHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    display: 'inline-block', marginTop: 4,
+                    padding: '2px 8px', borderRadius: 5,
+                    fontSize: 10, fontWeight: 700,
+                    background: 'rgba(59,130,246,0.18)', color: '#3b82f6',
+                    border: '1px solid rgba(59,130,246,0.4)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  🗺️ {tl('Open in Maps')}
+                </a>
+              )}
+            </div>
           </div>
+        );
+      })()}
+
+      {/* Dispatch state pill — once the operator hits Dispatch, the
+          card shows "🛵 Out for delivery" so it's clear the customer
+          has been notified and the order is in transit. Cleared once
+          the Delivered button moves the ticket to served. */}
+      {svcType === 'delivery' && isServing && (ticket as any).dispatched_at && (
+        <div style={{
+          display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 4,
+          padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+          background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+          border: '1px solid rgba(245,158,11,0.4)',
+        }}>
+          🛵 {tl('Out for delivery')}
         </div>
       )}
 

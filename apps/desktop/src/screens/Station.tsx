@@ -3590,12 +3590,26 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // customer a locale-aware WhatsApp message in one shot. Local SQLite
   // gets the new status on the next pull / realtime tick — we do NOT
   // also update locally to avoid double-write races.
+  // qf.auth.getToken returns { ok, token, refresh_token }, NOT a string.
+  // Earlier handlers were sending the whole object as the Bearer header,
+  // which serialized to "[object Object]" and 401'd at the server. This
+  // helper extracts the token correctly and warns if missing.
+  const getStaffJwt = async (): Promise<string> => {
+    try {
+      const result = await (window as any).qf?.auth?.getToken?.();
+      if (result?.ok && typeof result.token === 'string') return result.token;
+      // Older preload variants may have returned just a string — accept that too.
+      if (typeof result === 'string') return result;
+    } catch { /* fall through */ }
+    return '';
+  };
+
   const callOrderTransition = async (
     ticketId: string,
     body: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string }> => {
     try {
-      const token = await (window as any).qf?.auth?.getToken?.().catch(() => '');
+      const token = await getStaffJwt();
       const cloudUrl = 'https://qflo.net';
       const res = await cloudFetch(`${cloudUrl}/api/orders/transition`, {
         method: 'POST',
@@ -3640,7 +3654,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // operator sees the button flip without waiting.
   const handleDispatchOrder = async (ticketId: string) => {
     try {
-      const token = await (window as any).qf?.auth?.getToken?.().catch(() => '');
+      const token = await getStaffJwt();
       const res = await cloudFetch('https://qflo.net/api/orders/dispatch', {
         method: 'POST',
         headers: {
@@ -3665,7 +3679,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const handleDeliverOrder = async (ticketId: string) => {
     try {
-      const token = await (window as any).qf?.auth?.getToken?.().catch(() => '');
+      const token = await getStaffJwt();
       const res = await cloudFetch('https://qflo.net/api/orders/delivered', {
         method: 'POST',
         headers: {

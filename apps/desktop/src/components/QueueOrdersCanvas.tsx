@@ -505,6 +505,8 @@ export function QueueOrdersCanvas({
           onRequeue={(id) => { onRequeue(id); setExpandedId(null); }}
           onBan={(id) => { onBan(id); setExpandedId(null); }}
           onItemNote={onItemNote}
+          onDispatchOrder={onDispatchOrder ? (id) => { onDispatchOrder(id); } : undefined}
+          onDeliverOrder={onDeliverOrder ? (id) => { onDeliverOrder(id); setExpandedId(null); } : undefined}
         />
       )}
     </div>
@@ -538,12 +540,17 @@ interface ExpandedTicketModalProps {
   onRequeue: (id: string) => void;
   onBan: (id: string) => void;
   onItemNote: (itemId: string, note: string) => void;
+  /** Delivery transitions, optional. Surfaced only on serving delivery
+   *  cards; for other service types we keep the plain Complete button. */
+  onDispatchOrder?: (id: string) => void;
+  onDeliverOrder?: (id: string) => void;
 }
 
 function ExpandedTicketModal({
   ticket, items, locale, serviceName, currency, decimals,
   onClose, onPark, onResume, onRecall, onAddItems, onCall, onStartServing, onComplete,
   onNoShow, onCancel, onTransfer, onRequeue, onBan, onItemNote,
+  onDispatchOrder, onDeliverOrder,
 }: ExpandedTicketModalProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
     translate(locale, key, values);
@@ -673,6 +680,79 @@ function ExpandedTicketModal({
               </a>
             )}
           </div>
+
+          {/* Delivery address + Maps link in the expanded modal — same
+              data the smaller card surfaces, larger and easier to read.
+              When lat/lng are present (customer shared a WA pin) the
+              "Open in Maps" pill is one tap to launch directions on the
+              operator's device. Out-for-delivery state shown as a pill. */}
+          {svcType === 'delivery' && (() => {
+            const da = (() => {
+              const raw = (ticket as any).delivery_address;
+              if (!raw) return null;
+              if (typeof raw === 'object') return raw as Record<string, any>;
+              try { return JSON.parse(raw) as Record<string, any>; } catch { return null; }
+            })();
+            const isDispatched = Boolean((ticket as any).dispatched_at);
+            if (!da?.street && !(da?.lat && da?.lng) && !isDispatched) return null;
+            const lat = typeof da?.lat === 'number' ? da.lat : null;
+            const lng = typeof da?.lng === 'number' ? da.lng : null;
+            const hasPin = lat != null && lng != null;
+            const mapsHref = hasPin
+              ? `https://www.google.com/maps/?q=${encodeURIComponent(`${lat},${lng}`)}`
+              : null;
+            return (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {da?.street && (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                    fontSize: 14, color: 'var(--text2)',
+                    padding: '10px 14px', borderRadius: 10,
+                    background: 'var(--surface2)', border: '1px solid var(--border)',
+                  }}>
+                    <span style={{ fontSize: 18 }}>📍</span>
+                    <div style={{ flex: 1, lineHeight: 1.45, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--text)', wordBreak: 'break-word' }} dir="auto">
+                        {da.street}
+                      </div>
+                      {da.city && <div>{da.city}</div>}
+                      {da.instructions && (
+                        <div style={{ marginTop: 3, fontStyle: 'italic' }}>{da.instructions}</div>
+                      )}
+                      {mapsHref && (
+                        <a
+                          href={mapsHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={stop}
+                          style={{
+                            display: 'inline-block', marginTop: 8,
+                            padding: '6px 14px', borderRadius: 8,
+                            fontSize: 13, fontWeight: 700,
+                            background: 'rgba(59,130,246,0.18)', color: '#3b82f6',
+                            border: '1px solid rgba(59,130,246,0.45)',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          🗺️ {tl('Open in Maps')}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {isDispatched && (
+                  <div style={{
+                    display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 6,
+                    padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                    background: 'rgba(245,158,11,0.18)', color: '#f59e0b',
+                    border: '1px solid rgba(245,158,11,0.4)',
+                  }}>
+                    🛵 {tl('Out for delivery')}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Items — scrolls if long */}
@@ -826,11 +906,35 @@ function ExpandedTicketModal({
               {tl('Serve')}
             </button>
           )}
-          {isServing && (
-            <button onClick={() => onComplete(ticket.id)} style={modalBtnStyle('var(--success, #22c55e)', true)}>
-              {tl('Complete')}
-            </button>
-          )}
+          {isServing && (() => {
+            // Delivery cards get the dispatch → delivered two-step flow
+            // here too, mirroring the small card. Each button hits the
+            // dedicated /api/orders/* endpoint in Station.tsx, fires the
+            // customer-facing WhatsApp template, and refreshes locally.
+            const isDeliveryTicket = svcType === 'delivery';
+            const isDispatched = Boolean((ticket as any).dispatched_at);
+            if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
+              return (
+                <>
+                  {!isDispatched && onDispatchOrder && (
+                    <button onClick={() => onDispatchOrder(ticket.id)} style={modalBtnStyle('#f59e0b', true)}>
+                      🛵 {tl('Dispatch')}
+                    </button>
+                  )}
+                  {onDeliverOrder && (
+                    <button onClick={() => onDeliverOrder(ticket.id)} style={modalBtnStyle('var(--success, #22c55e)', true)}>
+                      ✓ {tl('Delivered')}
+                    </button>
+                  )}
+                </>
+              );
+            }
+            return (
+              <button onClick={() => onComplete(ticket.id)} style={modalBtnStyle('var(--success, #22c55e)', true)}>
+                {tl('Complete')}
+              </button>
+            );
+          })()}
           {isServing && (
             <button onClick={() => onAddItems(ticket)} style={modalBtnStyle('var(--primary, #3b82f6)', true)}>
               + {tl('Add items')}
