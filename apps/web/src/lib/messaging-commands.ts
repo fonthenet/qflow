@@ -3126,8 +3126,22 @@ async function askJoinConfirmationDirect(
 
   // Determine intake fields to collect (phone auto-collected on WhatsApp only, not Messenger)
   // Same-day join → context 'sameday'
-  const phoneExclude = channel === 'whatsapp' ? ['phone'] : [];
-  const enabledFields = getEnabledIntakeFields((org.settings ?? {}) as Record<string, any>, phoneExclude, 'sameday');
+  // Restaurant carve-out: party_size is meaningless for takeout / delivery
+  // — there's no table to seat. Drop it from the intake list when the
+  // resolved service is one of those types so the customer isn't asked
+  // a question that doesn't apply (and that the operator doesn't need).
+  const fieldExclude: string[] = channel === 'whatsapp' ? ['phone'] : [];
+  if (resolved?.serviceId) {
+    try {
+      const { data: svcRow } = await supabase
+        .from('services').select('name').eq('id', resolved.serviceId).single();
+      const svcType = resolveRestaurantServiceType(svcRow?.name ?? '');
+      if (svcType === 'takeout' || svcType === 'delivery') {
+        fieldExclude.push('party_size');
+      }
+    } catch { /* best-effort — fall through to default fields */ }
+  }
+  const enabledFields = getEnabledIntakeFields((org.settings ?? {}) as Record<string, any>, fieldExclude, 'sameday');
 
   let initialState: string;
   if (enabledFields.length > 0) {
