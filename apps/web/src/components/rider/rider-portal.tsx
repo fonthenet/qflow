@@ -2,47 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Leaflet via CDN — same pattern as order-map.tsx. Loads once and
-// shares the global window.L instance across the page.
-const LEAFLET_VERSION = '1.9.4';
-const LEAFLET_CSS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`;
-const LEAFLET_JS  = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.js`;
-
-declare global {
-  interface Window {
-    L?: any;
-  }
-}
-
-let leafletLoadPromise: Promise<void> | null = null;
-function ensureLeaflet(): Promise<void> {
-  if (typeof window === 'undefined') return Promise.resolve();
-  if (window.L) return Promise.resolve();
-  if (leafletLoadPromise) return leafletLoadPromise;
-  leafletLoadPromise = new Promise((resolve, reject) => {
-    if (!document.querySelector(`link[href="${LEAFLET_CSS}"]`)) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = LEAFLET_CSS;
-      link.crossOrigin = '';
-      document.head.appendChild(link);
-    }
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${LEAFLET_JS}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Leaflet')));
-      return;
-    }
-    const s = document.createElement('script');
-    s.src = LEAFLET_JS;
-    s.async = true;
-    s.crossOrigin = '';
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load Leaflet'));
-    document.head.appendChild(s);
-  });
-  return leafletLoadPromise;
-}
+// Map: OpenStreetMap iframe instead of Leaflet. Loads reliably on
+// every device — no JS dep, no CDN race, no zero-width-on-mount
+// problem. Re-keyed on every GPS fix so the marker visually
+// "moves" as the driver heads toward the destination.
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6_371;
@@ -53,6 +16,19 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   const lat2 = toRad(b.lat);
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function osmEmbedUrl(focus: { lat: number; lng: number }, span = 0.008): string {
+  const minLng = focus.lng - span;
+  const maxLng = focus.lng + span;
+  const minLat = focus.lat - span;
+  const maxLat = focus.lat + span;
+  const params = new URLSearchParams({
+    bbox: `${minLng},${minLat},${maxLng},${maxLat}`,
+    layer: 'mapnik',
+    marker: `${focus.lat},${focus.lng}`,
+  });
+  return `https://www.openstreetmap.org/export/embed.html?${params.toString()}`;
 }
 
 /**
@@ -108,6 +84,11 @@ export function RiderPortal(props: RiderPortalProps) {
 
   const [arrivedAt, setArrivedAt] = useState<string | null>(initialArrivedAt);
   const [deliveredAt, setDeliveredAt] = useState<string | null>(initialDeliveredAt);
+  // Customer notification status — set from /api/rider/delivered's
+  // response. true = WA delivered receipt sent successfully, false =
+  // send failed (driver should call customer instead), null = not
+  // yet attempted (pre-delivery).
+  const [customerNotified, setCustomerNotified] = useState<boolean | null>(null);
   const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
   const [lastBeatAt, setLastBeatAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<'arrived' | 'delivered' | null>(null);
@@ -116,19 +97,9 @@ export function RiderPortal(props: RiderPortalProps) {
   const watchIdRef = useRef<number | null>(null);
   const lastSentMsRef = useRef<number>(0);
 
-  // Driver's current GPS position (separate from the heartbeat queue —
-  // we update this on every onPos so the map animates smoothly even
-  // between server posts). Null until the first GPS read lands.
+  // Driver's current GPS position. Null until the first onPos fires.
+  // We use this both for the map iframe focus and for the distance chip.
   const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
-
-  // Map refs — same pattern as order-map.tsx. Map renders only when
-  // we have both a destination and Leaflet has loaded.
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<any>(null);
-  const destMarkerRef = useRef<any>(null);
-  const riderMarkerRef = useRef<any>(null);
-  const lineRef = useRef<any>(null);
-  const [mapReady, setMapReady] = useState(false);
 
   const isDelivered = Boolean(deliveredAt);
   const hasArrived = Boolean(arrivedAt);
@@ -229,109 +200,24 @@ export function RiderPortal(props: RiderPortalProps) {
     };
   }, [ticketId, token, isDelivered]);
 
-  // ── Map: initialize once we have a destination. Skip entirely if
-  //    the operator never captured lat/lng — the driver still has the
-  //    Navigate button (which opens GMaps externally) so they're not
-  //    stuck.
-  useEffect(() => {
-    if (destLat == null || destLng == null) return;
-    let cancelled = false;
-    ensureLeaflet().then(() => {
-      if (cancelled || !window.L || !mapContainerRef.current) return;
-      const L = window.L;
-      const map = L.map(mapContainerRef.current, {
-        center: [destLat, destLng],
-        zoom: 14,
-        zoomControl: true,
-        attributionControl: true,
-      });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap',
-      }).addTo(map);
-      const destIcon = L.divIcon({
-        className: 'qflo-rider-dest-icon',
-        html: '<div style="font-size:32px;line-height:1;transform:translate(-50%,-100%)">📍</div>',
-        iconSize: [32, 32],
-      });
-      destMarkerRef.current = L.marker([destLat, destLng], { icon: destIcon }).addTo(map);
-      mapRef.current = map;
-      setMapReady(true);
-
-      // Same invalidateSize defense as the customer map — Leaflet often
-      // mounts in a 0-height frame and locks in a broken viewport.
-      requestAnimationFrame(() => { try { map.invalidateSize(); } catch {} });
-      const onResize = () => { try { map.invalidateSize(); } catch {} };
-      window.addEventListener('resize', onResize);
-      let ro: ResizeObserver | null = null;
-      if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
-        ro = new ResizeObserver(() => { try { map.invalidateSize(); } catch {} });
-        ro.observe(mapContainerRef.current);
-      }
-      (map as any)._qfloCleanup = () => {
-        window.removeEventListener('resize', onResize);
-        ro?.disconnect();
-      };
-    }).catch((e) => {
-      console.warn('[rider-portal] Leaflet load failed', e);
-    });
-    return () => {
-      cancelled = true;
-      if (mapRef.current) {
-        try { (mapRef.current as any)._qfloCleanup?.(); } catch {}
-        try { mapRef.current.remove(); } catch {}
-        mapRef.current = null;
-      }
-    };
-  }, [destLat, destLng]);
-
-  // Animate the rider pin + draw a thin connecting line every time a
-  // new GPS fix arrives. fitBounds on first appearance only — after
-  // that we leave the viewport alone so the driver can pinch-zoom to
-  // see street detail without us yanking them back.
-  const fitOnceRef = useRef(false);
-  useEffect(() => {
-    if (!mapReady || !mapRef.current || !window.L) return;
-    if (!riderPos || destLat == null || destLng == null) return;
-    const L = window.L;
-
-    if (!riderMarkerRef.current) {
-      const riderIcon = L.divIcon({
-        className: 'qflo-rider-self-icon',
-        html: '<div style="font-size:30px;line-height:1;transform:translate(-50%,-100%);filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))">🛵</div>',
-        iconSize: [30, 30],
-      });
-      riderMarkerRef.current = L.marker([riderPos.lat, riderPos.lng], { icon: riderIcon }).addTo(mapRef.current);
-    } else {
-      riderMarkerRef.current.setLatLng([riderPos.lat, riderPos.lng]);
-    }
-
-    // Straight dashed line rider → destination. Visual aid only; the
-    // real route comes from the external Maps app launched via
-    // Navigate.
-    const latlngs = [[riderPos.lat, riderPos.lng], [destLat, destLng]] as any;
-    if (!lineRef.current) {
-      lineRef.current = L.polyline(latlngs, {
-        color: '#3b82f6', weight: 3, opacity: 0.7, dashArray: '6 6',
-      }).addTo(mapRef.current);
-    } else {
-      lineRef.current.setLatLngs(latlngs);
-    }
-
-    if (!fitOnceRef.current) {
-      const bounds = L.latLngBounds([
-        [riderPos.lat, riderPos.lng],
-        [destLat, destLng],
-      ]);
-      mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
-      fitOnceRef.current = true;
-    }
-  }, [riderPos, mapReady, destLat, destLng]);
-
   // Distance for the header chip — recomputes on every GPS fix.
   const distanceKm = (riderPos && destLat != null && destLng != null)
     ? haversineKm(riderPos, { lat: destLat, lng: destLng })
     : null;
+
+  // Map iframe URL + key. Center on the rider's current position when
+  // we have one (so they see themselves moving toward the destination
+  // pin which sits inside the same bbox as the rider gets close).
+  // Falls back to the destination if no GPS fix yet. Re-key on every
+  // ~5m of movement so we don't thrash the iframe with sub-meter
+  // jitter, but still feel responsive when the driver covers ground.
+  const mapFocus = (riderPos && destLat != null && destLng != null)
+    ? riderPos
+    : (destLat != null && destLng != null ? { lat: destLat, lng: destLng } : null);
+  const mapKey = mapFocus
+    ? `${mapFocus.lat.toFixed(4)}_${mapFocus.lng.toFixed(4)}`
+    : 'idle';
+  const mapUrl = mapFocus ? osmEmbedUrl(mapFocus) : null;
 
   const callApi = async (path: 'arrived' | 'delivered'): Promise<any> => {
     setBusy(path);
@@ -363,6 +249,7 @@ export function RiderPortal(props: RiderPortalProps) {
   const handleDelivered = async () => {
     const data = await callApi('delivered');
     if (data?.delivered_at || data?.noop) setDeliveredAt(data.delivered_at ?? new Date().toISOString());
+    if (typeof data?.notified === 'boolean') setCustomerNotified(data.notified);
   };
 
   // ── UI ────────────────────────────────────────────────────────────
@@ -423,27 +310,37 @@ export function RiderPortal(props: RiderPortalProps) {
         )}
       </section>
 
-      {/* Embedded map — destination pin (📍) + driver's own pin (🛵)
-          + dashed line between them. Helps the driver eyeball whether
-          they're heading the right way without leaving the page. The
-          turn-by-turn route still comes from the external Maps app
-          launched via the Navigate button above. Hidden when the
-          operator never captured lat/lng (just text address). */}
-      {destLat != null && destLng != null && (
+      {/* OpenStreetMap iframe — centered on the driver's current
+          position so they see themselves moving on the map. The
+          destination pin emoji is set as the marker if no GPS fix yet.
+          Re-keyed every ~10 m of movement to refresh the iframe with
+          the new position. Hidden when the operator never captured
+          lat/lng (text-only address) — driver still has the Navigate
+          button above as a fallback. */}
+      {mapUrl && (
         <section style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
           <div style={{
             padding: '6px 10px',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
             background: '#f8fafc', fontSize: 12,
           }}>
-            <span style={{ color: '#64748b', fontWeight: 700 }}>🗺️ Route preview</span>
+            <span style={{ color: '#64748b', fontWeight: 700 }}>
+              🗺️ {riderPos ? 'Your position' : 'Destination'}
+            </span>
             <span style={{ fontWeight: 800, color: '#3b82f6' }}>
               {distanceKm == null
                 ? 'Locating…'
-                : `${distanceKm < 0.1 ? '<0.1' : distanceKm.toFixed(1)} km away`}
+                : `${distanceKm < 0.1 ? '<0.1' : distanceKm.toFixed(1)} km to drop-off`}
             </span>
           </div>
-          <div ref={mapContainerRef} style={{ width: '100%', height: 220 }} />
+          <iframe
+            key={mapKey}
+            src={mapUrl}
+            title="map"
+            style={{ width: '100%', height: 220, border: 0, display: 'block' }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
         </section>
       )}
 
@@ -487,12 +384,40 @@ export function RiderPortal(props: RiderPortalProps) {
       )}
 
       {isDelivered && (
-        <div style={{ marginTop: 18, textAlign: 'center', color: '#22c55e', fontWeight: 700 }}>
-          Order completed. Safe travels! 🚗
+        <div style={{
+          marginTop: 16, padding: '14px 16px', borderRadius: 10,
+          background: 'rgba(34,197,94,0.10)',
+          border: '1px solid rgba(34,197,94,0.4)',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 6 }}>✅</div>
+          <div style={{ color: '#16a34a', fontWeight: 800, fontSize: 15 }}>
+            Order delivered
+          </div>
+          {/* Notification status — green tick when the WA receipt was
+              accepted by Meta, amber warning when it failed (rider
+              should call the customer to confirm receipt). Hidden
+              when status is unknown (e.g. delivered in a previous
+              session, before this code shipped). */}
+          {customerNotified === true && (
+            <div style={{ color: '#475569', fontSize: 12, marginTop: 6 }}>
+              ✓ Customer notified via WhatsApp.
+            </div>
+          )}
+          {customerNotified === false && (
+            <div style={{ color: '#b45309', fontSize: 12, marginTop: 6, fontWeight: 600 }}>
+              ⚠ Customer not reached on WhatsApp — please confirm receipt by phone.
+            </div>
+          )}
+          {customerNotified === null && (
+            <div style={{ color: '#475569', fontSize: 12, marginTop: 6 }}>
+              You can close this page.
+            </div>
+          )}
         </div>
       )}
 
-      <p style={{ marginTop: 24, fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
+      <p style={{ marginTop: 16, fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
         Live location stops automatically when the order is delivered.
       </p>
     </main>

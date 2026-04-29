@@ -76,6 +76,12 @@ export async function POST(request: NextRequest) {
     metadata: { delivered_at: nowIso, dispatched_at: ticket.dispatched_at ?? null, source: 'rider_portal' },
   }).then(() => {}, () => {});
 
+  // Customer notification status — flipped to true when the WA
+  // delivery confirmation is accepted by Meta. Flowed back to the
+  // rider portal so the driver sees explicit success/failure.
+  let notified = false;
+  let notifyError: string | null = null;
+
   const phone: string | null = (ticket.customer_data as any)?.phone ?? null;
   if (phone) {
     const locale = (ticket.locale === 'ar' || ticket.locale === 'en' || ticket.locale === 'fr')
@@ -100,8 +106,15 @@ export async function POST(request: NextRequest) {
           ? `✅ Your order *#${ticket.ticket_number}* has been delivered. Enjoy your meal! 🍽️`
           : `✅ Votre commande *#${ticket.ticket_number}* a été livrée. Bon appétit ! 🍽️`;
 
+    // Await the send so we can return the actual delivery status to
+    // the rider portal — earlier we fire-and-forgot, which meant
+    // silent WA failures looked like success on the rider's screen.
+    // Now if Meta rejects the send (rate limit, 24h window, opt-out)
+    // the rider sees an explicit "Customer not reached" indicator
+    // and can call the customer manually instead.
+    let waBody: string;
     try {
-      const receiptBody = await buildOrderReceiptMessage(supabase, {
+      waBody = await buildOrderReceiptMessage(supabase, {
         ticketId: ticket.id,
         ticketNumber: ticket.ticket_number,
         orgName,
@@ -109,15 +122,37 @@ export async function POST(request: NextRequest) {
         headerLine,
         trackUrl,
       });
-      void sendWhatsAppMessage({ to: phone, body: receiptBody })
-        .catch((e) => console.warn('[rider/delivered] WA send failed', e?.message));
     } catch (e: any) {
       console.warn('[rider/delivered] receipt build failed, falling back', e?.message);
-      const fallback = `${headerLine}\n${trackUrl}`;
-      void sendWhatsAppMessage({ to: phone, body: fallback })
-        .catch((e) => console.warn('[rider/delivered] fallback WA send failed', e?.message));
+      waBody = `${headerLine}\n${trackUrl}`;
     }
+
+    try {
+      const result = await sendWhatsAppMessage({ to: phone, body: waBody });
+      if (result?.ok) {
+        notified = true;
+      } else {
+        notifyError = (result as any)?.error ?? 'send_failed';
+      }
+    } catch (e: any) {
+      notifyError = e?.message ?? 'unknown';
+    }
+
+    // Audit trail in ticket_events so the operator can see whether
+    // the customer was actually notified.
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticketId,
+      event_type: notified ? 'customer_notified' : 'customer_notify_failed',
+      metadata: notified
+        ? { channel: 'whatsapp', phone, source: 'rider_portal' }
+        : { channel: 'whatsapp', phone, error: notifyError, source: 'rider_portal' },
+    }).then(() => {}, () => {});
   }
 
-  return NextResponse.json({ ok: true, delivered_at: nowIso });
+  return NextResponse.json({
+    ok: true,
+    delivered_at: nowIso,
+    notified,
+    notify_error: notifyError,
+  });
 }
