@@ -823,6 +823,29 @@ export async function handleOrderAddressInput(
   }
 
   const trimmed = input.trim().slice(0, 500);
+
+  // Reject obvious control words that the customer probably typed
+  // because they're confused about which step they're in (e.g. they
+  // saw a delayed notes prompt from an earlier session and typed
+  // "Skip" expecting it to skip notes, but the actual current step is
+  // address). Without this check, "Skip" → length<5 → re-prompts with
+  // the location bubble, looking like the bot ignored them. Tell them
+  // clearly what step they're at so they can type a real address or
+  // share a pin.
+  const lower = trimmed.toLowerCase();
+  const looksLikeControlWord =
+    isYes(trimmed) || isNo(trimmed) || isSkipNotes(trimmed)
+    || /^(skip|passer|sauter|تخطي|ok|y|n|done|fini|انتهى)$/i.test(lower);
+  if (looksLikeControlWord) {
+    const hint = locale === 'ar'
+      ? `👉 أنت في خطوة *عنوان التوصيل*. شارك موقعك أو اكتب العنوان (الشارع، التفاصيل).`
+      : locale === 'en'
+        ? `👉 You're at the *delivery address* step. Share your location pin or type the address (street, details).`
+        : `👉 Vous êtes à l'étape *adresse de livraison*. Partagez votre position ou tapez l'adresse (rue, détails).`;
+    await sendMessage({ to: identifier, body: hint });
+    return;
+  }
+
   if (trimmed.length < 5) {
     // Re-prompt with the same one-tap interactive button so customers
     // who fat-fingered a 1-char address aren't stuck typing a long form.
