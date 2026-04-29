@@ -755,6 +755,13 @@ export async function handleOrderAddressInput(
   // card before accepting. The webhook synthesises a "[location]" body
   // for these messages so the dispatcher routes them here.
   if (locationData) {
+    // Idempotency guard: if delivery_address.street is already set,
+    // a previous webhook delivery of this same location pin already
+    // processed it. Skip the echo + notes prompt to avoid double-
+    // sending. This uses payload state (per-session) rather than
+    // a Supabase state-lock — same effect, no .select() quirk.
+    if (payload.delivery_address?.street) return;
+
     const { latitude, longitude, name, address } = locationData;
 
     // Resolve a human-readable street label, in order of preference:
@@ -898,7 +905,14 @@ export async function handleOrderNotesInput(
   // Capture path. Trim + 500-char cap matches the address handler.
   const note = input.trim().slice(0, 500);
   if (note.length === 0) {
-    await sendMessage({ to: identifier, body: tplAskNotes(locale, payload.service) });
+    // Empty input arriving at this step is almost always a duplicate
+    // webhook delivery of an earlier event (a location-pin replay
+    // routed here because the state had already advanced to
+    // pending_order_notes). Re-prompting would clobber the customer's
+    // genuine note — they'd type "Come to the back", see the prompt
+    // re-appear immediately, and assume the bot ignored them. Silent
+    // bail is the safer behaviour; if the customer truly wants to
+    // re-see the prompt they can send any non-empty character.
     return;
   }
   payload.customer_notes = note;
