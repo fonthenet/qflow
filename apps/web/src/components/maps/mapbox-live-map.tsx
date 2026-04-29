@@ -125,13 +125,33 @@ function createGoogleEngine(
     zoomControl: true,
     gestureHandling: 'greedy',
   });
+  // Custom destination icon — flag-shaped SVG data URL. Cleaner than
+  // Google's default red pin with an "H" label, and consistent with
+  // the visual language (rounded shapes, soft drop-shadow).
+  const DEST_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+      <defs><filter id="s" x="-50%" y="-50%" width="200%" height="200%">
+        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.25"/></filter></defs>
+      <path filter="url(#s)" fill="#ef4444" d="M18 0C8.06 0 0 7.6 0 17c0 12.75 18 27 18 27s18-14.25 18-27C36 7.6 27.94 0 18 0z"/>
+      <circle cx="18" cy="17" r="6" fill="#fff"/>
+    </svg>`,
+  );
   const destMarker = new gmaps.Marker({
     position: { lat: destLat, lng: destLng },
     map,
-    label: { text: 'H', color: '#fff', fontWeight: '700' },
+    icon: {
+      url: DEST_ICON,
+      scaledSize: new gmaps.Size(36, 44),
+      anchor: new gmaps.Point(18, 44),
+    },
   });
   let riderMarker: any = null;
   let routeLine: any = null;
+
+  // Bigger moped icon with a proper shadow — the previous 40px size
+  // looked tiny against a 14-zoom street view. 56px reads at a glance
+  // even on a small phone screen.
+  const RIDER_ICON_SIZE = 56;
 
   return {
     setRiderPos(lat: number, lng: number) {
@@ -142,9 +162,12 @@ function createGoogleEngine(
           map,
           icon: {
             url: MOPED_ICON,
-            scaledSize: new gmaps.Size(40, 40),
-            anchor: new gmaps.Point(20, 20),
+            scaledSize: new gmaps.Size(RIDER_ICON_SIZE, RIDER_ICON_SIZE),
+            anchor: new gmaps.Point(RIDER_ICON_SIZE / 2, RIDER_ICON_SIZE / 2),
           },
+          // Slight z-index bump so the moped is always on top of the
+          // route line and destination marker.
+          zIndex: 999,
         });
       } else {
         riderMarker.setPosition(pos);
@@ -154,10 +177,14 @@ function createGoogleEngine(
         routeLine = new gmaps.Polyline({
           path,
           strokeColor: '#3b82f6',
-          strokeOpacity: 0.7,
+          strokeOpacity: 0,                  // hide the solid line
           strokeWeight: 4,
+          // Dotted symbol pattern — looks more refined than a solid
+          // line, hints at "approximate route" (we don't do real
+          // routing, just rider-to-dest).
           icons: [
-            { icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 4 }, offset: '0', repeat: '12px' },
+            { icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.85, strokeColor: '#3b82f6', scale: 3 },
+              offset: '0', repeat: '14px' },
           ],
           map,
         });
@@ -195,9 +222,16 @@ async function createMaplibreEngine(
     scrollZoom: false,
     dragPan: true,
   });
+  // Custom flag-shaped destination marker — same SVG used on the
+  // Google engine so the visual is consistent regardless of which
+  // engine ends up rendering.
   const destEl = document.createElement('div');
-  destEl.style.cssText = 'font-size:32px;line-height:1;user-select:none';
-  destEl.textContent = '📍';
+  destEl.innerHTML = `
+    <svg width="36" height="44" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.25));display:block">
+      <path fill="#ef4444" d="M18 0C8.06 0 0 7.6 0 17c0 12.75 18 27 18 27s18-14.25 18-27C36 7.6 27.94 0 18 0z"/>
+      <circle cx="18" cy="17" r="6" fill="#fff"/>
+    </svg>`;
+  destEl.style.cssText = 'user-select:none;cursor:default';
   const destMarker = new ml.Marker({ element: destEl, anchor: 'bottom' })
     .setLngLat([destLng, destLat])
     .addTo(map);
@@ -234,8 +268,15 @@ async function createMaplibreEngine(
     setRiderPos(lat: number, lng: number) {
       if (!riderMarker) {
         const el = document.createElement('div');
-        el.style.cssText = 'font-size:34px;line-height:1;user-select:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))';
-        el.textContent = '🛵';
+        // Bigger moped (56px) so it reads at a glance on a phone, with
+        // a soft drop-shadow for depth. White circular halo behind the
+        // emoji adds contrast against busy map tiles.
+        el.innerHTML = `
+          <div style="position:relative;width:56px;height:56px;">
+            <div style="position:absolute;inset:6px;border-radius:50%;background:rgba(255,255,255,0.92);box-shadow:0 4px 14px rgba(15,23,42,0.22);"></div>
+            <img src="${MOPED_ICON}" width="44" height="44" alt="" style="position:absolute;top:6px;left:6px;display:block;user-select:none;-webkit-user-drag:none;"/>
+          </div>`;
+        el.style.cssText = 'user-select:none;cursor:default;line-height:0;';
         riderMarker = new ml.Marker({ element: el, anchor: 'center' })
           .setLngLat([lng, lat])
           .addTo(map);

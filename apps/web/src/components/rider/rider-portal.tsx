@@ -278,56 +278,137 @@ export function RiderPortal(props: RiderPortalProps) {
     <main style={pageWrap}>
       {/* Compact hero — ticket number on the same row as a tracking
           status dot so the driver sees both at a glance. */}
-      <header style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>{ticketNumber}</div>
+      {/* Header — quiet by default. Restaurant name + ticket as a pill,
+          GPS status as a tiny dot+pill on the right. No big numbers,
+          no emoji. Looks like Linear / UberEats — refined, not loud. */}
+      <header style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, padding: '4px 2px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+          <span style={{
+            fontSize: 13, fontWeight: 600, color: '#0f172a',
+            letterSpacing: -0.2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {orgName || officeName}
+          </span>
+          <span style={{
+            fontSize: 11, fontWeight: 600, color: '#64748b',
+            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+          }}>
+            {ticketNumber}
+          </span>
+        </div>
         <span style={{
-          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-          background: geoStatus === 'streaming' ? '#22c55e'
-            : geoStatus === 'requesting' ? '#f59e0b'
-            : geoStatus === 'denied' || geoStatus === 'unavailable' ? '#ef4444'
-            : '#94a3b8',
-        }} />
-        <span style={{ flex: 1, fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {geoStatus === 'streaming' && (lastBeatAt ? `Live · ${Math.max(1, Math.round((Date.now() - lastBeatAt) / 1000))}s ago` : 'Live')}
-          {geoStatus === 'requesting' && 'Requesting location…'}
-          {geoStatus === 'denied' && 'Location denied'}
-          {geoStatus === 'unavailable' && 'GPS unavailable'}
-          {geoStatus === 'stopped' && 'Tracking off'}
-          {geoStatus === 'idle' && 'Starting…'}
-        </span>
-        <span style={{ fontSize: 10, color: '#94a3b8', whiteSpace: 'nowrap' }}>
-          {orgName || officeName}
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '3px 8px', borderRadius: 999,
+          background: geoStatus === 'streaming' ? '#dcfce7'
+            : geoStatus === 'denied' || geoStatus === 'unavailable' ? '#fee2e2'
+            : '#f1f5f9',
+          color: geoStatus === 'streaming' ? '#15803d'
+            : geoStatus === 'denied' || geoStatus === 'unavailable' ? '#b91c1c'
+            : '#64748b',
+          fontSize: 10, fontWeight: 600, letterSpacing: 0.2,
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: geoStatus === 'streaming' ? '#22c55e'
+              : geoStatus === 'requesting' ? '#f59e0b'
+              : geoStatus === 'denied' || geoStatus === 'unavailable' ? '#ef4444'
+              : '#94a3b8',
+            boxShadow: geoStatus === 'streaming' ? '0 0 0 3px rgba(34,197,94,0.18)' : 'none',
+          }} />
+          {geoStatus === 'streaming' && (lastBeatAt ? `LIVE · ${Math.max(1, Math.round((Date.now() - lastBeatAt) / 1000))}s` : 'LIVE')}
+          {geoStatus === 'requesting' && 'LOCATING'}
+          {geoStatus === 'denied' && 'GPS BLOCKED'}
+          {geoStatus === 'unavailable' && 'NO GPS'}
+          {geoStatus === 'stopped' && 'OFF'}
+          {geoStatus === 'idle' && 'STARTING'}
         </span>
       </header>
 
-      {/* Customer + address combined in one card. Single tap-to-call,
-          single tap-to-navigate, no extra UPPERCASE labels. */}
+      {/* Customer card — refined: large name, smaller phone underneath
+          as a tap-to-call link, dotted divider, then a quieter address
+          row with the navigate link as a subtle outlined pill. No big
+          shouting green button — Call moves to a circular icon button
+          for visual restraint. */}
       <section style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }} dir="auto">{customerName || '—'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontWeight: 700, fontSize: 17, letterSpacing: -0.3,
+              color: '#0f172a', lineHeight: 1.2,
+            }} dir="auto">
+              {customerName || '—'}
+            </div>
             {customerPhone && (
-              <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr' }}>{customerPhone}</div>
-            )}
-          </div>
-          {customerPhone && (
-            <a href={`tel:${customerPhone}`} style={greenBtn}>📞 Call</a>
-          )}
-        </div>
-        {address && (
-          <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: '#f1f5f9', fontSize: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 13 }} dir="auto">{address}</div>
-            {(addressCity || addressInstructions) && (
-              <div style={{ color: '#64748b', marginTop: 2 }}>
-                {addressCity ?? ''}{addressCity && addressInstructions ? ' · ' : ''}{addressInstructions ?? ''}
-              </div>
-            )}
-            {mapsHref && (
-              <a href={mapsHref} target="_blank" rel="noreferrer" style={{ ...primaryBtn, display: 'inline-block', marginTop: 6, padding: '6px 10px', fontSize: 12 }}>
-                🗺️ Navigate
+              <a
+                href={`tel:${customerPhone}`}
+                style={{
+                  fontSize: 13, color: '#475569', textDecoration: 'none',
+                  direction: 'ltr', display: 'inline-block', marginTop: 2,
+                }}
+              >
+                {customerPhone}
               </a>
             )}
           </div>
+          {customerPhone && (
+            <a
+              href={`tel:${customerPhone}`}
+              aria-label="Call customer"
+              style={{
+                width: 44, height: 44, borderRadius: '50%',
+                background: '#16a34a', color: '#fff',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                textDecoration: 'none', flexShrink: 0,
+                boxShadow: '0 4px 12px rgba(22,163,74,0.30)',
+                fontSize: 18,
+              }}
+            >
+              {/* Inline phone glyph — no emoji to keep tone refined */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 16.92z"/>
+              </svg>
+            </a>
+          )}
+        </div>
+        {address && (
+          <>
+            <div style={{ height: 1, background: '#e2e8f0', margin: '12px 0' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 2 }}>
+                  Drop-off
+                </div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a', lineHeight: 1.35 }} dir="auto">
+                  {address}
+                </div>
+                {(addressCity || addressInstructions) && (
+                  <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>
+                    {addressCity ?? ''}{addressCity && addressInstructions ? ' · ' : ''}{addressInstructions ?? ''}
+                  </div>
+                )}
+              </div>
+              {mapsHref && (
+                <a
+                  href={mapsHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    padding: '8px 14px', borderRadius: 999,
+                    background: '#0f172a', color: '#fff',
+                    fontWeight: 600, fontSize: 12, textDecoration: 'none',
+                    letterSpacing: 0.1, whiteSpace: 'nowrap', flexShrink: 0,
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.18)',
+                  }}
+                >
+                  Navigate →
+                </a>
+              )}
+            </div>
+          </>
         )}
       </section>
 
@@ -337,34 +418,53 @@ export function RiderPortal(props: RiderPortalProps) {
           image to open the route in Google/Apple Maps. Hidden when
           the operator never captured lat/lng. */}
       {mapUrl && (
-        <section style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
+        <section style={{
+          borderRadius: 14, overflow: 'hidden',
+          background: '#fff',
+          boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.04)',
+        }}>
+          {/* Map header — clean, two metrics with proper hierarchy.
+              Distance to drop-off is the primary number (large, dark);
+              accuracy is a quiet subtitle when relevant. */}
           <div style={{
-            padding: '6px 10px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-            background: '#f8fafc', fontSize: 12,
+            padding: '12px 14px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, borderBottom: '1px solid #f1f5f9',
           }}>
-            <span style={{ color: '#64748b', fontWeight: 700 }}>
-              🛵 {riderPos ? 'Live route' : 'Destination'}
-              {/* GPS accuracy chip — only when we know it. Anything
-                  >50m hints at indoor signal / urban canyon and
-                  warns the driver the map pin may lag reality. */}
-              {riderPos?.accuracy != null && (
-                <span style={{
-                  marginInlineStart: 6,
-                  fontSize: 10, fontWeight: 600,
-                  padding: '1px 6px', borderRadius: 4,
-                  background: riderPos.accuracy > 50 ? '#fef3c7' : '#e0f2fe',
-                  color: riderPos.accuracy > 50 ? '#b45309' : '#0369a1',
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 600, color: '#94a3b8',
+                letterSpacing: 0.4, textTransform: 'uppercase',
+              }}>
+                Distance to drop-off
+              </div>
+              <div style={{
+                fontSize: 22, fontWeight: 700, color: '#0f172a',
+                letterSpacing: -0.5, marginTop: 2, lineHeight: 1,
+              }}>
+                {distanceKm == null
+                  ? '—'
+                  : distanceKm < 0.1
+                    ? <>&lt; 100<span style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginInlineStart: 3 }}>m</span></>
+                    : <>{distanceKm.toFixed(distanceKm < 10 ? 1 : 0)}<span style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginInlineStart: 3 }}>km</span></>}
+              </div>
+            </div>
+            {riderPos?.accuracy != null && (
+              <div style={{ textAlign: 'end' }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 600, color: '#94a3b8',
+                  letterSpacing: 0.4, textTransform: 'uppercase',
+                }}>
+                  GPS accuracy
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, marginTop: 2, lineHeight: 1,
+                  color: riderPos.accuracy > 50 ? '#b45309' : '#15803d',
                 }}>
                   ±{Math.round(riderPos.accuracy)}m
-                </span>
-              )}
-            </span>
-            <span style={{ fontWeight: 800, color: '#3b82f6' }}>
-              {distanceKm == null
-                ? 'Locating…'
-                : `${distanceKm < 0.1 ? '<0.1' : distanceKm.toFixed(1)} km to drop-off`}
-            </span>
+                </div>
+              </div>
+            )}
           </div>
           {MAPBOX_TOKEN_CONFIGURED && dest ? (
             // Live interactive map (UberEats / DoorDash-style). The
@@ -402,23 +502,40 @@ export function RiderPortal(props: RiderPortalProps) {
         </section>
       )}
 
-      {/* Action buttons — disabled state mirrors the lifecycle. */}
+      {/* Action bar — refined buttons. Two-state primary action:
+          "I'm at the door" (amber) → "Mark delivered" (deep green).
+          Once arrived, the button morphs rather than stacking two
+          buttons. Cleaner UX, no decision fatigue. */}
       <section style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-        {!isDelivered && (
+        {!isDelivered && !hasArrived && (
           <button
             type="button"
             onClick={handleArrived}
-            disabled={busy === 'arrived' || hasArrived}
+            disabled={busy === 'arrived'}
             style={{
               ...bigBtn,
-              background: hasArrived ? '#22c55e22' : '#f59e0b',
-              color: hasArrived ? '#22c55e' : '#fff',
-              border: hasArrived ? '1px solid #22c55e' : 'none',
+              background: '#0f172a', color: '#fff',
+              boxShadow: '0 6px 16px rgba(15,23,42,0.20)',
               opacity: busy === 'arrived' ? 0.6 : 1,
+              fontSize: 15, padding: '14px 16px',
+              letterSpacing: 0.1,
             }}
           >
-            {hasArrived ? '✓ Arrived' : (busy === 'arrived' ? 'Sending…' : '🛵 I\'ve Arrived')}
+            {busy === 'arrived' ? 'Sending…' : "I've arrived at the address"}
           </button>
+        )}
+        {!isDelivered && hasArrived && (
+          <div style={{
+            padding: '10px 14px', borderRadius: 12,
+            background: '#fef3c7', border: '1px solid #fde68a',
+            color: '#92400e', fontSize: 13, fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+            </svg>
+            Customer notified — waiting for handoff.
+          </div>
         )}
         <button
           type="button"
@@ -426,12 +543,16 @@ export function RiderPortal(props: RiderPortalProps) {
           disabled={busy === 'delivered' || isDelivered}
           style={{
             ...bigBtn,
-            background: isDelivered ? '#22c55e' : '#16a34a',
-            color: '#fff',
+            background: isDelivered ? '#dcfce7' : '#16a34a',
+            color: isDelivered ? '#15803d' : '#fff',
+            border: isDelivered ? '1px solid #86efac' : 'none',
+            boxShadow: isDelivered ? 'none' : '0 6px 16px rgba(22,163,74,0.30)',
             opacity: busy === 'delivered' ? 0.6 : 1,
+            fontSize: 15, padding: '14px 16px',
+            letterSpacing: 0.1,
           }}
         >
-          {isDelivered ? '✅ Delivered' : (busy === 'delivered' ? 'Sending…' : '✅ Mark Delivered')}
+          {isDelivered ? 'Delivered' : (busy === 'delivered' ? 'Sending…' : 'Mark as delivered')}
         </button>
       </section>
 
@@ -441,69 +562,83 @@ export function RiderPortal(props: RiderPortalProps) {
         </div>
       )}
 
+      {/* Delivered confirmation — refined card with a subtle outline,
+          inline check glyph, clear hierarchy (status → secondary line
+          → small attribution). No saturated green emoji block. */}
       {isDelivered && (
         <div style={{
-          marginTop: 16, padding: '14px 16px', borderRadius: 10,
-          background: 'rgba(34,197,94,0.10)',
-          border: '1px solid rgba(34,197,94,0.4)',
-          textAlign: 'center',
+          marginTop: 14, padding: '16px 18px', borderRadius: 14,
+          background: '#fff',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 1px 3px rgba(15,23,42,0.06)',
+          display: 'flex', alignItems: 'flex-start', gap: 12,
         }}>
-          <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 6 }}>✅</div>
-          <div style={{ color: '#16a34a', fontWeight: 800, fontSize: 15 }}>
-            Order delivered
+          <span style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: '#dcfce7', color: '#15803d',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', letterSpacing: -0.2, lineHeight: 1.2 }}>
+              Order delivered
+            </div>
+            {customerNotified === true && (
+              <div style={{ color: '#475569', fontSize: 13, marginTop: 4 }}>
+                Customer notified via WhatsApp.
+              </div>
+            )}
+            {customerNotified === false && (
+              <div style={{ color: '#b45309', fontSize: 13, marginTop: 4, fontWeight: 500 }}>
+                Couldn't reach customer on WhatsApp — please confirm receipt by phone.
+              </div>
+            )}
+            {customerNotified === null && (
+              <div style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>
+                You can close this page.
+              </div>
+            )}
           </div>
-          {/* Notification status — green tick when the WA receipt was
-              accepted by Meta, amber warning when it failed (rider
-              should call the customer to confirm receipt). Hidden
-              when status is unknown (e.g. delivered in a previous
-              session, before this code shipped). */}
-          {customerNotified === true && (
-            <div style={{ color: '#475569', fontSize: 12, marginTop: 6 }}>
-              ✓ Customer notified via WhatsApp.
-            </div>
-          )}
-          {customerNotified === false && (
-            <div style={{ color: '#b45309', fontSize: 12, marginTop: 6, fontWeight: 600 }}>
-              ⚠ Customer not reached on WhatsApp — please confirm receipt by phone.
-            </div>
-          )}
-          {customerNotified === null && (
-            <div style={{ color: '#475569', fontSize: 12, marginTop: 6 }}>
-              You can close this page.
-            </div>
-          )}
         </div>
       )}
 
-      <p style={{ marginTop: 16, fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
-        Live location stops automatically when the order is delivered.
+      <p style={{ marginTop: 18, fontSize: 11, color: '#94a3b8', textAlign: 'center', letterSpacing: 0.1 }}>
+        Live location stops automatically once the order is delivered.
       </p>
     </main>
   );
 }
 
 const pageWrap: React.CSSProperties = {
-  maxWidth: 480, margin: '0 auto', padding: '12px 12px 16px',
-  fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  maxWidth: 480, margin: '0 auto', padding: '14px 14px 24px',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif',
   color: '#0f172a', background: '#f8fafc', minHeight: '100vh',
-  display: 'flex', flexDirection: 'column', gap: 8,
+  display: 'flex', flexDirection: 'column', gap: 10,
 };
 const card: React.CSSProperties = {
-  background: '#fff', borderRadius: 10, padding: 10,
-  border: '1px solid #e2e8f0',
-};
-const greenBtn: React.CSSProperties = {
-  padding: '10px 16px', borderRadius: 8,
-  background: '#22c55e', color: '#fff',
-  fontWeight: 700, fontSize: 14, textDecoration: 'none', whiteSpace: 'nowrap',
-};
-const primaryBtn: React.CSSProperties = {
-  padding: '8px 14px', borderRadius: 8,
-  background: '#3b82f6', color: '#fff',
-  fontWeight: 700, fontSize: 13, textDecoration: 'none',
+  background: '#fff', borderRadius: 14, padding: '14px 16px',
+  boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.04)',
 };
 const bigBtn: React.CSSProperties = {
-  padding: '12px 16px', borderRadius: 10, border: 'none',
-  fontWeight: 800, fontSize: 14, cursor: 'pointer',
-  letterSpacing: 0.3,
+  padding: '14px 16px', borderRadius: 12, border: 'none',
+  fontWeight: 700, fontSize: 15, cursor: 'pointer',
+  letterSpacing: 0.1,
+  fontFamily: 'inherit',
 };
+// Kept for backwards-compatibility with any deeper component code.
+const greenBtn: React.CSSProperties = {
+  padding: '10px 16px', borderRadius: 999,
+  background: '#16a34a', color: '#fff',
+  fontWeight: 600, fontSize: 13, textDecoration: 'none', whiteSpace: 'nowrap',
+};
+const primaryBtn: React.CSSProperties = {
+  padding: '8px 14px', borderRadius: 999,
+  background: '#0f172a', color: '#fff',
+  fontWeight: 600, fontSize: 12, textDecoration: 'none',
+};
+// Silence unused warnings for the kept-for-compat exports above.
+void greenBtn; void primaryBtn;

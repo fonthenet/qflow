@@ -358,32 +358,36 @@ export default function OrderStatus(props: OrderStatusProps) {
         .qfo-bounce-dot { animation: qfo-bounce-dot 1.2s infinite ease-in-out; }
       `}</style>
 
-      {/* Hero — large, animated, status-aware. The icon area is a
-          dedicated 64×64 box so each phase animation has consistent
-          breathing room. The motorcycle in particular needs the box
-          width to ride across; the chef needs vertical space for the
-          bouncing dots. */}
+      {/* Hero — refined design language. Replaces the saturated tinted
+          border with a quiet card that uses a soft drop-shadow. Tint
+          is reserved for the icon's halo + the title text only, so
+          the eye lands on the status word, not on a coloured frame.
+          Ticket number is monospace + muted — feels like a real
+          delivery app, not a demo. */}
       <div style={{
-        background: '#fff', borderRadius: 14, padding: 16,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-        border: `2px solid ${banner.tint}33`,
+        background: '#fff', borderRadius: 14, padding: '14px 16px',
+        boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.04)',
         display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <PhaseIcon phase={phase} tint={banner.tint} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: 17, color: banner.tint, lineHeight: 1.2, fontWeight: 800 }}>
-              {banner.title}
-            </h1>
-            <span style={{
-              display: 'inline-block', padding: '2px 8px', borderRadius: 6,
-              background: '#eef2ff', color: '#4338ca',
-              fontWeight: 800, fontSize: 11, letterSpacing: 0.5,
-            }}>
-              {ticket.ticket_number}
-            </span>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: '#94a3b8',
+            letterSpacing: 0.5, textTransform: 'uppercase',
+            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+          }}>
+            {ticket.ticket_number}
           </div>
-          <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 13, lineHeight: 1.4 }}>
+          <h1 style={{
+            margin: '2px 0 0', fontSize: 18, color: '#0f172a',
+            fontWeight: 700, letterSpacing: -0.3, lineHeight: 1.2,
+          }}>
+            {banner.title}
+          </h1>
+          <p style={{
+            margin: '4px 0 0', color: '#475569', fontSize: 13,
+            lineHeight: 1.4,
+          }}>
             {banner.body}
           </p>
         </div>
@@ -404,32 +408,53 @@ export default function OrderStatus(props: OrderStatusProps) {
         />
       )}
 
-      {/* Driver block — single-row: emoji · name + phone · Call button.
-          Halves the height vs the previous two-row card and keeps the
-          phone-tap-to-call affordance front-and-centre. */}
+      {/* Driver card — circular avatar with the driver's initial, name
+          + phone, refined circular call button. Matches the rider-
+          portal customer card visual language. */}
       {serviceMode === 'delivery' && isDispatched && !isDelivered && rider && (
-        <section style={{ ...card, padding: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 24 }}>🛵</span>
+        <section style={{ ...card, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: '#0f172a', color: '#fff',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16, fontWeight: 700, flexShrink: 0,
+            letterSpacing: -0.5,
+          }}>
+            {(rider.full_name ?? '?').slice(0, 1).toUpperCase()}
+          </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{
+              fontSize: 10, fontWeight: 600, color: '#94a3b8',
+              letterSpacing: 0.4, textTransform: 'uppercase',
+            }}>
+              {tr(locale, 'Your courier', 'Votre livreur', 'السائق')}
+            </div>
+            <div style={{
+              fontWeight: 700, fontSize: 15, color: '#0f172a',
+              letterSpacing: -0.2, lineHeight: 1.2,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
               {rider.full_name ?? tr(locale, 'Driver', 'Livreur', 'السائق')}
             </div>
             {rider.phone && (
-              <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr' }}>{rider.phone}</div>
+              <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr', marginTop: 1 }}>{rider.phone}</div>
             )}
           </div>
           {rider.phone && (
             <a
               href={`tel:${rider.phone}`}
+              aria-label={tr(locale, 'Call', 'Appeler', 'اتصل')}
               style={{
-                padding: '9px 16px', borderRadius: 8,
-                background: '#22c55e', color: '#fff',
-                fontWeight: 700, fontSize: 13, textDecoration: 'none',
-                whiteSpace: 'nowrap',
-                boxShadow: '0 2px 6px rgba(34,197,94,0.35)',
+                width: 44, height: 44, borderRadius: '50%',
+                background: '#16a34a', color: '#fff',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                textDecoration: 'none', flexShrink: 0,
+                boxShadow: '0 4px 12px rgba(22,163,74,0.30)',
               }}
             >
-              📞 {tr(locale, 'Call', 'Appeler', 'اتصل')}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 16.92z"/>
+              </svg>
             </a>
           )}
         </section>
@@ -441,17 +466,26 @@ export default function OrderStatus(props: OrderStatusProps) {
           connector bar between dots fills as progress moves. */}
       {!isCancelled && <Timeline steps={steps} tint={banner.tint} />}
 
-      {/* Delivery address — single-row when there's a pin: address text on
-          one side, Maps button on the other. Shrinks vertically by ~40px. */}
+      {/* Delivery address — same refined treatment as the rider portal
+          drop-off card: small uppercase label, large address line,
+          dark pill button to open in maps. No big emoji marker. */}
       {serviceMode === 'delivery' && da?.street && (
-        <section style={{ ...card, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 18, flexShrink: 0 }}>📍</span>
-          <div style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+        <section style={{ ...card, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 10, fontWeight: 600, color: '#94a3b8',
+              letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 2,
+            }}>
+              {tr(locale, 'Drop-off', 'Livraison', 'التسليم')}
+            </div>
+            <div style={{
+              fontWeight: 600, fontSize: 14, color: '#0f172a',
+              lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis',
+            }} dir="auto">
               {da.street}
             </div>
             {(da.city || da.instructions) && (
-              <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>
                 {da.city ?? ''}{da.city && da.instructions ? ' · ' : ''}{da.instructions ?? ''}
               </div>
             )}
@@ -462,10 +496,11 @@ export default function OrderStatus(props: OrderStatusProps) {
               target="_blank"
               rel="noreferrer"
               style={{
-                padding: '6px 10px', borderRadius: 6,
-                background: '#3b82f6', color: '#fff',
-                fontWeight: 700, fontSize: 11, textDecoration: 'none',
-                whiteSpace: 'nowrap', flexShrink: 0,
+                padding: '8px 14px', borderRadius: 999,
+                background: '#0f172a', color: '#fff',
+                fontWeight: 600, fontSize: 12, textDecoration: 'none',
+                whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.1,
+                boxShadow: '0 2px 6px rgba(15,23,42,0.18)',
               }}
               title={tr(locale,
                 'Address text is approximate — this opens the exact pin you shared.',
@@ -473,7 +508,7 @@ export default function OrderStatus(props: OrderStatusProps) {
                 'العنوان تقريبي — هذا يفتح الموقع الذي شاركته بالضبط.',
               )}
             >
-              📍 {tr(locale, 'Pin', 'Épingle', 'الموقع')}
+              {tr(locale, 'Map →', 'Carte →', 'الخريطة →')}
             </a>
           )}
         </section>
@@ -751,13 +786,18 @@ function ItemsSummary({
 }
 
 const pageWrap: React.CSSProperties = {
-  maxWidth: 480, margin: '0 auto', padding: '14px 12px 20px',
-  fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  maxWidth: 480, margin: '0 auto', padding: '16px 14px 24px',
+  // SF Pro / system stack first — closer to UberEats / Apple-style
+  // typography on iOS where most customers open these tracking pages.
+  fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif',
   color: '#0f172a', background: '#f8fafc', minHeight: '100vh',
-  display: 'flex', flexDirection: 'column', gap: 10,
+  display: 'flex', flexDirection: 'column', gap: 12,
+  fontFeatureSettings: '"ss01" on, "cv11" on',
 };
 
 const card: React.CSSProperties = {
-  background: '#fff', borderRadius: 12, padding: 12,
-  border: '1px solid #e2e8f0',
+  background: '#fff', borderRadius: 14, padding: '14px 16px',
+  // Replace hard 1px border with a layered shadow for visual depth
+  // without busy rectangles. Same pattern UberEats uses.
+  boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.04)',
 };
