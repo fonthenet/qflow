@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createBrowserClient } from '@supabase/ssr';
 import { MapboxLiveMap, MAPBOX_TOKEN_CONFIGURED } from '@/components/maps/mapbox-live-map';
 
 // Map: static <img>, not iframe. iOS WhatsApp's in-app browser blocks
@@ -91,6 +92,11 @@ export interface RiderPortalProps {
   initialArrivedAt: string | null;
   initialDeliveredAt: string | null;
   initialStatus: string;
+  /** Public Supabase creds for the live ticket-state subscription.
+   *  Anon key is safe — RLS on tickets allows public SELECT and the
+   *  rider portal already exposes the ticket via the HMAC token URL. */
+  supabaseUrl: string;
+  supabaseAnonKey: string;
 }
 
 type GeoStatus = 'idle' | 'requesting' | 'streaming' | 'denied' | 'unavailable' | 'stopped';
@@ -101,6 +107,7 @@ export function RiderPortal(props: RiderPortalProps) {
     customerName, customerPhone, address, addressCity, addressInstructions,
     destLat, destLng,
     initialArrivedAt, initialDeliveredAt,
+    supabaseUrl, supabaseAnonKey,
   } = props;
 
   const [arrivedAt, setArrivedAt] = useState<string | null>(initialArrivedAt);
@@ -225,6 +232,69 @@ export function RiderPortal(props: RiderPortalProps) {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [ticketId, token, isDelivered]);
+
+  // ── Live ticket-state subscription ────────────────────────────────
+  // Two-pronged "never miss an update" pattern (same as UberEats):
+  //   1. Supabase Realtime postgres_changes on tickets — fast path
+  //      (<1s). The operator's Station mutates the ticket; the
+  //      change broadcasts to every subscriber including this rider.
+  //   2. 5-second polling fallback in case the websocket disconnects
+  //      silently on a flaky carrier network. Whichever path delivers
+  //      the new state first wins.
+  //
+  // Stops once delivered_at is set (terminal state — no more changes
+  // to listen for, and the heartbeat endpoint refuses writes too).
+  useEffect(() => {
+    if (isDelivered) return;
+    if (!supabaseUrl || !supabaseAnonKey) return;
+    const sb = createBrowserClient(supabaseUrl, supabaseAnonKey);
+    let unsubFn: (() => void) | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const applyRow = (next: any) => {
+      if (!next) return;
+      if (typeof next.arrived_at !== 'undefined') {
+        setArrivedAt(next.arrived_at ?? null);
+      }
+      if (typeof next.delivered_at !== 'undefined') {
+        setDeliveredAt(next.delivered_at ?? null);
+      }
+    };
+
+    try {
+      const channel = sb
+        .channel(`rider-track-${ticketId}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'tickets', filter: `id=eq.${ticketId}` },
+          (payload) => applyRow(payload.new),
+        )
+        .subscribe();
+      unsubFn = () => { try { sb.removeChannel(channel); } catch {} };
+    } catch (e) {
+      console.warn('[rider-portal] realtime subscribe failed', e);
+    }
+
+    // Polling fallback — 5 s cadence so the rider's status reflects
+    // operator actions reasonably fast even when the websocket is
+    // dropped (mobile carriers like to kill long-lived connections).
+    const poll = async () => {
+      try {
+        const { data } = await sb
+          .from('tickets')
+          .select('status, arrived_at, delivered_at, cancelled_at')
+          .eq('id', ticketId)
+          .maybeSingle();
+        applyRow(data);
+      } catch { /* network blip — try again next tick */ }
+    };
+    pollTimer = setInterval(poll, 5_000);
+
+    return () => {
+      unsubFn?.();
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [ticketId, supabaseUrl, supabaseAnonKey, isDelivered]);
 
   // Distance for the header chip — recomputes on every GPS fix.
   const distanceKm = (riderPos && destLat != null && destLng != null)

@@ -66,6 +66,15 @@ export default async function RiderPortalPage({ params }: PageProps) {
   const lat = typeof da?.lat === 'number' ? da.lat : null;
   const lng = typeof da?.lng === 'number' ? da.lng : null;
 
+  // Pass the public Supabase creds so the rider portal can subscribe
+  // to ticket UPDATEs via Realtime — the operator on Station may
+  // mark Arrived / Delivered / Cancel from their side, and the rider
+  // needs to see that flip live without refreshing. RLS already
+  // allows anon SELECT on tickets (the customer tracking page uses
+  // the same access pattern), so anon-key + ticket id is enough.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
   return (
     <RiderPortal
       ticketId={ticket.id}
@@ -83,6 +92,8 @@ export default async function RiderPortalPage({ params }: PageProps) {
       initialArrivedAt={(ticket as any).arrived_at ?? null}
       initialDeliveredAt={(ticket as any).delivered_at ?? null}
       initialStatus={ticket.status}
+      supabaseUrl={supabaseUrl}
+      supabaseAnonKey={supabaseAnonKey}
     />
   );
 }

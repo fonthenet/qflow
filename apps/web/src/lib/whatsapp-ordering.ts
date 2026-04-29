@@ -185,89 +185,81 @@ function tplAskAddressFallback(locale: Locale): string {
 }
 
 function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: string, orgName: string): string {
-  // Itemised cart lines so the customer sees exactly what they're
-  // about to confirm — earlier we collapsed to "1 items · 900 DA"
-  // which made it impossible to spot a wrong item before sending.
-  // Each line is `• qty× name — line_total currency`.
+  // Sectioned summary with proper breathing room. Earlier we crammed
+  // header + items + total + customer + address + note + CTA together
+  // with single newlines — looked claustrophobic on mobile. Now four
+  // distinct sections separated by a thin dashed divider:
+  //
+  //   1. Header           — service mode + restaurant name
+  //   2. Items + total    — what's being ordered + price
+  //   3. Customer + drop  — name, address, note
+  //   4. CTA              — YES / NO prompt
+  //
+  // WhatsApp doesn't render real horizontal rules, but a row of
+  // U+2500 ─ characters reads as a clean separator across all
+  // clients (mobile + web + iOS WA WebView).
+  const DIV = '──────────';
   let total = 0;
   const itemLines: string[] = [];
   for (const itemId of Object.keys(payload.cart)) {
     const it = payload.cart[itemId];
     const lineTotal = it.unit_price * it.qty;
     total += lineTotal;
-    itemLines.push(`• ${it.qty}× ${it.name} — ${lineTotal.toFixed(2)} ${currency}`);
+    itemLines.push(`  ${it.qty}×  ${it.name} — *${lineTotal.toFixed(2)} ${currency}*`);
   }
-  const svc = payload.service === 'delivery' ? (locale === 'ar' ? 'توصيل' : locale === 'en' ? 'Delivery' : 'Livraison')
-    : (locale === 'ar' ? 'استلام' : locale === 'en' ? 'Takeout' : 'À emporter');
-
-  // Address line — only on delivery, only when we have a captured
-  // street. Truncated so it doesn't push the YES/NO out of view on a
-  // phone if the address is very long.
+  const svc = payload.service === 'delivery'
+    ? (locale === 'ar' ? '🛵 توصيل' : locale === 'en' ? '🛵 Delivery' : '🛵 Livraison')
+    : (locale === 'ar' ? '🥡 استلام' : locale === 'en' ? '🥡 Takeout' : '🥡 À emporter');
   const street = payload.delivery_address?.street?.trim();
-  const addressLine = (payload.service === 'delivery' && street)
-    ? (locale === 'ar' ? `📍 *${street}*\n`
-       : locale === 'en' ? `📍 *${street}*\n`
-       : `📍 *${street}*\n`)
-    : '';
-
-  // Notes preview — only render when the customer actually entered one.
   const noteText = payload.customer_notes?.trim();
-  const notesPreview = noteText
-    ? (locale === 'ar' ? `📝 ملاحظة: _${noteText}_\n`
-       : locale === 'en' ? `📝 Note: _${noteText}_\n`
-       : `📝 Note : _${noteText}_\n`)
-    : '';
 
   if (locale === 'ar') {
-    const lines = [
-      '✅ *هل تؤكد؟*',
-      '',
-      `🛒 *سلتك* (${svc} في *${orgName}*)`,
+    return [
+      '✅ *تأكيد الطلب؟*',
+      `${svc} · *${orgName}*`,
+      DIV,
       ...itemLines,
       '',
-      `*المجموع: ${total.toFixed(2)} ${currency}*`,
-      '',
-      `👤 ${payload.customer_name}`,
-      addressLine ? `📍 ${street}` : '',
-      noteText ? `📝 _${noteText}_` : '',
-      '',
-      'أرسل *نعم* للتأكيد، *لا* للإلغاء.',
-    ].filter(Boolean);
-    return lines.join('\n');
+      `*الإجمالي:* *${total.toFixed(2)} ${currency}*`,
+      DIV,
+      `👤  *${payload.customer_name}*`,
+      street ? `📍  ${street}` : '',
+      noteText ? `📝  _${noteText}_` : '',
+      DIV,
+      '👉 أرسل *نعم* للتأكيد · *لا* للإلغاء',
+    ].filter(Boolean).join('\n');
   }
   if (locale === 'en') {
-    const lines = [
+    return [
       '✅ *Confirm order?*',
-      '',
-      `🛒 *Your cart* (${svc} at *${orgName}*)`,
+      `${svc} · *${orgName}*`,
+      DIV,
       ...itemLines,
       '',
-      `*Total: ${total.toFixed(2)} ${currency}*`,
-      '',
-      `👤 ${payload.customer_name}`,
-      addressLine ? `📍 ${street}` : '',
-      noteText ? `📝 _${noteText}_` : '',
-      '',
-      'Reply *YES* to send, *NO* to cancel.',
-    ].filter(Boolean);
-    return lines.join('\n');
+      `*Total:*  *${total.toFixed(2)} ${currency}*`,
+      DIV,
+      `👤  *${payload.customer_name}*`,
+      street ? `📍  ${street}` : '',
+      noteText ? `📝  _${noteText}_` : '',
+      DIV,
+      '👉 Reply *YES* to send · *NO* to cancel',
+    ].filter(Boolean).join('\n');
   }
   // French
-  const lines = [
+  return [
     '✅ *Confirmer la commande ?*',
-    '',
-    `🛒 *Votre panier* (${svc} chez *${orgName}*)`,
+    `${svc} · *${orgName}*`,
+    DIV,
     ...itemLines,
     '',
-    `*Total : ${total.toFixed(2)} ${currency}*`,
-    '',
-    `👤 ${payload.customer_name}`,
-    addressLine ? `📍 ${street}` : '',
-    noteText ? `📝 _${noteText}_` : '',
-    '',
-    'Répondez *OUI* pour envoyer, *NON* pour annuler.',
-  ].filter(Boolean);
-  return lines.join('\n');
+    `*Total :*  *${total.toFixed(2)} ${currency}*`,
+    DIV,
+    `👤  *${payload.customer_name}*`,
+    street ? `📍  ${street}` : '',
+    noteText ? `📝  _${noteText}_` : '',
+    DIV,
+    '👉 Répondez *OUI* pour envoyer · *NON* pour annuler',
+  ].filter(Boolean).join('\n');
 }
 
 /**

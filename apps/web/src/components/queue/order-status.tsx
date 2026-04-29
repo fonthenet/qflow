@@ -128,9 +128,10 @@ export default function OrderStatus(props: OrderStatusProps) {
       console.warn('[OrderStatus] realtime subscribe failed', e);
     }
 
-    // Polling fallback — 8s cadence, runs alongside realtime. Stops once
-    // the order reaches a terminal phase (delivered / cancelled) since
-    // there's nothing more to track at that point.
+    // Polling fallback — 5s cadence (was 8s). Tighter so customers
+    // perceive operator/driver state changes as nearly real-time even
+    // when the Realtime websocket drops on a flaky mobile network.
+    // Same pattern UberEats / DoorDash use: ws + polling redundancy.
     const poll = async () => {
       try {
         const { data } = await sb
@@ -143,7 +144,10 @@ export default function OrderStatus(props: OrderStatusProps) {
         // Network blip — try again on the next tick.
       }
     };
-    pollTimer = setInterval(poll, 8000);
+    // Run one poll right away so we don't wait 5 s for the first
+    // refresh on initial mount (e.g. customer opens a stale page).
+    void poll();
+    pollTimer = setInterval(poll, 5000);
 
     return () => {
       unsubFn?.();
