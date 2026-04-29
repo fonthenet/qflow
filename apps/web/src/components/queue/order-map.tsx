@@ -6,20 +6,27 @@ import { createBrowserClient } from '@supabase/ssr';
 /**
  * Live delivery map for the customer tracking page.
  *
- * Provider chain (first one with creds wins):
- *   1. Google Maps Embed API — preferred. Looks great, reliable, free
- *      with no usage cap on the Embed product. Requires
- *      NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY in Vercel env. Lock the key
- *      to your domain in Google Cloud console — it's safe to expose
- *      because the Embed API checks Referer.
- *   2. OpenStreetMap iframe — fallback. No key, no setup, but the
- *      tiles are slower and the look is generic.
+ * Why static IMAGE not iframe:
+ *   - iOS WhatsApp's in-app browser (and iOS Safari with Intelligent
+ *     Tracking Prevention enabled) blocks third-party iframes —
+ *     openstreetmap.org / google.com/maps/embed all show as a blank
+ *     white box. Customers see the "Reduce Protections" banner.
+ *   - <img src="...staticmap.png"> is exempt from tracking prevention.
+ *     It always loads regardless of WebView restrictions.
  *
- * Re-keyed on every heartbeat so the iframe reloads with the new
- * marker position. ~12s cadence matches the rider portal throttle.
+ * Provider chain:
+ *   1. Google Maps Static API — preferred. Requires the same key as
+ *      the Embed API but with the "Maps Static API" service enabled
+ *      in Google Cloud (and billing). Gives the recognizable Google
+ *      look + custom markers + a path line between rider and dest.
+ *   2. staticmap.openstreetmap.de — free public OSM static service.
+ *      No key needed. Falls back via the <img onError> handler if
+ *      the Google call fails (key not configured, Static API not
+ *      enabled, billing missing, network).
  *
- * Straight-line ETA = Haversine distance ÷ rider's reported speed
- * (or 30 km/h fallback). Good enough for "your driver is ~7 min away".
+ * The image src changes on every rider heartbeat so the map "moves"
+ * — image refresh is silent (browser caches by URL, new URL = new
+ * fetch). Customer feels live tracking without iframe baggage.
  */
 
 export interface OrderMapProps {
@@ -55,47 +62,35 @@ function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: numb
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/**
- * Build the Google Maps Embed URL. Uses 'directions' mode when we
- * have both a rider and a destination so the customer sees the
- * actual route + drive time. Falls back to 'place' mode for a
- * single point.
- */
-function gmapsEmbedUrl(
+const MAP_W = 640;
+const MAP_H = 360;
+
+/** Google Static Maps URL with rider + destination markers + a thin
+ *  path line between them. Needs Maps Static API enabled on the key. */
+function gmapsStaticUrl(
   key: string,
   rider: { lat: number; lng: number } | null,
   dest: { lat: number; lng: number },
 ): string {
+  const params = new URLSearchParams();
+  params.set('size', `${MAP_W}x${MAP_H}`);
+  params.set('scale', '2'); // retina
+  params.set('maptype', 'roadmap');
+  params.set('key', key);
+
   if (rider) {
-    const params = new URLSearchParams({
-      key,
-      origin: `${rider.lat},${rider.lng}`,
-      destination: `${dest.lat},${dest.lng}`,
-      mode: 'driving',
-    });
-    return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;
+    params.append('markers', `color:blue|label:D|${rider.lat},${rider.lng}`);
+    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
+    params.append('path', `color:0x3b82f6cc|weight:4|${rider.lat},${rider.lng}|${dest.lat},${dest.lng}`);
+    // No center/zoom — Google auto-fits to the markers + path.
+  } else {
+    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
+    params.set('center', `${dest.lat},${dest.lng}`);
+    params.set('zoom', '15');
   }
-  const params = new URLSearchParams({
-    key,
-    q: `${dest.lat},${dest.lng}`,
-    zoom: '15',
-  });
-  return `https://www.google.com/maps/embed/v1/place?${params.toString()}`;
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
 
-/**
- * OSM iframe fallback. Single marker at the rider's current position
- * (or destination if no rider yet). Re-rendered with a different `key`
- * each time the focus moves so the iframe reloads.
- */
-function osmEmbedUrl(focus: { lat: number; lng: number }): string {
-  const span = 0.008;
-  const minLng = focus.lng - span;
-  const maxLng = focus.lng + span;
-  const minLat = focus.lat - span;
-  const maxLat = focus.lat + span;
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${minLng},${minLat},${maxLng},${maxLat}&layer=mapnik&marker=${focus.lat},${focus.lng}`;
-}
 
 export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supabaseAnonKey, locale }: OrderMapProps) {
   const [rider, setRider] = useState<RiderPin | null>(null);
@@ -145,23 +140,21 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
     return () => unsub?.();
   }, [ticketId, supabaseUrl, supabaseAnonKey]);
 
-  // Resolve provider — Google if key is set, else OSM.
+  // Build the Google Static Maps URL when the key is available; that's
+  // the only reliable provider for in-app WebViews. OSM static was
+  // tested DNS-unreachable in production — leaving it as a fallback
+  // wedged the map in a 'forever loading' state for users hitting the
+  // primary fail. When the key is missing, render a placeholder card
+  // with an "Open in Maps" button instead.
   const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? '';
-  const useGmaps = Boolean(gmapsKey);
+  const imgSrc = gmapsKey
+    ? gmapsStaticUrl(gmapsKey, rider ? { lat: rider.lat, lng: rider.lng } : null, dest)
+    : null;
 
-  const mapUrl = useGmaps
-    ? gmapsEmbedUrl(gmapsKey, rider ? { lat: rider.lat, lng: rider.lng } : null, dest)
-    : osmEmbedUrl(rider ? { lat: rider.lat, lng: rider.lng } : dest);
-
-  // Re-key the iframe when the focus moves so it reloads with the new
-  // markers / route.
-  const iframeKey = rider
-    ? `r_${rider.lat.toFixed(5)}_${rider.lng.toFixed(5)}`
-    : `d_${dest.lat.toFixed(5)}_${dest.lng.toFixed(5)}`;
-
-  // External "view in maps" link — universal q= URL works on Google
+  // External "open in maps" link — universal q= URL works on Google
   // Maps web, Apple Maps (iOS), and falls back gracefully elsewhere.
-  const fullMapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${(rider ?? dest).lat},${(rider ?? dest).lng}`)}`;
+  const focus = rider ?? dest;
+  const fullMapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${focus.lat},${focus.lng}`)}`;
 
   // ── Straight-line ETA ─────────────────────────────────────────────
   const eta = useMemo(() => {
@@ -193,29 +186,42 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
           </span>
         )}
       </div>
-      <iframe
-        key={iframeKey}
-        src={mapUrl}
-        title="map"
-        style={{ width: '100%', height: 240, border: 0, display: 'block' }}
-        loading="lazy"
-        referrerPolicy="no-referrer-when-downgrade"
-        allowFullScreen
-      />
-      <a
-        href={fullMapHref}
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          display: 'block', textAlign: 'center',
-          padding: '6px 10px', fontSize: 11,
-          color: '#3b82f6', background: '#f8fafc',
-          textDecoration: 'none', fontWeight: 600,
-          borderTop: '1px solid #e2e8f0',
-        }}
-      >
-        🔍 {tr(locale, 'Open in Google Maps', 'Ouvrir dans Google Maps', 'افتح في خرائط جوجل')}
+      <a href={fullMapHref} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+        {imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={tr(locale, 'Map showing driver and destination', 'Carte du livreur', 'خريطة السائق')}
+            width={MAP_W}
+            height={MAP_H}
+            style={{
+              width: '100%', height: 'auto', display: 'block',
+              aspectRatio: `${MAP_W} / ${MAP_H}`,
+              objectFit: 'cover',
+              background: '#e2e8f0',
+            }}
+          />
+        ) : (
+          // Fallback: no Google key → show a clickable placeholder.
+          // The link still opens Google Maps externally so the
+          // customer can navigate.
+          <div style={{
+            width: '100%',
+            aspectRatio: `${MAP_W} / ${MAP_H}`,
+            background: '#e2e8f0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#64748b', fontSize: 13, fontWeight: 600,
+          }}>
+            🗺️ {tr(locale, 'Tap to open map', 'Voir la carte', 'افتح الخريطة')}
+          </div>
+        )}
       </a>
+      <div style={{
+        textAlign: 'center', padding: '6px 10px', fontSize: 11,
+        color: '#3b82f6', background: '#f8fafc', fontWeight: 600,
+        borderTop: '1px solid #e2e8f0',
+      }}>
+        🔍 {tr(locale, 'Tap map to open in Google Maps', 'Toucher pour ouvrir dans Maps', 'اضغط للفتح في خرائط')}
+      </div>
     </section>
   );
 }

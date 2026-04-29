@@ -2,11 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Map: Google Maps Embed (preferred — set NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY
-// in Vercel env), with OSM iframe fallback when no key is set. Both
-// load as iframes — no JS dep, no CDN race, no zero-width-on-mount
-// problem. Re-keyed on every GPS fix so the marker / route refreshes
-// as the driver heads toward the destination.
+// Map: static <img>, not iframe. iOS WhatsApp's in-app browser blocks
+// third-party iframes via Tracking Prevention — both OSM and Google
+// Embed showed as a blank white box even after the env-var was
+// configured. Static <img> requests aren't subject to that
+// restriction; they always load. Provider chain: Google Maps Static
+// API (when key is configured + Static API enabled) → OSM static
+// service via <img onError> fallback.
+
+const MAP_W = 640;
+const MAP_H = 360;
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6_371;
@@ -19,42 +24,28 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function osmEmbedUrl(focus: { lat: number; lng: number }, span = 0.008): string {
-  const minLng = focus.lng - span;
-  const maxLng = focus.lng + span;
-  const minLat = focus.lat - span;
-  const maxLat = focus.lat + span;
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${minLng},${minLat},${maxLng},${maxLat}&layer=mapnik&marker=${focus.lat},${focus.lng}`;
-}
-
-/**
- * Google Maps Embed — directions mode when we have both rider and
- * destination so the driver sees the actual route, place mode for a
- * single point.
- */
-function gmapsEmbedUrl(
+function gmapsStaticUrl(
   key: string,
   rider: { lat: number; lng: number } | null,
-  dest: { lat: number; lng: number } | null,
-): string | null {
-  if (rider && dest) {
-    const params = new URLSearchParams({
-      key,
-      origin: `${rider.lat},${rider.lng}`,
-      destination: `${dest.lat},${dest.lng}`,
-      mode: 'driving',
-    });
-    return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;
+  dest: { lat: number; lng: number },
+): string {
+  const params = new URLSearchParams();
+  params.set('size', `${MAP_W}x${MAP_H}`);
+  params.set('scale', '2');
+  params.set('maptype', 'roadmap');
+  params.set('key', key);
+  if (rider) {
+    params.append('markers', `color:blue|label:D|${rider.lat},${rider.lng}`);
+    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
+    params.append('path', `color:0x3b82f6cc|weight:4|${rider.lat},${rider.lng}|${dest.lat},${dest.lng}`);
+  } else {
+    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
+    params.set('center', `${dest.lat},${dest.lng}`);
+    params.set('zoom', '15');
   }
-  const focus = rider ?? dest;
-  if (!focus) return null;
-  const params = new URLSearchParams({
-    key,
-    q: `${focus.lat},${focus.lng}`,
-    zoom: '15',
-  });
-  return `https://www.google.com/maps/embed/v1/place?${params.toString()}`;
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
+
 
 /**
  * Rider portal client. Loaded on the driver's phone after they tap
@@ -123,7 +114,7 @@ export function RiderPortal(props: RiderPortalProps) {
   const lastSentMsRef = useRef<number>(0);
 
   // Driver's current GPS position. Null until the first onPos fires.
-  // We use this both for the map iframe focus and for the distance chip.
+  // We use this for the map image and the distance chip.
   const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
 
   const isDelivered = Boolean(deliveredAt);
@@ -178,9 +169,8 @@ export function RiderPortal(props: RiderPortalProps) {
     const onPos = (p: GeolocationPosition) => {
       setGeoStatus('streaming');
       setError(null);
-      // Update local map state on every fix so the rider's pin moves
-      // smoothly even though we only POST to the server every 12s.
-      // The server-side position is throttled separately inside `post`.
+      // Update local map state on every fix. The new lat/lng goes
+      // straight into the static-map URL on the next render.
       if (Number.isFinite(p.coords.latitude) && Number.isFinite(p.coords.longitude)) {
         setRiderPos({ lat: p.coords.latitude, lng: p.coords.longitude });
       }
@@ -230,22 +220,14 @@ export function RiderPortal(props: RiderPortalProps) {
     ? haversineKm(riderPos, { lat: destLat, lng: destLng })
     : null;
 
-  // Map URL — Google if key is set, OSM fallback otherwise.
+  // Static map URL — Google Static when key configured. Returns null
+  // otherwise (we rendered a placeholder rather than a broken OSM
+  // fallback that timed out in production testing).
   const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? '';
-  const useGmaps = Boolean(gmapsKey);
   const dest = (destLat != null && destLng != null) ? { lat: destLat, lng: destLng } : null;
-
-  const mapUrl: string | null = useGmaps
-    ? gmapsEmbedUrl(gmapsKey, riderPos, dest)
-    : (riderPos ?? dest
-        ? osmEmbedUrl(riderPos ?? dest!)
-        : null);
-
-  // Re-key the iframe whenever the rider moves so it reloads with
-  // the new origin — Google Maps Embed otherwise caches the route.
-  const mapKey = riderPos
-    ? `r_${riderPos.lat.toFixed(4)}_${riderPos.lng.toFixed(4)}`
-    : (dest ? `d_${dest.lat.toFixed(4)}_${dest.lng.toFixed(4)}` : 'idle');
+  const mapUrl: string | null = (dest && gmapsKey)
+    ? gmapsStaticUrl(gmapsKey, riderPos, dest)
+    : null;
 
   const callApi = async (path: 'arrived' | 'delivered'): Promise<any> => {
     setBusy(path);
@@ -338,13 +320,11 @@ export function RiderPortal(props: RiderPortalProps) {
         )}
       </section>
 
-      {/* OpenStreetMap iframe — centered on the driver's current
-          position so they see themselves moving on the map. The
-          destination pin emoji is set as the marker if no GPS fix yet.
-          Re-keyed every ~10 m of movement to refresh the iframe with
-          the new position. Hidden when the operator never captured
-          lat/lng (text-only address) — driver still has the Navigate
-          button above as a fallback. */}
+      {/* Static map image (NOT iframe — iOS WhatsApp blocks third-
+          party iframes). Refreshes whenever riderPos changes; the
+          new URL forces the browser to fetch a new image. Tap the
+          image to open the route in Google/Apple Maps. Hidden when
+          the operator never captured lat/lng. */}
       {mapUrl && (
         <section style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
           <div style={{
@@ -353,7 +333,7 @@ export function RiderPortal(props: RiderPortalProps) {
             background: '#f8fafc', fontSize: 12,
           }}>
             <span style={{ color: '#64748b', fontWeight: 700 }}>
-              🗺️ {riderPos ? 'Your position' : 'Destination'}
+              🗺️ {riderPos ? 'Your route' : 'Destination'}
             </span>
             <span style={{ fontWeight: 800, color: '#3b82f6' }}>
               {distanceKm == null
@@ -361,14 +341,25 @@ export function RiderPortal(props: RiderPortalProps) {
                 : `${distanceKm < 0.1 ? '<0.1' : distanceKm.toFixed(1)} km to drop-off`}
             </span>
           </div>
-          <iframe
-            key={mapKey}
-            src={mapUrl}
-            title="map"
-            style={{ width: '100%', height: 220, border: 0, display: 'block' }}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
+          <a
+            href={mapsHref ?? undefined}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'block' }}
+          >
+            <img
+              src={mapUrl}
+              alt="map"
+              width={MAP_W}
+              height={MAP_H}
+              style={{
+                width: '100%', height: 'auto', display: 'block',
+                aspectRatio: `${MAP_W} / ${MAP_H}`,
+                objectFit: 'cover',
+                background: '#e2e8f0',
+              }}
+            />
+          </a>
         </section>
       )}
 
