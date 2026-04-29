@@ -182,21 +182,53 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
   }, [rider, dest]);
 
   return (
-    <section style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
+    <section style={{
+      borderRadius: 14, overflow: 'hidden', background: '#fff',
+      boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.04)',
+    }}>
+      {/* Two-stat header — ETA on the left, distance on the right.
+          Refined typography (uppercase muted micro-labels, large dark
+          numbers). Same visual language as the driver portal. */}
       <div style={{
-        padding: '6px 10px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-        background: '#f8fafc', fontSize: 12,
+        padding: '12px 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, borderBottom: '1px solid #f1f5f9',
       }}>
-        <span style={{ color: '#64748b', fontWeight: 700 }}>
-          🛵 {tr(locale, 'Driver location', 'Position du livreur', 'موقع السائق')}
-        </span>
-        {eta ? (
-          <span style={{ fontWeight: 800, color: '#3b82f6' }}>~{eta.minutes} min · {eta.distKm.toFixed(1)} km</span>
-        ) : (
-          <span style={{ color: '#94a3b8' }}>
-            {tr(locale, 'Waiting for driver…', 'En attente du livreur…', 'بانتظار السائق…')}
-          </span>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: '#94a3b8',
+            letterSpacing: 0.4, textTransform: 'uppercase',
+          }}>
+            {eta ? tr(locale, 'Arriving in', 'Arrivée dans', 'الوصول خلال') : tr(locale, 'Status', 'Statut', 'الحالة')}
+          </div>
+          <div style={{
+            fontSize: 22, fontWeight: 700, color: '#0f172a',
+            letterSpacing: -0.5, marginTop: 2, lineHeight: 1,
+          }}>
+            {eta
+              ? <>~{eta.minutes}<span style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginInlineStart: 3 }}>min</span></>
+              : <span style={{ fontSize: 14, fontWeight: 500, color: '#94a3b8' }}>
+                  {tr(locale, 'Waiting for driver…', 'En attente du livreur…', 'بانتظار السائق…')}
+                </span>}
+          </div>
+        </div>
+        {eta && (
+          <div style={{ textAlign: 'end' }}>
+            <div style={{
+              fontSize: 10, fontWeight: 600, color: '#94a3b8',
+              letterSpacing: 0.4, textTransform: 'uppercase',
+            }}>
+              {tr(locale, 'Distance', 'Distance', 'المسافة')}
+            </div>
+            <div style={{
+              fontSize: 14, fontWeight: 600, color: '#0f172a',
+              marginTop: 2, lineHeight: 1,
+            }}>
+              {eta.distKm < 0.1
+                ? <>&lt; 100<span style={{ fontSize: 11, color: '#94a3b8', marginInlineStart: 2 }}>m</span></>
+                : <>{eta.distKm.toFixed(eta.distKm < 10 ? 1 : 0)}<span style={{ fontSize: 11, color: '#94a3b8', marginInlineStart: 2 }}>km</span></>}
+            </div>
+          </div>
         )}
       </div>
       {/* Live map. Mapbox GL JS when NEXT_PUBLIC_MAPBOX_TOKEN is
