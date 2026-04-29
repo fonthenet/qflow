@@ -164,12 +164,36 @@ export async function POST(request: NextRequest) {
         time: approvedTime,
         service: resolvedServiceName,
       });
-      const joinedBody = approvedHeader + tMsg('joined_details', locale, {
-        ticket: ticket.ticket_number,
-        position: formatPosition(pos, locale),
-        now_serving: formatNowServing(pos, locale),
-        url: trackUrl,
-      }) + tMsg('quick_menu', locale);
+      // Restaurant orders (takeout/delivery) don't have a meaningful
+      // queue position — the customer is waiting for kitchen prep, not
+      // standing in a physical line. Skip the position/wait-time
+      // joined_details entirely and just hand them the tracking URL.
+      // For everything else (clinics, gov, salons, dine-in) we keep the
+      // standard joined_details with position + ETA.
+      const isRestaurantOrder = serviceTypeHint === 'takeout' || serviceTypeHint === 'delivery';
+      let joinedBody: string;
+      if (isRestaurantOrder) {
+        // Strip the "You are now in the queue!" tail from the approved
+        // header — it's queue-flow language that doesn't apply to
+        // orders. Then append a compact ticket + tracking URL block.
+        const queueTail =
+          locale === 'ar' ? 'أنت الآن في الطابور!'
+          : locale === 'en' ? 'You are now in the queue!'
+          : 'Vous êtes maintenant dans la file !';
+        const trimmedHeader = approvedHeader.replace(queueTail, '').replace(/\n+$/, '');
+        const trackLine =
+          locale === 'ar' ? `\n\n🎫 *${ticket.ticket_number}*\n📍 ${trackUrl}`
+          : locale === 'en' ? `\n\n🎫 *${ticket.ticket_number}*\n📍 ${trackUrl}`
+          : `\n\n🎫 *${ticket.ticket_number}*\n📍 ${trackUrl}`;
+        joinedBody = trimmedHeader + trackLine + tMsg('quick_menu', locale);
+      } else {
+        joinedBody = approvedHeader + tMsg('joined_details', locale, {
+          ticket: ticket.ticket_number,
+          position: formatPosition(pos, locale),
+          now_serving: formatNowServing(pos, locale),
+          url: trackUrl,
+        }) + tMsg('quick_menu', locale);
+      }
 
       if (channel === 'whatsapp' && toPhone) {
         await sendWhatsAppMessage({ to: toPhone, body: joinedBody });
