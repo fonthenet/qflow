@@ -91,8 +91,15 @@ export async function POST(request: NextRequest) {
         : locale === 'en'
           ? `🛵 Your driver has *arrived* with order *#${ticket.ticket_number}*. Track: ${trackUrl}`
           : `🛵 Votre livreur est *arrivé* avec la commande *#${ticket.ticket_number}*. Suivi : ${trackUrl}`;
-    void sendWhatsAppMessage({ to: phone, body: msg })
-      .catch((e) => console.warn('[orders/arrived] WA send failed', e?.message));
+    // Route through the outbox so transient Meta failures get
+    // retried (cron, exponential backoff). See whatsapp-outbox.ts.
+    const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+    void enqueueWaJob({
+      ticketId: body.ticketId,
+      action: 'order_arrived',
+      toPhone: phone,
+      body: msg,
+    }).catch((e) => console.warn('[orders/arrived] enqueue failed', e?.message));
   }
 
   return NextResponse.json({ ok: true, arrived_at: nowIso });

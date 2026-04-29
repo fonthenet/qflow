@@ -127,25 +127,36 @@ export async function POST(request: NextRequest) {
       waBody = `${headerLine}\n${trackUrl}`;
     }
 
+    // Route through the outbox. enqueueWaJob attempts an inline send
+    // and falls back to cron-driven retries on failure (5 attempts,
+    // exponential backoff). The 'delivered' result reflects that
+    // first attempt — we still flow it back to the rider portal so
+    // the driver sees a green "Customer notified" indicator on
+    // success or amber "please confirm by phone" on first-attempt
+    // failure (the cron will keep trying in the background).
+    const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
     try {
-      const result = await sendWhatsAppMessage({ to: phone, body: waBody });
-      if (result?.ok) {
-        notified = true;
-      } else {
-        notifyError = (result as any)?.error ?? 'send_failed';
-      }
+      const r = await enqueueWaJob({
+        ticketId,
+        action: 'order_delivered',
+        toPhone: phone,
+        body: waBody,
+      });
+      notified = r.delivered;
+      notifyError = r.lastError ?? null;
     } catch (e: any) {
       notifyError = e?.message ?? 'unknown';
     }
 
     // Audit trail in ticket_events so the operator can see whether
-    // the customer was actually notified.
+    // the customer was actually notified on the FIRST attempt. The
+    // outbox table itself is the canonical retry log.
     await supabase.from('ticket_events').insert({
       ticket_id: ticketId,
-      event_type: notified ? 'customer_notified' : 'customer_notify_failed',
+      event_type: notified ? 'customer_notified' : 'customer_notify_pending',
       metadata: notified
         ? { channel: 'whatsapp', phone, source: 'rider_portal' }
-        : { channel: 'whatsapp', phone, error: notifyError, source: 'rider_portal' },
+        : { channel: 'whatsapp', phone, error: notifyError, source: 'rider_portal', will_retry: true },
     }).then(() => {}, () => {});
   }
 

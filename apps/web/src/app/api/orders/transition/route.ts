@@ -130,8 +130,14 @@ export async function POST(request: NextRequest) {
           : locale === 'en'
             ? `✅ Order #${ticket.ticket_number} accepted at ${office?.name ?? ''}.\nReady in ~${etaMinutes} min.\nTrack: ${trackUrl}`
             : `✅ Commande n°${ticket.ticket_number} acceptée chez ${office?.name ?? ''}.\nPrête dans ~${etaMinutes} min.\nSuivi : ${trackUrl}`;
-      void sendWhatsAppMessage({ to: phone, body: msg, timezone: office?.timezone ?? undefined })
-        .catch((e) => console.warn('[orders/transition] WA accept failed', e?.message));
+      const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+      void enqueueWaJob({
+        ticketId,
+        action: 'order_accepted',
+        toPhone: phone,
+        body: msg,
+        payload: { eta_minutes: etaMinutes },
+      }).catch((e) => console.warn('[orders/transition] enqueue accept failed', e?.message));
     }
 
     return NextResponse.json({ ok: true, action: 'accept', status: 'serving', eta_minutes: etaMinutes });
@@ -181,8 +187,14 @@ export async function POST(request: NextRequest) {
           ? `❌ Sorry — order #${ticket.ticket_number} at ${office?.name ?? ''} couldn't be accepted.\n${customerMessage}`
           : `❌ Désolé — la commande n°${ticket.ticket_number} chez ${office?.name ?? ''} n'a pas pu être acceptée.\n${customerMessage}`;
     const fullMsg = customNote ? `${baseMsg}\n\n"${customNote}"` : baseMsg;
-    void sendWhatsAppMessage({ to: phone, body: fullMsg, timezone: office?.timezone ?? undefined })
-      .catch((e) => console.warn('[orders/transition] WA decline failed', e?.message));
+    const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+    void enqueueWaJob({
+      ticketId,
+      action: 'order_declined',
+      toPhone: phone,
+      body: fullMsg,
+      payload: { reason: reasonKey, note: body.declineNote ?? null },
+    }).catch((e) => console.warn('[orders/transition] enqueue decline failed', e?.message));
   }
 
   return NextResponse.json({ ok: true, action: 'decline', status: 'cancelled', reason: reasonKey });

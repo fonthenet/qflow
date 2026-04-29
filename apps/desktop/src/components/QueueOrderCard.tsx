@@ -12,7 +12,7 @@
  * Light + dark: colorScheme on form controls.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import {
   resolveRestaurantServiceType,
@@ -526,13 +526,19 @@ export function QueueOrderCard({
           background: `${stage.tint}15`,
           border: `1px solid ${stage.tint}55`,
         }}>
-          <div style={{
-            display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 4,
-            padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
-            background: `${stage.tint}25`, color: stage.tint,
-            border: `1px solid ${stage.tint}66`,
-          }}>
-            {stage.emoji} {stage.label}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+              background: `${stage.tint}25`, color: stage.tint,
+              border: `1px solid ${stage.tint}66`,
+            }}>
+              {stage.emoji} {stage.label}
+            </div>
+            {/* WhatsApp notification status — durable retries per
+                whatsapp-outbox.ts. Polls every 30s; flips to red
+                with a Resend button when all retries are exhausted. */}
+            <NotifyStatusBadge ticketId={ticket.id} locale={locale} />
           </div>
           {riderLink ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
@@ -1121,5 +1127,114 @@ function OverflowItem({ label, color, onClick }: { label: string; color: string;
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * Small notification-status pill on each delivery card. Polls
+ * /api/notifications/status every 30s for the latest WhatsApp job
+ * tied to this ticket and shows one of:
+ *
+ *   pending   ⏳ Notifying            (amber, retries in flight)
+ *   sent      ✓  Sent                 (green, accepted by Meta)
+ *   delivered ✓✓ Delivered            (green, on the customer's phone)
+ *   read      ✓✓ Read                 (blue, customer opened the chat)
+ *   failed    ✕  Notify failed [Resend] (red, all retries exhausted)
+ *
+ * Click "Resend" to re-queue the job for an immediate retry.
+ */
+export function NotifyStatusBadge({ ticketId, locale }: { ticketId: string; locale: DesktopLocale }) {
+  const tl = (key: string) => translate(locale, key);
+  const [job, setJob] = useState<{
+    id: string; status: string; attempts: number; max_attempts: number;
+    last_error: string | null; meta_status: string | null;
+  } | null>(null);
+  const [resending, setResending] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`https://qflo.net/api/notifications/status?ticketIds=${ticketId}`, {
+          method: 'GET',
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        const j = (data?.jobs ?? []).find((r: any) => r.ticket_id === ticketId);
+        setJob(j ? {
+          id: j.id, status: j.status, attempts: j.attempts, max_attempts: j.max_attempts,
+          last_error: j.last_error, meta_status: j.meta_status,
+        } : null);
+      } catch { /* network blip — try again on next tick */ }
+    };
+    fetchStatus();
+    // 30s cadence: tight enough to catch sent → delivered → read
+    // transitions reasonably fast, slack enough not to thrash the
+    // endpoint on a busy queue.
+    timer = setInterval(fetchStatus, 30_000);
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+  }, [ticketId]);
+
+  if (!job) return null;
+
+  // Resolve display state. Meta-side status takes precedence over
+  // our local status — if Meta said "delivered", we know more than
+  // our outbox row (which only knows we shipped to Meta).
+  const display = job.meta_status === 'read' ? 'read'
+    : job.meta_status === 'delivered' ? 'delivered'
+    : job.meta_status === 'failed' ? 'failed'
+    : job.status === 'sent' ? 'sent'
+    : job.status === 'failed' ? 'failed'
+    : 'pending';
+
+  const palette = display === 'read'      ? { bg: 'rgba(59,130,246,0.12)', fg: '#3b82f6', text: '✓✓ ' + tl('Read') }
+    : display === 'delivered'             ? { bg: 'rgba(34,197,94,0.12)', fg: '#16a34a',  text: '✓✓ ' + tl('Delivered to phone') }
+    : display === 'sent'                  ? { bg: 'rgba(34,197,94,0.10)', fg: '#16a34a',  text: '✓ ' + tl('Sent') }
+    : display === 'failed'                ? { bg: 'rgba(239,68,68,0.12)', fg: '#ef4444',  text: '✕ ' + tl('Notify failed') }
+    :                                       { bg: 'rgba(245,158,11,0.12)', fg: '#f59e0b', text: '⏳ ' + tl('Notifying') + ` (${job.attempts}/${job.max_attempts})` };
+
+  const onResend = async () => {
+    setResending(true);
+    try {
+      await fetch('https://qflo.net/api/notifications/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resendJobId: job.id }),
+      });
+      // Optimistically flip to pending; the next poll picks up the
+      // real status.
+      setJob({ ...job, status: 'pending' });
+    } catch { /* user can click again */ }
+    finally { setResending(false); }
+  };
+
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '2px 8px', borderRadius: 999,
+      fontSize: 10, fontWeight: 700,
+      background: palette.bg, color: palette.fg,
+      border: `1px solid ${palette.fg}33`,
+      maxWidth: '100%',
+    }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {palette.text}
+      </span>
+      {display === 'failed' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onResend(); }}
+          disabled={resending}
+          style={{
+            padding: '1px 8px', borderRadius: 999, fontSize: 10,
+            background: '#ef4444', color: '#fff',
+            border: 'none', cursor: 'pointer', flexShrink: 0,
+            opacity: resending ? 0.6 : 1,
+          }}
+        >
+          {resending ? tl('Resending…') : tl('Resend')}
+        </button>
+      )}
+    </div>
   );
 }

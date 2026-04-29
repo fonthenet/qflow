@@ -237,8 +237,15 @@ export async function POST(request: NextRequest) {
         : req.locale === 'en'
           ? `✓ Order #${ticket.ticket_number} received at ${office.name}.\nWe'll notify you as soon as it's accepted.\nTrack: ${trackUrl}`
           : `✓ Commande n°${ticket.ticket_number} reçue chez ${office.name}.\nNous vous préviendrons dès qu'elle est acceptée.\nSuivi : ${trackUrl}`;
-    void sendWhatsAppMessage({ to: cleanPhone, body: localeMsg, timezone: officeTz })
-      .catch((e) => console.warn('[orders/place] WA confirm failed', e?.message));
+    // Outbox-first send for durable retries. See whatsapp-outbox.ts.
+    const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+    void enqueueWaJob({
+      ticketId: ticket.id,
+      action: 'order_pending',
+      toPhone: cleanPhone,
+      body: localeMsg,
+      payload: { office_tz: officeTz },
+    }).catch((e) => console.warn('[orders/place] enqueue failed', e?.message));
   }
 
   // ── 11. Respond ─────────────────────────────────────────────────

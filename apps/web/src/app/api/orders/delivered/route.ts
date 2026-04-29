@@ -115,8 +115,9 @@ export async function POST(request: NextRequest) {
           ? `✅ Your order *#${ticket.ticket_number}* has been delivered. Enjoy your meal! 🍽️`
           : `✅ Votre commande *#${ticket.ticket_number}* a été livrée. Bon appétit ! 🍽️`;
 
+    let receiptBody: string;
     try {
-      const receiptBody = await buildOrderReceiptMessage(supabase, {
+      receiptBody = await buildOrderReceiptMessage(supabase, {
         ticketId: ticket.id,
         ticketNumber: ticket.ticket_number,
         orgName,
@@ -124,14 +125,19 @@ export async function POST(request: NextRequest) {
         headerLine,
         trackUrl,
       });
-      void sendWhatsAppMessage({ to: phone, body: receiptBody })
-        .catch((e) => console.warn('[orders/delivered] WA send failed', e?.message));
     } catch (e: any) {
-      console.warn('[orders/delivered] receipt build failed, falling back to short message', e?.message);
-      const fallback = `${headerLine}\n${trackUrl}`;
-      void sendWhatsAppMessage({ to: phone, body: fallback })
-        .catch((e) => console.warn('[orders/delivered] fallback WA send failed', e?.message));
+      console.warn('[orders/delivered] receipt build failed, falling back', e?.message);
+      receiptBody = `${headerLine}\n${trackUrl}`;
     }
+    // Route through the outbox: durable retries + Meta delivery
+    // status correlation. See whatsapp-outbox.ts.
+    const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+    void enqueueWaJob({
+      ticketId: ticket.id,
+      action: 'order_delivered',
+      toPhone: phone,
+      body: receiptBody,
+    }).catch((e) => console.warn('[orders/delivered] enqueue failed', e?.message));
   }
 
   return NextResponse.json({ ok: true, delivered_at: nowIso });

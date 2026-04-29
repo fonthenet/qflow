@@ -156,8 +156,20 @@ export async function POST(request: NextRequest) {
         : locale === 'en'
           ? `🛵 Your order *#${ticket.ticket_number}* is on its way.${riderLine}\nTrack: ${trackUrl}`
           : `🛵 Votre commande *#${ticket.ticket_number}* est en route.${riderLine}\nSuivi : ${trackUrl}`;
-    void sendWhatsAppMessage({ to: phone, body })
-      .catch((e) => console.warn('[orders/dispatch] WA send failed', e?.message));
+    // Outbox-first send. enqueueWaJob attempts the inline delivery and,
+    // if it fails (Meta 5xx, network blip, etc.), the row stays pending
+    // and the cron worker retries with exponential backoff for up to
+    // 5 attempts. Meta's delivery-status webhook updates the row with
+    // the actual delivered/read status — operator sees the truth on
+    // the Station card, not "we tried".
+    const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+    void enqueueWaJob({
+      ticketId,
+      action: 'order_dispatched',
+      toPhone: phone,
+      body,
+      payload: { rider_name: riderName, rider_phone: riderPhone },
+    }).catch((e) => console.warn('[orders/dispatch] enqueue failed', e?.message));
   }
 
   // Stateless rider portal URL — Station copies this to the operator's

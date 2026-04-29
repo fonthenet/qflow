@@ -88,6 +88,40 @@ export async function POST(request: NextRequest) {
         const json = JSON.parse(rawBody);
         const entry = json?.entry?.[0];
         const change = entry?.changes?.[0];
+
+        // Meta delivery-status callback — comes through the SAME
+        // webhook URL as inbound messages, but with `value.statuses`
+        // instead of `value.messages`. Each status references a
+        // wamid we sent earlier; correlate it to the outbox row so
+        // the operator sees the actual sent → delivered → read
+        // progression (or 'failed' if Meta couldn't deliver, e.g.
+        // recipient blocked the business or isn't on WA).
+        //
+        // To enable: in Meta App dashboard → WhatsApp → Configuration
+        // → Webhook → Subscribe to the 'message_status' field. Without
+        // that subscription Meta won't post status callbacks; the
+        // outbox still works for retries but the operator badge stays
+        // at "sent" without progressing to "delivered".
+        const statuses = change?.value?.statuses;
+        if (Array.isArray(statuses) && statuses.length > 0) {
+          const { updateJobMetaStatus } = await import('@/lib/whatsapp-outbox');
+          for (const s of statuses) {
+            const wamid: string | undefined = s?.id;
+            const statusValue: string | undefined = s?.status;
+            if (!wamid || !statusValue) continue;
+            const normalised = (statusValue === 'sent' || statusValue === 'delivered' ||
+                                statusValue === 'read' || statusValue === 'failed')
+              ? statusValue
+              : null;
+            if (!normalised) continue;
+            const errMsg = Array.isArray(s?.errors) && s.errors.length > 0
+              ? `${s.errors[0]?.code ?? '?'}: ${s.errors[0]?.title ?? 'unknown'}`
+              : null;
+            await updateJobMetaStatus(wamid, normalised, errMsg);
+          }
+          return NextResponse.json({ ok: true, kind: 'statuses', count: statuses.length });
+        }
+
         const message = change?.value?.messages?.[0];
         if (!message) {
           return NextResponse.json({ ok: true });
