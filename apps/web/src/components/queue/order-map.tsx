@@ -6,21 +6,20 @@ import { createBrowserClient } from '@supabase/ssr';
 /**
  * Live delivery map for the customer tracking page.
  *
- * Implementation: an iframe of OpenStreetMap's embed.html, re-keyed
- * whenever the rider's position changes. Earlier we used Leaflet via
- * CDN, but the script load was racing the layout in production and
- * leaving the customer with a blank white box. The iframe version:
- *   - Loads reliably on every device (no JS dep, no CDN race)
- *   - Single marker per frame; we show the RIDER position when we
- *     have one (the customer's main question is "where's my driver
- *     right now?"), falling back to the destination otherwise
- *   - Re-renders on every heartbeat by passing a different `key`,
- *     which forces a fresh iframe load with the new bbox + marker.
- *     ~12s cadence matches the rider portal's heartbeat throttle.
+ * Provider chain (first one with creds wins):
+ *   1. Google Maps Embed API — preferred. Looks great, reliable, free
+ *      with no usage cap on the Embed product. Requires
+ *      NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY in Vercel env. Lock the key
+ *      to your domain in Google Cloud console — it's safe to expose
+ *      because the Embed API checks Referer.
+ *   2. OpenStreetMap iframe — fallback. No key, no setup, but the
+ *      tiles are slower and the look is generic.
  *
- * Straight-line ETA calculated from the rider's reported speed (or
- * a 30 km/h fallback) and the Haversine distance to the destination.
- * Good enough for "your driver is ~7 min away".
+ * Re-keyed on every heartbeat so the iframe reloads with the new
+ * marker position. ~12s cadence matches the rider portal throttle.
+ *
+ * Straight-line ETA = Haversine distance ÷ rider's reported speed
+ * (or 30 km/h fallback). Good enough for "your driver is ~7 min away".
  */
 
 export interface OrderMapProps {
@@ -45,7 +44,6 @@ function tr(locale: 'ar' | 'fr' | 'en', en: string, fr: string, ar: string) {
   return locale === 'ar' ? ar : locale === 'fr' ? fr : en;
 }
 
-/** Haversine distance in metres. */
 function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6_371_000;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -58,21 +56,45 @@ function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 }
 
 /**
- * Build the OSM embed URL for a single point. The bbox is a small
- * square around the focus point — wider zoom would lose street
- * detail, tighter would clip the marker shadow.
+ * Build the Google Maps Embed URL. Uses 'directions' mode when we
+ * have both a rider and a destination so the customer sees the
+ * actual route + drive time. Falls back to 'place' mode for a
+ * single point.
  */
-function osmEmbedUrl(focus: { lat: number; lng: number }, span = 0.008): string {
+function gmapsEmbedUrl(
+  key: string,
+  rider: { lat: number; lng: number } | null,
+  dest: { lat: number; lng: number },
+): string {
+  if (rider) {
+    const params = new URLSearchParams({
+      key,
+      origin: `${rider.lat},${rider.lng}`,
+      destination: `${dest.lat},${dest.lng}`,
+      mode: 'driving',
+    });
+    return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;
+  }
+  const params = new URLSearchParams({
+    key,
+    q: `${dest.lat},${dest.lng}`,
+    zoom: '15',
+  });
+  return `https://www.google.com/maps/embed/v1/place?${params.toString()}`;
+}
+
+/**
+ * OSM iframe fallback. Single marker at the rider's current position
+ * (or destination if no rider yet). Re-rendered with a different `key`
+ * each time the focus moves so the iframe reloads.
+ */
+function osmEmbedUrl(focus: { lat: number; lng: number }): string {
+  const span = 0.008;
   const minLng = focus.lng - span;
   const maxLng = focus.lng + span;
   const minLat = focus.lat - span;
   const maxLat = focus.lat + span;
-  const params = new URLSearchParams({
-    bbox: `${minLng},${minLat},${maxLng},${maxLat}`,
-    layer: 'mapnik',
-    marker: `${focus.lat},${focus.lng}`,
-  });
-  return `https://www.openstreetmap.org/export/embed.html?${params.toString()}`;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${minLng},${minLat},${maxLng},${maxLat}&layer=mapnik&marker=${focus.lat},${focus.lng}`;
 }
 
 export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supabaseAnonKey, locale }: OrderMapProps) {
@@ -123,18 +145,23 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
     return () => unsub?.();
   }, [ticketId, supabaseUrl, supabaseAnonKey]);
 
-  // Map focus + iframe key. The key changes every time the rider
-  // position changes so React tears down and re-mounts the iframe,
-  // forcing a fresh load with the new bbox + marker.
-  const mapFocus = rider ?? dest;
-  const iframeKey = rider
-    ? `${rider.lat.toFixed(5)}_${rider.lng.toFixed(5)}`
-    : `dest_${dest.lat.toFixed(5)}_${dest.lng.toFixed(5)}`;
-  const mapUrl = osmEmbedUrl(mapFocus);
+  // Resolve provider — Google if key is set, else OSM.
+  const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? '';
+  const useGmaps = Boolean(gmapsKey);
 
-  // Larger map link so the customer can open the rider's pin in
-  // Google / Apple Maps if they want a richer view.
-  const fullMapHref = `https://www.openstreetmap.org/?mlat=${mapFocus.lat}&mlon=${mapFocus.lng}#map=15/${mapFocus.lat}/${mapFocus.lng}`;
+  const mapUrl = useGmaps
+    ? gmapsEmbedUrl(gmapsKey, rider ? { lat: rider.lat, lng: rider.lng } : null, dest)
+    : osmEmbedUrl(rider ? { lat: rider.lat, lng: rider.lng } : dest);
+
+  // Re-key the iframe when the focus moves so it reloads with the new
+  // markers / route.
+  const iframeKey = rider
+    ? `r_${rider.lat.toFixed(5)}_${rider.lng.toFixed(5)}`
+    : `d_${dest.lat.toFixed(5)}_${dest.lng.toFixed(5)}`;
+
+  // External "view in maps" link — universal q= URL works on Google
+  // Maps web, Apple Maps (iOS), and falls back gracefully elsewhere.
+  const fullMapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${(rider ?? dest).lat},${(rider ?? dest).lng}`)}`;
 
   // ── Straight-line ETA ─────────────────────────────────────────────
   const eta = useMemo(() => {
@@ -170,9 +197,10 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
         key={iframeKey}
         src={mapUrl}
         title="map"
-        style={{ width: '100%', height: 220, border: 0, display: 'block' }}
+        style={{ width: '100%', height: 240, border: 0, display: 'block' }}
         loading="lazy"
         referrerPolicy="no-referrer-when-downgrade"
+        allowFullScreen
       />
       <a
         href={fullMapHref}
@@ -186,7 +214,7 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
           borderTop: '1px solid #e2e8f0',
         }}
       >
-        🔍 {tr(locale, 'View larger map', 'Voir la carte', 'عرض الخريطة')}
+        🔍 {tr(locale, 'Open in Google Maps', 'Ouvrir dans Google Maps', 'افتح في خرائط جوجل')}
       </a>
     </section>
   );

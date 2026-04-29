@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Map: OpenStreetMap iframe instead of Leaflet. Loads reliably on
-// every device — no JS dep, no CDN race, no zero-width-on-mount
-// problem. Re-keyed on every GPS fix so the marker visually
-// "moves" as the driver heads toward the destination.
+// Map: Google Maps Embed (preferred — set NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY
+// in Vercel env), with OSM iframe fallback when no key is set. Both
+// load as iframes — no JS dep, no CDN race, no zero-width-on-mount
+// problem. Re-keyed on every GPS fix so the marker / route refreshes
+// as the driver heads toward the destination.
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6_371;
@@ -23,12 +24,36 @@ function osmEmbedUrl(focus: { lat: number; lng: number }, span = 0.008): string 
   const maxLng = focus.lng + span;
   const minLat = focus.lat - span;
   const maxLat = focus.lat + span;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${minLng},${minLat},${maxLng},${maxLat}&layer=mapnik&marker=${focus.lat},${focus.lng}`;
+}
+
+/**
+ * Google Maps Embed — directions mode when we have both rider and
+ * destination so the driver sees the actual route, place mode for a
+ * single point.
+ */
+function gmapsEmbedUrl(
+  key: string,
+  rider: { lat: number; lng: number } | null,
+  dest: { lat: number; lng: number } | null,
+): string | null {
+  if (rider && dest) {
+    const params = new URLSearchParams({
+      key,
+      origin: `${rider.lat},${rider.lng}`,
+      destination: `${dest.lat},${dest.lng}`,
+      mode: 'driving',
+    });
+    return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;
+  }
+  const focus = rider ?? dest;
+  if (!focus) return null;
   const params = new URLSearchParams({
-    bbox: `${minLng},${minLat},${maxLng},${maxLat}`,
-    layer: 'mapnik',
-    marker: `${focus.lat},${focus.lng}`,
+    key,
+    q: `${focus.lat},${focus.lng}`,
+    zoom: '15',
   });
-  return `https://www.openstreetmap.org/export/embed.html?${params.toString()}`;
+  return `https://www.google.com/maps/embed/v1/place?${params.toString()}`;
 }
 
 /**
@@ -205,19 +230,22 @@ export function RiderPortal(props: RiderPortalProps) {
     ? haversineKm(riderPos, { lat: destLat, lng: destLng })
     : null;
 
-  // Map iframe URL + key. Center on the rider's current position when
-  // we have one (so they see themselves moving toward the destination
-  // pin which sits inside the same bbox as the rider gets close).
-  // Falls back to the destination if no GPS fix yet. Re-key on every
-  // ~5m of movement so we don't thrash the iframe with sub-meter
-  // jitter, but still feel responsive when the driver covers ground.
-  const mapFocus = (riderPos && destLat != null && destLng != null)
-    ? riderPos
-    : (destLat != null && destLng != null ? { lat: destLat, lng: destLng } : null);
-  const mapKey = mapFocus
-    ? `${mapFocus.lat.toFixed(4)}_${mapFocus.lng.toFixed(4)}`
-    : 'idle';
-  const mapUrl = mapFocus ? osmEmbedUrl(mapFocus) : null;
+  // Map URL — Google if key is set, OSM fallback otherwise.
+  const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? '';
+  const useGmaps = Boolean(gmapsKey);
+  const dest = (destLat != null && destLng != null) ? { lat: destLat, lng: destLng } : null;
+
+  const mapUrl: string | null = useGmaps
+    ? gmapsEmbedUrl(gmapsKey, riderPos, dest)
+    : (riderPos ?? dest
+        ? osmEmbedUrl(riderPos ?? dest!)
+        : null);
+
+  // Re-key the iframe whenever the rider moves so it reloads with
+  // the new origin — Google Maps Embed otherwise caches the route.
+  const mapKey = riderPos
+    ? `r_${riderPos.lat.toFixed(4)}_${riderPos.lng.toFixed(4)}`
+    : (dest ? `d_${dest.lat.toFixed(4)}_${dest.lng.toFixed(4)}` : 'idle');
 
   const callApi = async (path: 'arrived' | 'delivered'): Promise<any> => {
     setBusy(path);
