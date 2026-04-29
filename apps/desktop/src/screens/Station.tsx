@@ -4420,6 +4420,83 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // around but resets when Station restarts — handleCopyRiderLink
   // re-fetches by calling dispatch again (it's idempotent).
   const [riderLinks, setRiderLinks] = useState<Record<string, string>>({});
+
+  // Active in-house riders for the operator's organization. Loaded
+  // from /api/riders on mount + refreshed on Realtime updates so the
+  // Assign dropdown stays current when an admin adds someone in
+  // another tab. Empty array when the org hasn't configured any
+  // riders yet — the order card falls back to the legacy Dispatch
+  // button in that case.
+  const [riders, setRiders] = useState<Array<{
+    id: string; name: string; phone: string;
+    is_active: boolean; last_seen_at: string | null;
+  }>>([]);
+  useEffect(() => {
+    if (!session?.organization_id) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const token = await getStaffJwt();
+        if (!token) return;
+        const res = await cloudFetch(
+          `https://qflo.net/api/riders?organization_id=${session.organization_id}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok && data?.riders) {
+          // Only show active riders in the picker. Inactive ones stay
+          // in the data so historical assignments still resolve their
+          // names.
+          setRiders((data.riders as any[]).filter((r) => r.is_active !== false));
+        }
+      } catch { /* keep last state */ }
+    };
+    load();
+    // Light polling — riders rarely change, so 60 s is plenty. The
+    // Realtime publication on the table also broadcasts INSERT/UPDATE
+    // but plumbing that through would need a dedicated channel; this
+    // poll is simpler and covers the case where another operator
+    // adds a rider while this Station is open.
+    const t = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [session?.organization_id]);
+
+  // Per-rider, per-ticket assignment handler. Calls /api/orders/assign
+  // which (a) sets assigned_rider_id on the ticket, (b) routes a
+  // WhatsApp notification to the rider through the durable outbox
+  // (so transient Meta failures get retried), and (c) writes a
+  // 'rider_assigned' ticket_event for audit. dispatched_at is set
+  // when the rider sends ACCEPT — not here.
+  const handleAssignRider = async (ticketId: string, riderId: string) => {
+    try {
+      const token = await getStaffJwt();
+      const res = await cloudFetch('https://qflo.net/api/orders/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ticketId, riderId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        showToast(t('Could not assign rider: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
+        return;
+      }
+      const tk = tickets.find((x) => x.id === ticketId);
+      const rider = riders.find((r) => r.id === riderId);
+      // notify=false means the WA send failed inline — outbox cron
+      // will retry; meanwhile show an amber toast so the operator
+      // knows the rider didn't get the ping yet.
+      if (data.notified) {
+        showToast(t('Assigned to {rider} — they will see the order on WhatsApp', { rider: rider?.name ?? '' }), 'success');
+      } else {
+        showToast(t('Assigned. WhatsApp window may be closed — call {rider} or wait for them to send CHECK.', { rider: rider?.name ?? '' }), 'info');
+      }
+      addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Assigned'), ticketId);
+      fetchTickets();
+    } catch (err: any) {
+      showToast(t('Could not assign rider: {error}', { error: err?.message ?? 'Network error' }), 'error');
+    }
+  };
   // Inline expansion of a recent-activity row — holds the ticket id of the
   // row the operator is currently "drilling into" (null = all collapsed).
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
@@ -5131,6 +5208,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 onDeliverOrder={handleDeliverOrder}
                 riderLinks={riderLinks}
                 onCopyRiderLink={handleCopyRiderLink}
+                availableRiders={riders}
+                onAssignRider={handleAssignRider}
               />
             </div>
           )}

@@ -3,6 +3,7 @@ import { getSupabase, ensureAuth } from '../lib/supabase';
 import { cloudFetch } from '../lib/cloud-fetch';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { TablesPanel } from './TablesPanel';
+import { RidersPanel } from './RidersPanel';
 
 const CLOUD_URL = 'https://qflo.net';
 
@@ -47,7 +48,7 @@ interface StaffRow {
   is_active: boolean | null;
 }
 
-type Tab = 'departments' | 'services' | 'desks' | 'tables' | 'team';
+type Tab = 'departments' | 'services' | 'desks' | 'tables' | 'team' | 'riders';
 
 interface Props {
   organizationId: string;
@@ -550,6 +551,15 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
               <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>
                 {t('Team')} <span style={{ opacity: 0.6 }}>({staff.length})</span>
               </button>
+              {/* Riders tab — only meaningful for businesses that
+                  deliver. We surface it for restaurant + cafe (the
+                  business types that have a delivery service today).
+                  Same gating logic as the Tables tab. */}
+              {(businessCategory === 'restaurant' || businessCategory === 'cafe') && (
+                <button style={tabBtn(tab === 'riders')} onClick={() => setTab('riders')}>
+                  🛵 {t('Drivers')}
+                </button>
+              )}
             </div>
 
             {/* Banner */}
@@ -781,6 +791,16 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                         </table>
                       </div>
                     </>
+                  )}
+
+                  {/* ── Riders ─────────────────────────────── */}
+                  {tab === 'riders' && (
+                    <RidersPanel
+                      organizationId={organizationId}
+                      tl={t}
+                      onError={setError}
+                      onSuccess={setSuccess}
+                    />
                   )}
                 </>
               )}

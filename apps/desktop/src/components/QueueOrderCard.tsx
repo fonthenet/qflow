@@ -134,6 +134,18 @@ export interface QueueOrderCardProps {
    *  the operator opens Station after a previous shift and needs the
    *  link for an already-dispatched ticket whose URL isn't in memory. */
   onCopyRiderLink?: (ticketId: string) => void;
+  /** Available in-house riders (active only, scoped to the org).
+   *  Surfaced on the Assign dropdown for delivery+serving tickets
+   *  that don't have a rider assigned yet. */
+  availableRiders?: Array<{ id: string; name: string; phone: string; last_seen_at: string | null }>;
+  /** Operator clicks Assign + picks a rider. Calls /api/orders/assign;
+   *  rider gets a WA notification (or queued in outbox if their 24h
+   *  window is closed). */
+  onAssignRider?: (ticketId: string, riderId: string) => void;
+  /** Currently assigned rider (resolved by parent from
+   *  ticket.assigned_rider_id → riders table). Shown on the
+   *  "Awaiting" / "Out for delivery" stage pill. */
+  assignedRider?: { id: string; name: string; phone: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +253,9 @@ export function QueueOrderCard({
   onDeliverOrder,
   riderLink,
   onCopyRiderLink,
+  availableRiders,
+  onAssignRider,
+  assignedRider,
 }: QueueOrderCardProps) {
   const [showOverflow, setShowOverflow] = useState(false);
   // itemId → note editor open
@@ -511,14 +526,25 @@ export function QueueOrderCard({
           session and the operator just reopened the app). */}
       {svcType === 'delivery' && isServing && (ticket as any).dispatched_at && (() => {
         // Stage-aware pill — reflects exactly where the rider is in
-        // the lifecycle so the operator doesn't have to deduce from
-        // which buttons are showing. Three colour-coded stages match
-        // the customer-facing page so a glance tells the same story
-        // on both ends.
+        // the lifecycle. Three colour-coded stages match the
+        // customer-facing page so a glance tells the same story on
+        // both ends. Rider name is shown when we have one (loaded
+        // from /api/riders into availableRiders), so the operator
+        // sees "Out for delivery — Mehdi" not just "Out for delivery".
         const isArrived = Boolean((ticket as any).arrived_at);
         const stage = isArrived
           ? { label: tl('At the door'), emoji: '🚪', tint: '#22c55e' }   // green
           : { label: tl('Out for delivery'), emoji: '🛵', tint: '#f59e0b' }; // amber
+        const stageLabel = assignedRider
+          ? `${stage.label} — ${assignedRider.name}`
+          : stage.label;
+        // Operator track URL — opens the customer-facing tracking
+        // page. That page is read-only (no GPS streaming from the
+        // browser), so the operator can monitor the rider's live
+        // position without their own browser corrupting the
+        // rider_locations stream. Same view the customer sees.
+        const cloudUrl = 'https://qflo.net';
+        const customerTrack = `${cloudUrl}/q/${(ticket as any).qr_token}`;
         return (
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 6,
@@ -533,12 +559,34 @@ export function QueueOrderCard({
               background: `${stage.tint}25`, color: stage.tint,
               border: `1px solid ${stage.tint}66`,
             }}>
-              {stage.emoji} {stage.label}
+              {stage.emoji} {stageLabel}
             </div>
             {/* WhatsApp notification status — durable retries per
                 whatsapp-outbox.ts. Polls every 30s; flips to red
                 with a Resend button when all retries are exhausted. */}
             <NotifyStatusBadge ticketId={ticket.id} locale={locale} />
+            {/* Track button — opens the customer tracking page (the
+                read-only view) in a new tab. Operator sees rider
+                position without streaming GPS from their own
+                browser. */}
+            {(ticket as any).qr_token && (
+              <a
+                href={customerTrack}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  marginInlineStart: 'auto',
+                  padding: '2px 8px', borderRadius: 999,
+                  fontSize: 10, fontWeight: 700,
+                  background: 'transparent', color: stage.tint,
+                  border: `1px solid ${stage.tint}66`,
+                  textDecoration: 'none',
+                }}
+              >
+                🗺️ {tl('Track')}
+              </a>
+            )}
           </div>
           {riderLink ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
@@ -923,9 +971,83 @@ export function QueueOrderCard({
           const isDispatched = Boolean((ticket as any).dispatched_at);
           const isArrived = Boolean((ticket as any).arrived_at);
 
+          const isAssignedToRider = Boolean((ticket as any).assigned_rider_id);
           if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
-            // Stage 1 — Dispatch (rider hand-off pending).
+            // Stage 1 — kitchen done, no rider yet. Show Assign
+            // dropdown if the org has riders configured AND we have a
+            // handler. Falls back to legacy Dispatch button when no
+            // riders are set up (or when assignment isn't wired in
+            // this canvas). Once a rider IS assigned but hasn't
+            // accepted, show a passive "Awaiting Mehdi" pill — the
+            // ACCEPT comes from the rider's WhatsApp, not from the
+            // operator clicking anything.
             if (!isDispatched) {
+              if (isAssignedToRider) {
+                return (
+                  <div style={{
+                    flex: 1, display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '8px 12px', borderRadius: 8,
+                    background: 'rgba(245,158,11,0.10)',
+                    border: '1px solid rgba(245,158,11,0.4)',
+                    color: '#f59e0b', fontSize: 12, fontWeight: 700,
+                  }}>
+                    ⏳ {tl('Awaiting')} {assignedRider?.name ?? tl('rider')}…
+                    {/* Reassign control — small text link in case the
+                        operator picked the wrong rider or the rider
+                        is unresponsive. Triggers another rider pick. */}
+                    {onAssignRider && availableRiders && availableRiders.length > 0 && (
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          const newRiderId = e.target.value;
+                          if (newRiderId) onAssignRider(ticket.id, newRiderId);
+                        }}
+                        style={{
+                          marginInlineStart: 'auto',
+                          padding: '2px 6px', borderRadius: 4,
+                          background: 'transparent', color: '#f59e0b',
+                          border: '1px dashed rgba(245,158,11,0.5)',
+                          fontSize: 11, fontWeight: 600,
+                          colorScheme: 'light dark' as any,
+                        }}
+                      >
+                        <option value="" disabled>{tl('Reassign')}</option>
+                        {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              }
+              if (onAssignRider && availableRiders && availableRiders.length > 0) {
+                return (
+                  <select
+                    defaultValue=""
+                    onChange={(e) => {
+                      const riderId = e.target.value;
+                      if (riderId) onAssignRider(ticket.id, riderId);
+                    }}
+                    style={{
+                      flex: 1, padding: '8px 10px', borderRadius: 8,
+                      background: '#f59e0b', color: '#fff',
+                      border: 'none', fontWeight: 700, fontSize: 13,
+                      cursor: 'pointer',
+                      colorScheme: 'light dark' as any,
+                    }}
+                  >
+                    <option value="" disabled>🛵 {tl('Assign rider')}…</option>
+                    {availableRiders.map((r) => (
+                      <option key={r.id} value={r.id} style={{ background: 'var(--surface)', color: 'var(--text)' }}>
+                        {r.name}{r.last_seen_at && (Date.now() - new Date(r.last_seen_at).getTime() < 24 * 60 * 60 * 1000)
+                          ? '  ✓ online'
+                          : '  ⚠ may be offline'}
+                      </option>
+                    ))}
+                  </select>
+                );
+              }
+              // Legacy Dispatch fallback (no riders configured yet).
               return onDispatchOrder ? (
                 <button
                   onClick={() => onDispatchOrder(ticket.id)}

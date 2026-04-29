@@ -1,0 +1,624 @@
+import 'server-only';
+
+import { createAdminClient } from '@/lib/supabase/admin';
+import { buildRiderPortalUrl } from '@/lib/rider-token';
+import { enqueueWaJob } from '@/lib/whatsapp-outbox';
+
+/**
+ * Rider-side WhatsApp command handler.
+ *
+ * Conversation rules:
+ *
+ *   - Riders are matched by inbound `from` phone (E.164) against the
+ *     `riders` table. Cross-org riders supported (one phone, multiple
+ *     org rows).
+ *   - Any inbound message from a known rider opens / refreshes their
+ *     24-hour Customer Care window, so we record `last_seen_at` on
+ *     every message — Station shows "active 2 min ago" so operators
+ *     know whether a fresh Assign call will reach them for free.
+ *   - Commands are case-insensitive, accept English / French / Arabic
+ *     synonyms, and accept loose phrasing ("CHECK FIX", "Hi Fix",
+ *     "Check my orders Fix" — all match the same intent).
+ *
+ * Supported commands (all case-insensitive):
+ *
+ *   CHECK [biz]       List my assigned orders. `biz` filters to one
+ *                     restaurant when the rider works for several.
+ *   ACCEPT [N]        Accept the Nth order from the most recent list.
+ *                     If N is omitted and there's exactly one pending
+ *                     order, accept it.
+ *   DONE [N]          Mark the Nth order delivered. Sends customer
+ *                     receipt via the outbox.
+ *   ARRIVED [N]       Mark "at the door" (separate ping; same effect
+ *                     as the rider portal's I've Arrived button).
+ *   CANCEL [N]        Decline the assignment. Operator gets notified
+ *                     via Station so they can pick someone else.
+ *   WHERE [N]         Re-send the order details + tracking link.
+ *   HELP              Show command list.
+ *
+ *   Anything else from a known rider phone defaults to CHECK so a
+ *   simple "Hi" gets them their order list — friendly fallback.
+ */
+
+export interface RiderRouteResult {
+  /** True if this message was handled (caller should NOT fall through
+   *  to customer flows). False = not a known rider / not routable. */
+  handled: boolean;
+}
+
+interface RiderRow {
+  id: string;
+  name: string;
+  phone: string;
+  organization_id: string;
+  is_active: boolean;
+}
+
+interface OrgRow {
+  id: string;
+  name: string;
+  timezone: string | null;
+}
+
+interface AssignedTicket {
+  id: string;
+  ticket_number: string;
+  status: string;
+  qr_token: string;
+  notes: string | null;
+  customer_data: any;
+  delivery_address: any;
+  assigned_rider_id: string;
+  dispatched_at: string | null;
+  arrived_at: string | null;
+  delivered_at: string | null;
+  office_id: string;
+  organization_id: string;
+  organization_name: string;
+}
+
+export interface RiderInboundContext {
+  fromPhone: string;
+  body: string;
+  /** sendMessage adapter — uses the same channel that the dispatcher
+   *  resolved (Meta vs Twilio). The handlers don't need to know which. */
+  sendMessage: (args: { to: string; body: string }) => Promise<unknown>;
+}
+
+const DIV = '──────────';
+
+/**
+ * Top-level dispatch: returns { handled: true } when the inbound
+ * message was processed as a rider command, false otherwise.
+ */
+export async function tryHandleRiderInbound(ctx: RiderInboundContext): Promise<RiderRouteResult> {
+  const supabase = createAdminClient() as any;
+
+  // Look up any active rider rows matching this phone. A single rider
+  // (same phone) may belong to multiple orgs.
+  const { data: riderRows } = await supabase
+    .from('riders')
+    .select('id, name, phone, organization_id, is_active')
+    .eq('phone', ctx.fromPhone)
+    .eq('is_active', true);
+
+  const riders: RiderRow[] = riderRows ?? [];
+  if (riders.length === 0) return { handled: false };
+
+  // Stamp last_seen_at across every active row for this phone so the
+  // Station's "WhatsApp window open" indicator stays accurate.
+  await supabase
+    .from('riders')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('phone', ctx.fromPhone)
+    .eq('is_active', true);
+
+  // Resolve org names so command output can disambiguate.
+  const orgIds = Array.from(new Set(riders.map((r) => r.organization_id)));
+  const { data: orgRows } = await supabase
+    .from('organizations').select('id, name, timezone').in('id', orgIds);
+  const orgs: Record<string, OrgRow> = {};
+  for (const o of orgRows ?? []) orgs[o.id] = o as OrgRow;
+
+  const riderName = riders[0].name;
+  const intent = parseIntent(ctx.body);
+
+  switch (intent.kind) {
+    case 'help':
+      await ctx.sendMessage({ to: ctx.fromPhone, body: tplHelp(riderName) });
+      return { handled: true };
+    case 'accept':
+      await handleAccept(supabase, ctx, riders, orgs, intent.index ?? null);
+      return { handled: true };
+    case 'done':
+      await handleDone(supabase, ctx, riders, orgs, intent.index ?? null);
+      return { handled: true };
+    case 'arrived':
+      await handleArrived(supabase, ctx, riders, orgs, intent.index ?? null);
+      return { handled: true };
+    case 'cancel':
+      await handleCancel(supabase, ctx, riders, orgs, intent.index ?? null);
+      return { handled: true };
+    case 'where':
+      await handleWhere(supabase, ctx, riders, orgs, intent.index ?? null);
+      return { handled: true };
+    case 'check':
+    default:
+      // Default-on-anything-else: list orders. Friendly fallback so
+      // a simple "Hi" / "Bonjour" / "Salam" still works.
+      await handleCheck(supabase, ctx, riders, orgs, intent.bizFilter ?? null);
+      return { handled: true };
+  }
+}
+
+// ── Intent parser ────────────────────────────────────────────────────
+
+interface ParsedIntent {
+  kind: 'check' | 'accept' | 'done' | 'arrived' | 'cancel' | 'where' | 'help';
+  /** 1-based index in the most recent CHECK list — for ACCEPT/DONE/etc. */
+  index?: number | null;
+  /** Token after CHECK — used to filter by org name when the rider
+   *  works for multiple restaurants. */
+  bizFilter?: string | null;
+}
+
+const ACCEPT_RE = /^(accept|take|claim|prendre|قبول|اقبل|moi)\b/i;
+const DONE_RE   = /^(done|delivered|drop(ped)?|fini|tasl[ie]m|تم|سل[يّ]م|sa[lh]ema|livr[ée])\b/i;
+const ARRIVED_RE = /^(arrived|here|at[\s_]?door|wsa[ll]t|wasalt|وصلت|j[aA]rrive|arrive)\b/i;
+const CANCEL_RE  = /^(cancel|reject|refuse|annul(?:er)?|abandon|abandonner|إلغاء|الغاء|الغ)\b/i;
+const WHERE_RE   = /^(where|status|info|details?|d[ée]tails?|info(rmation)?s?|أين|معلومات)\b/i;
+const HELP_RE    = /^(help|aide|m[ée]nu|menu|مساعدة|مساعده)\b/i;
+const CHECK_RE   = /^(check|update|hi|hello|bonjour|salut|salam|سلام|مرحب|hey|merhba)\b/i;
+
+function parseIntent(body: string): ParsedIntent {
+  const trimmed = body.trim();
+  const lc = trimmed.toLowerCase();
+
+  if (HELP_RE.test(lc)) return { kind: 'help' };
+  if (ACCEPT_RE.test(lc)) return { kind: 'accept', index: extractIndex(trimmed) };
+  if (DONE_RE.test(lc))   return { kind: 'done', index: extractIndex(trimmed) };
+  if (ARRIVED_RE.test(lc)) return { kind: 'arrived', index: extractIndex(trimmed) };
+  if (CANCEL_RE.test(lc)) return { kind: 'cancel', index: extractIndex(trimmed) };
+  if (WHERE_RE.test(lc))  return { kind: 'where', index: extractIndex(trimmed) };
+
+  // CHECK family OR generic greeting: extract optional biz filter.
+  if (CHECK_RE.test(lc) || lc.length === 0) {
+    return { kind: 'check', bizFilter: extractBizFilter(trimmed) };
+  }
+
+  // Anything else from a known rider — also treat as check (with the
+  // whole input as a biz filter so "Fix" alone matches the right org).
+  return { kind: 'check', bizFilter: trimmed };
+}
+
+function extractIndex(input: string): number | null {
+  // First standalone integer in the message.
+  const m = input.match(/\b(\d{1,2})\b/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n >= 1 && n <= 50 ? n : null;
+}
+
+function extractBizFilter(input: string): string | null {
+  // Drop the leading verb (Check/Hi/Update/etc.) and return the rest.
+  const m = input.match(/^\s*\S+\s+(.+)$/);
+  if (!m) return null;
+  const rest = m[1].trim();
+  return rest.length > 0 ? rest : null;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Find the orgs that match a free-form filter token. Flexible:
+ *   - exact org name (case-insensitive)
+ *   - substring of org name
+ *   - first-word match
+ *
+ * If filter is null returns ALL orgs the rider works for.
+ */
+function filterOrgs(orgs: Record<string, OrgRow>, filter: string | null): OrgRow[] {
+  const all = Object.values(orgs);
+  if (!filter) return all;
+  const f = filter.toLowerCase().trim();
+  if (!f) return all;
+  const direct = all.filter((o) => o.name.toLowerCase() === f);
+  if (direct.length > 0) return direct;
+  const sub = all.filter((o) => o.name.toLowerCase().includes(f));
+  if (sub.length > 0) return sub;
+  // First-word match e.g. "Fix Restaurant" matches "fix"
+  const prefix = all.filter((o) => o.name.toLowerCase().split(/\s+/)[0] === f);
+  return prefix;
+}
+
+async function fetchAssignedTickets(
+  supabase: any,
+  riderRows: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  filter: string | null,
+): Promise<AssignedTicket[]> {
+  const orgsToCheck = filterOrgs(orgs, filter);
+  if (orgsToCheck.length === 0) return [];
+
+  // For each org-rider pairing, find tickets where this rider is
+  // assigned and the order isn't yet delivered/cancelled.
+  const riderIds = riderRows
+    .filter((r) => orgsToCheck.find((o) => o.id === r.organization_id))
+    .map((r) => r.id);
+  if (riderIds.length === 0) return [];
+
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select(`
+      id, ticket_number, status, qr_token, notes,
+      customer_data, delivery_address, assigned_rider_id,
+      dispatched_at, arrived_at, delivered_at, office_id,
+      offices!inner(organization_id)
+    `)
+    .in('assigned_rider_id', riderIds)
+    .eq('status', 'serving')
+    .is('delivered_at', null)
+    .order('created_at', { ascending: true });
+
+  return (tickets ?? []).map((t: any): AssignedTicket => {
+    const orgId = t.offices?.organization_id ?? '';
+    return {
+      id: t.id,
+      ticket_number: t.ticket_number,
+      status: t.status,
+      qr_token: t.qr_token,
+      notes: t.notes,
+      customer_data: t.customer_data,
+      delivery_address: t.delivery_address,
+      assigned_rider_id: t.assigned_rider_id,
+      dispatched_at: t.dispatched_at,
+      arrived_at: t.arrived_at,
+      delivered_at: t.delivered_at,
+      office_id: t.office_id,
+      organization_id: orgId,
+      organization_name: orgs[orgId]?.name ?? '',
+    };
+  });
+}
+
+// ── Handlers ─────────────────────────────────────────────────────────
+
+async function handleCheck(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  bizFilter: string | null,
+): Promise<void> {
+  const tickets = await fetchAssignedTickets(supabase, riders, orgs, bizFilter);
+  if (tickets.length === 0) {
+    const msg = bizFilter
+      ? `✅ No orders assigned for *${bizFilter}* right now.`
+      : `✅ No orders assigned right now. Stay tuned!`;
+    await ctx.sendMessage({ to: ctx.fromPhone, body: msg });
+    return;
+  }
+  await ctx.sendMessage({
+    to: ctx.fromPhone,
+    body: tplOrderList(riders[0].name, tickets),
+  });
+}
+
+async function handleAccept(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  index: number | null,
+): Promise<void> {
+  const pending = (await fetchAssignedTickets(supabase, riders, orgs, null))
+    .filter((t) => !t.dispatched_at);
+
+  if (pending.length === 0) {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: '⚠ Nothing to accept — no pending assignments. Reply *CHECK* for status.' });
+    return;
+  }
+
+  let target: AssignedTicket | null = null;
+  if (pending.length === 1 && (index === null || index === 1)) {
+    target = pending[0];
+  } else if (index !== null && index >= 1 && index <= pending.length) {
+    target = pending[index - 1];
+  } else {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `📋 You have *${pending.length}* orders pending. Reply *ACCEPT 1*, *ACCEPT 2*, etc.\n\n${pending.map((t, i) => `${i + 1}. *${t.ticket_number}* — ${t.organization_name}`).join('\n')}`,
+    });
+    return;
+  }
+
+  // Idempotent state-locked update — only the first ACCEPT advances
+  // dispatched_at; duplicates from Meta webhook replays no-op.
+  const { data: advanced } = await supabase
+    .from('tickets')
+    .update({ dispatched_at: new Date().toISOString() })
+    .eq('id', target.id)
+    .is('dispatched_at', null)
+    .is('delivered_at', null)
+    .select('id, dispatched_at')
+    .maybeSingle();
+
+  if (!advanced) {
+    // Already accepted (probably a duplicate webhook delivery). Re-
+    // send the details so the rider has them anyway.
+    await ctx.sendMessage({ to: ctx.fromPhone, body: tplOrderDetails(target, riders[0]) });
+    return;
+  }
+
+  await supabase.from('ticket_events').insert({
+    ticket_id: target.id,
+    event_type: 'rider_accepted',
+    metadata: { rider_id: target.assigned_rider_id, source: 'wa_command' },
+  }).then(() => {}, () => {});
+
+  // Notify customer that the order is on its way (durable outbox).
+  const customerPhone = (target.customer_data as any)?.phone ?? null;
+  if (customerPhone) {
+    const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+    const trackUrl = `${cloudUrl}/q/${target.qr_token}`;
+    const customerMsg =
+      `🛵 Your order *${target.ticket_number}* is on its way.\n` +
+      `Track: ${trackUrl}`;
+    void enqueueWaJob({
+      ticketId: target.id,
+      action: 'order_dispatched',
+      toPhone: customerPhone,
+      body: customerMsg,
+    }).catch(() => {});
+  }
+
+  await ctx.sendMessage({ to: ctx.fromPhone, body: tplOrderDetails(target, riders[0]) });
+}
+
+async function handleDone(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  index: number | null,
+): Promise<void> {
+  const inFlight = (await fetchAssignedTickets(supabase, riders, orgs, null))
+    .filter((t) => Boolean(t.dispatched_at));
+  if (inFlight.length === 0) {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: '⚠ Nothing to mark done — no orders in flight. Reply *CHECK*.' });
+    return;
+  }
+
+  let target: AssignedTicket | null = null;
+  if (inFlight.length === 1 && (index === null || index === 1)) target = inFlight[0];
+  else if (index !== null && index >= 1 && index <= inFlight.length) target = inFlight[index - 1];
+  else {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `📋 You have *${inFlight.length}* orders in flight. Reply *DONE 1*, *DONE 2*, etc.\n\n${inFlight.map((t, i) => `${i + 1}. *${t.ticket_number}* — ${t.organization_name}`).join('\n')}`,
+    });
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const { data: closed } = await supabase
+    .from('tickets')
+    .update({ delivered_at: nowIso, completed_at: nowIso, status: 'served' })
+    .eq('id', target.id)
+    .is('delivered_at', null)
+    .select('id')
+    .maybeSingle();
+  if (!closed) {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: `⚠ Order *${target.ticket_number}* was already closed.` });
+    return;
+  }
+  await supabase.from('ticket_events').insert({
+    ticket_id: target.id,
+    event_type: 'rider_marked_done',
+    metadata: { rider_id: target.assigned_rider_id, source: 'wa_command' },
+  }).then(() => {}, () => {});
+
+  // Customer receipt via outbox.
+  const phone = (target.customer_data as any)?.phone ?? null;
+  if (phone) {
+    const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+    const trackUrl = `${cloudUrl}/q/${target.qr_token}`;
+    const headerLine = `✅ Your order *${target.ticket_number}* has been delivered. Enjoy your meal! 🍽️`;
+    let body = headerLine + `\n${trackUrl}`;
+    try {
+      const { buildOrderReceiptMessage } = await import('@/lib/order-receipt');
+      body = await buildOrderReceiptMessage(supabase, {
+        ticketId: target.id,
+        ticketNumber: target.ticket_number,
+        orgName: target.organization_name,
+        locale: 'en',
+        headerLine,
+        trackUrl,
+      });
+    } catch { /* fallback already set */ }
+    void enqueueWaJob({
+      ticketId: target.id,
+      action: 'order_delivered',
+      toPhone: phone,
+      body,
+    }).catch(() => {});
+  }
+
+  await ctx.sendMessage({
+    to: ctx.fromPhone,
+    body: `✅ Order *${target.ticket_number}* marked delivered. Customer notified. Thanks!`,
+  });
+}
+
+async function handleArrived(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  index: number | null,
+): Promise<void> {
+  const inFlight = (await fetchAssignedTickets(supabase, riders, orgs, null))
+    .filter((t) => Boolean(t.dispatched_at) && !t.arrived_at);
+  if (inFlight.length === 0) {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: '⚠ No orders to mark arrived. Reply *CHECK*.' });
+    return;
+  }
+  let target: AssignedTicket | null = null;
+  if (inFlight.length === 1 && (index === null || index === 1)) target = inFlight[0];
+  else if (index !== null && index >= 1 && index <= inFlight.length) target = inFlight[index - 1];
+  else {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `📋 Reply *ARRIVED 1*, *ARRIVED 2*, etc.\n\n${inFlight.map((t, i) => `${i + 1}. ${t.ticket_number}`).join('\n')}`,
+    });
+    return;
+  }
+  const nowIso = new Date().toISOString();
+  await supabase.from('tickets').update({ arrived_at: nowIso }).eq('id', target.id).is('arrived_at', null);
+  await supabase.from('ticket_events').insert({
+    ticket_id: target.id, event_type: 'rider_arrived',
+    metadata: { rider_id: target.assigned_rider_id, source: 'wa_command' },
+  }).then(() => {}, () => {});
+  // Customer ping.
+  const phone = (target.customer_data as any)?.phone ?? null;
+  if (phone) {
+    const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+    const trackUrl = `${cloudUrl}/q/${target.qr_token}`;
+    void enqueueWaJob({
+      ticketId: target.id, action: 'order_arrived', toPhone: phone,
+      body: `🛵 Your driver has *arrived* with order *${target.ticket_number}*.\nTrack: ${trackUrl}`,
+    }).catch(() => {});
+  }
+  await ctx.sendMessage({ to: ctx.fromPhone, body: `🚪 Marked arrived. Customer notified.` });
+}
+
+async function handleCancel(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  index: number | null,
+): Promise<void> {
+  const all = await fetchAssignedTickets(supabase, riders, orgs, null);
+  if (all.length === 0) {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: '⚠ No active assignments to cancel.' });
+    return;
+  }
+  let target: AssignedTicket | null = null;
+  if (all.length === 1 && (index === null || index === 1)) target = all[0];
+  else if (index !== null && index >= 1 && index <= all.length) target = all[index - 1];
+  else {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `📋 Reply *CANCEL 1*, *CANCEL 2*, etc.\n\n${all.map((t, i) => `${i + 1}. ${t.ticket_number}`).join('\n')}`,
+    });
+    return;
+  }
+
+  // Clear assignment + dispatch state. Order goes back to "kitchen
+  // prepping" from the Station's POV; the operator picks a new rider.
+  await supabase
+    .from('tickets')
+    .update({ assigned_rider_id: null, dispatched_at: null })
+    .eq('id', target.id);
+  await supabase.from('ticket_events').insert({
+    ticket_id: target.id,
+    event_type: 'rider_cancelled_assignment',
+    metadata: {
+      rider_id: target.assigned_rider_id,
+      rider_phone: ctx.fromPhone,
+      source: 'wa_command',
+    },
+  }).then(() => {}, () => {});
+
+  await ctx.sendMessage({
+    to: ctx.fromPhone,
+    body: `❌ Cancelled assignment for *${target.ticket_number}*. The restaurant has been notified.`,
+  });
+}
+
+async function handleWhere(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  index: number | null,
+): Promise<void> {
+  const all = await fetchAssignedTickets(supabase, riders, orgs, null);
+  if (all.length === 0) {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: '⚠ No active orders.' });
+    return;
+  }
+  let target: AssignedTicket | null = null;
+  if (all.length === 1 && (index === null || index === 1)) target = all[0];
+  else if (index !== null && index >= 1 && index <= all.length) target = all[index - 1];
+  else {
+    await ctx.sendMessage({ to: ctx.fromPhone, body: tplOrderList(riders[0].name, all) });
+    return;
+  }
+  const rider = riders.find((r) => r.id === target.assigned_rider_id) ?? riders[0];
+  await ctx.sendMessage({ to: ctx.fromPhone, body: tplOrderDetails(target, rider) });
+}
+
+// ── Templates ────────────────────────────────────────────────────────
+
+function tplHelp(name: string): string {
+  return [
+    `🛵 Hi *${name}*. Commands:`,
+    '',
+    '• *CHECK* — list your assigned orders',
+    '• *ACCEPT N* — accept order N (or *ACCEPT* if only one)',
+    '• *ARRIVED N* — mark "at the door"',
+    '• *DONE N* — mark delivered',
+    '• *CANCEL N* — drop the assignment back to the restaurant',
+    '• *WHERE N* — see the address + tracking link again',
+    '• *HELP* — this list',
+  ].join('\n');
+}
+
+function tplOrderList(name: string, tickets: AssignedTicket[]): string {
+  const lines: string[] = [`🛵 Hi *${name}*, you have *${tickets.length}* order${tickets.length > 1 ? 's' : ''}:`, '', DIV];
+  tickets.forEach((t, i) => {
+    const stage = t.arrived_at ? '🚪 At door'
+      : t.dispatched_at ? '🛵 In flight'
+      : '⏳ Pending';
+    const street = (t.delivery_address as any)?.street ?? '';
+    lines.push(`*${i + 1}.* *${t.ticket_number}* · ${stage}`);
+    if (t.organization_name) lines.push(`   📍 ${t.organization_name}`);
+    if (street) lines.push(`   ${street}`);
+    lines.push('');
+  });
+  lines.push(DIV);
+  lines.push('Reply *ACCEPT N* / *DONE N* / *WHERE N*. *HELP* for all commands.');
+  return lines.join('\n');
+}
+
+function tplOrderDetails(t: AssignedTicket, rider: RiderRow): string {
+  const customerName = (t.customer_data as any)?.name ?? '—';
+  const customerPhone = (t.customer_data as any)?.phone ?? null;
+  const street = (t.delivery_address as any)?.street ?? '';
+  const lat = (t.delivery_address as any)?.lat;
+  const lng = (t.delivery_address as any)?.lng;
+  const note = (t.notes ?? '').trim();
+  const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+  const portal = buildRiderPortalUrl(cloudUrl, t.id);
+  const mapsLink = (typeof lat === 'number' && typeof lng === 'number')
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&dir_action=navigate`
+    : null;
+
+  const lines: string[] = [
+    `✅ *${t.ticket_number}* accepted`,
+    `📍 ${t.organization_name}`,
+    DIV,
+    `👤 *${customerName}*`,
+    customerPhone ? `📞 ${customerPhone}` : '',
+    street ? `🏠 ${street}` : '',
+    note ? `📝 _${note}_` : '',
+    DIV,
+    mapsLink ? `🗺️ Navigate: ${mapsLink}` : '',
+    `🛵 Live tracking + buttons: ${portal}`,
+    '',
+    'Reply *ARRIVED* when at the door · *DONE* when delivered.',
+  ].filter(Boolean);
+  return lines.join('\n');
+}

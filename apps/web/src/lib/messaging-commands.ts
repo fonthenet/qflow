@@ -1392,6 +1392,22 @@ export async function handleInboundMessage(
     }
   }
 
+  // ── Rider commands (in-house delivery roster) ───────────────────
+  // Runs BEFORE the customer order flow so a rider's "ACCEPT 1" /
+  // "DONE" / "CHECK Fix" command takes priority over any customer
+  // session that might exist on the same phone (rare in practice but
+  // possible for a rider who also orders takeout from the bot).
+  // No-op if the inbound phone doesn't match an active rider row.
+  if (channel === 'whatsapp') {
+    const { tryHandleRiderInbound } = await import('@/lib/whatsapp-rider-commands');
+    const riderResult = await tryHandleRiderInbound({
+      fromPhone: identifier,
+      body: messageBody,
+      sendMessage: async ({ to, body }) => sendMessage({ to, body }),
+    });
+    if (riderResult.handled) return;
+  }
+
   // ── Active in-WhatsApp ordering session ─────────────────────────
   // Runs BEFORE the JOIN/booking handlers so cart codes ("1 3 5x2") and
   // confirm replies ("YES") don't accidentally collide with quick-action

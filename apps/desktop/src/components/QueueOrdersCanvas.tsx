@@ -77,6 +77,10 @@ export interface QueueOrdersCanvasProps {
    *  dispatched delivery card shows the copy/open buttons. */
   riderLinks?: Record<string, string>;
   onCopyRiderLink?: (ticketId: string) => void;
+  /** In-house riders (active only) for the Assign dropdown. */
+  availableRiders?: Array<{ id: string; name: string; phone: string; last_seen_at: string | null }>;
+  /** Operator picked a rider — POST to /api/orders/assign. */
+  onAssignRider?: (ticketId: string, riderId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +120,8 @@ export function QueueOrdersCanvas({
   onDeliverOrder,
   riderLinks,
   onCopyRiderLink,
+  availableRiders,
+  onAssignRider,
 }: QueueOrdersCanvasProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
     translate(locale, key, values);
@@ -463,6 +469,14 @@ export function QueueOrdersCanvas({
                 onDeliverOrder={onDeliverOrder}
                 riderLink={riderLinks?.[ticket.id] ?? null}
                 onCopyRiderLink={onCopyRiderLink}
+                availableRiders={availableRiders}
+                onAssignRider={onAssignRider}
+                assignedRider={(() => {
+                  const rid = (ticket as any).assigned_rider_id;
+                  if (!rid || !availableRiders) return null;
+                  const r = availableRiders.find((x) => x.id === rid);
+                  return r ? { id: r.id, name: r.name, phone: r.phone } : null;
+                })()}
               />
             );
           }),
