@@ -360,16 +360,21 @@ function CashBadge({ locale }: { locale: string }) {
 
   function renderWithLanguageSwitcher(content: ReactNode) {
     /*
-     * Public ticket-tracking shell: language toggle bottom-left,
-     * "Powered by Qflo" thin attribution at bottom-center. Both fixed
-     * so they stay visible while the user scrolls a long order page,
-     * and use safe-area inset padding so they don't collide with the
-     * iOS home-indicator bar on iPhones. Bottom-left for the switcher
-     * keeps it out of the thumb-tap path of the order's primary CTA
-     * (Call driver, Pin, etc.) which lives in the upper-right zone.
+     * Public ticket-tracking shell.
+     *   - Language toggle: fixed bottom-left so it stays reachable as
+     *     the customer scrolls. Uses safe-area inset for the iOS
+     *     home-indicator bar.
+     *   - "Powered by Qflo" attribution: NOT fixed any more — it
+     *     overlapped the order content (items list, totals) on
+     *     short pages and the items panel on tall ones. Now sits
+     *     inline at the end of the page flow so it scrolls with
+     *     the rest of the content. The page wrapper has bottom
+     *     padding so the language toggle (which IS fixed) doesn't
+     *     cover the attribution when the customer scrolls to the
+     *     very end.
      */
     return (
-      <div className="relative">
+      <div className="relative" style={{ paddingBottom: 'calc(56px + env(safe-area-inset-bottom))' }}>
         <div
           className="fixed bottom-3 left-3 z-[60] sm:bottom-4 sm:left-4"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
@@ -382,8 +387,8 @@ function CashBadge({ locale }: { locale: string }) {
         {content}
         <div
           aria-hidden
-          className="pointer-events-none fixed bottom-2 left-1/2 z-[55] -translate-x-1/2 select-none text-[10px] font-light tracking-wide text-muted-foreground/70"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          className="select-none text-center text-[10px] font-light tracking-wide text-muted-foreground/70"
+          style={{ marginTop: 16, paddingBottom: 8 }}
         >
           Powered by Qflo
         </div>
