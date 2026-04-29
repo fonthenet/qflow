@@ -509,20 +509,30 @@ export function QueueOrderCard({
           Falls back to a "Get driver link" button when riderLink isn't
           known yet (e.g. ticket was dispatched in a previous Station
           session and the operator just reopened the app). */}
-      {svcType === 'delivery' && isServing && (ticket as any).dispatched_at && (
+      {svcType === 'delivery' && isServing && (ticket as any).dispatched_at && (() => {
+        // Stage-aware pill — reflects exactly where the rider is in
+        // the lifecycle so the operator doesn't have to deduce from
+        // which buttons are showing. Three colour-coded stages match
+        // the customer-facing page so a glance tells the same story
+        // on both ends.
+        const isArrived = Boolean((ticket as any).arrived_at);
+        const stage = isArrived
+          ? { label: tl('At the door'), emoji: '🚪', tint: '#22c55e' }   // green
+          : { label: tl('Out for delivery'), emoji: '🛵', tint: '#f59e0b' }; // amber
+        return (
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 6,
           padding: '8px 10px', borderRadius: 8,
-          background: 'rgba(245,158,11,0.08)',
-          border: '1px solid rgba(245,158,11,0.35)',
+          background: `${stage.tint}15`,
+          border: `1px solid ${stage.tint}55`,
         }}>
           <div style={{
             display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 4,
             padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
-            background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
-            border: '1px solid rgba(245,158,11,0.4)',
+            background: `${stage.tint}25`, color: stage.tint,
+            border: `1px solid ${stage.tint}66`,
           }}>
-            🛵 {tl('Out for delivery')}
+            {stage.emoji} {stage.label}
           </div>
           {riderLink ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
@@ -599,7 +609,8 @@ export function QueueOrderCard({
             </button>
           ))}
         </div>
-      )}
+        );
+      })()}
 
       {/* Customer-supplied order note — captured during the WhatsApp
           order intake (handleOrderNotesInput) AFTER the address step,
@@ -888,51 +899,64 @@ export function QueueOrderCard({
           </button>
         )}
         {isServing && (() => {
-          // Delivery branch: instead of a single "Complete" button, the
-          // operator gets a two-step flow that drives the customer-facing
-          // WA messages — Dispatch → Delivered. Each call hits a dedicated
-          // /api/orders/* endpoint that fires the right locale-aware
-          // template. Falls back to plain "Complete" for takeout / dine-in.
+          // Lifecycle-staged actions. Only ONE primary action appears
+          // at a time based on the ticket's current delivery state, so
+          // the operator never has to think about which button matters
+          // right now. Earlier we showed Dispatch + Arrived + Delivered
+          // + Add items simultaneously after dispatch — visual noise
+          // and a real risk of clicking the wrong one.
+          //
+          // Delivery flow:
+          //   serving, !dispatched         → Dispatch  + Add items
+          //   serving, dispatched, !arrived → Arrived (only)
+          //   serving, dispatched, arrived  → Delivered (only)
+          //
+          // Takeout / dine-in: just one Complete button (no rider
+          // lifecycle to walk through).
           const isDeliveryTicket = svcType === 'delivery';
+          const isDispatched = Boolean((ticket as any).dispatched_at);
+          const isArrived = Boolean((ticket as any).arrived_at);
+
           if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
-            const isDispatched = Boolean((ticket as any).dispatched_at);
-            const isArrived = Boolean((ticket as any).arrived_at);
-            return (
-              <>
-                {!isDispatched && onDispatchOrder && (
-                  <button
-                    onClick={() => onDispatchOrder(ticket.id)}
-                    style={btnStyle('#f59e0b', true)}
-                    title={tl('Notify customer the order is on its way')}
-                  >
-                    🛵 {tl('Dispatch')}
-                  </button>
-                )}
-                {/* Arrived — appears once dispatched, disappears once
-                    arrived. Lets the operator ping "driver is here" so
-                    the customer comes down / opens the door before the
-                    actual handoff. Distinct from Delivered. */}
-                {isDispatched && !isArrived && onArriveOrder && (
-                  <button
-                    onClick={() => onArriveOrder(ticket.id)}
-                    style={btnStyle('#3b82f6', true)}
-                    title={tl('Notify customer the driver has arrived')}
-                  >
-                    🚪 {tl('Arrived')}
-                  </button>
-                )}
-                {onDeliverOrder && (
-                  <button
-                    onClick={() => onDeliverOrder(ticket.id)}
-                    style={btnStyle('var(--success, #22c55e)', true)}
-                    title={tl('Mark as delivered and notify the customer')}
-                  >
-                    ✓ {tl('Delivered')}
-                  </button>
-                )}
-              </>
-            );
+            // Stage 1 — Dispatch (rider hand-off pending).
+            if (!isDispatched) {
+              return onDispatchOrder ? (
+                <button
+                  onClick={() => onDispatchOrder(ticket.id)}
+                  style={{ ...btnStyle('#f59e0b'), flex: 1, fontSize: 13, fontWeight: 700 }}
+                  title={tl('Notify customer the order is on its way')}
+                >
+                  🛵 {tl('Dispatch')}
+                </button>
+              ) : null;
+            }
+            // Stage 2 — Arrived. Hide Dispatch + Delivered + Add items
+            // so the operator's only active choice is "the driver has
+            // arrived at the door".
+            if (!isArrived) {
+              return onArriveOrder ? (
+                <button
+                  onClick={() => onArriveOrder(ticket.id)}
+                  style={{ ...btnStyle('#3b82f6'), flex: 1, fontSize: 13, fontWeight: 700 }}
+                  title={tl('Notify customer the driver has arrived')}
+                >
+                  🚪 {tl('Arrived')}
+                </button>
+              ) : null;
+            }
+            // Stage 3 — Delivered. Same single-action rule: hand-off
+            // is the only remaining step.
+            return onDeliverOrder ? (
+              <button
+                onClick={() => onDeliverOrder(ticket.id)}
+                style={{ ...btnStyle('var(--success, #22c55e)'), flex: 1, fontSize: 13, fontWeight: 700 }}
+                title={tl('Mark as delivered and notify the customer')}
+              >
+                ✓ {tl('Delivered')}
+              </button>
+            ) : null;
           }
+          // Takeout / dine-in fallback — one button.
           return (
             <button
               onClick={() => onComplete(ticket.id)}
@@ -942,11 +966,14 @@ export function QueueOrderCard({
             </button>
           );
         })()}
-        {/* Add items — only after the operator has started serving.
-            Hiding it during 'called' avoids cluttering the simple
-            call→serve handoff and removes a misleading affordance
-            (items added pre-serve confused the kitchen). */}
-        {isServing && (
+        {/* Add items — visible only while the kitchen is actively
+            preparing. Once the operator dispatches the rider the kitchen
+            has already finished; adding items at that point would
+            require recalling the rider and re-cooking, which is a
+            workflow we don't model. So Add items disappears after
+            dispatch on delivery tickets, and stays available for
+            takeout/dine-in until Complete. */}
+        {isServing && (svcType !== 'delivery' || !((ticket as any).dispatched_at)) && (
           <button
             onClick={() => onAddItems(ticket)}
             style={btnStyle('var(--primary, #3b82f6)', true)}
