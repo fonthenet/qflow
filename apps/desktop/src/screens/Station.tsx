@@ -3677,22 +3677,56 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       // Electron or insecure context).
       const riderLink: string | undefined = data?.rider_link;
       if (riderLink) {
+        // Cache it on the card so the operator can re-copy/open at any
+        // time without dispatching again.
+        setRiderLinks((prev) => ({ ...prev, [ticketId]: riderLink }));
         try {
           await navigator.clipboard.writeText(riderLink);
           showToast(t('Driver link copied — paste into WhatsApp to your driver'), 'info');
         } catch {
-          // Fallback: show an alert with the link so the operator can
-          // manually copy. styledConfirm displays the link inline.
-          await styledConfirm(`${t('Driver link')}:\n\n${riderLink}`, {
-            confirmLabel: t('OK'),
-            cancelLabel: t('Cancel'),
-            variant: 'info' as any,
-          });
+          // Operator can still grab it from the card UI's copy button.
+          showToast(t('Driver link ready on the order card — tap Copy'), 'info');
         }
       }
       fetchTickets();
     } catch (err: any) {
       showToast(t('Could not dispatch: {error}', { error: err?.message ?? 'Network error' }), 'error');
+    }
+  };
+
+  // Re-fetch the driver portal link for an already-dispatched ticket.
+  // Used when the operator restarts Station and loses the in-memory
+  // riderLinks cache. /api/orders/dispatch is idempotent — calling it
+  // on a ticket that's already serving + dispatched returns the same
+  // HMAC-signed URL without firing duplicate WA messages or stamping
+  // dispatched_at again.
+  const handleCopyRiderLink = async (ticketId: string) => {
+    try {
+      const token = await getStaffJwt();
+      const res = await cloudFetch('https://qflo.net/api/orders/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ticketId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(t('Could not get driver link: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
+        return;
+      }
+      const riderLink: string | undefined = data?.rider_link;
+      if (!riderLink) {
+        showToast(t('Driver link unavailable for this ticket'), 'error');
+        return;
+      }
+      setRiderLinks((prev) => ({ ...prev, [ticketId]: riderLink }));
+      try {
+        await navigator.clipboard.writeText(riderLink);
+        showToast(t('Driver link copied'), 'info');
+      } catch {
+        showToast(t('Driver link ready on the order card — tap Copy'), 'info');
+      }
+    } catch (err: any) {
+      showToast(t('Could not get driver link: {error}', { error: err?.message ?? 'Network error' }), 'error');
     }
   };
 
@@ -4380,6 +4414,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // ── Recent activity log ─────────────────────────────────────────
   const [recentActivity, setRecentActivity] = useState<Array<{ id?: string | null; ticket: string; action: string; time: string }>>([]);
+
+  // Driver portal URL cache, keyed by ticketId. Populated from
+  // /api/orders/dispatch responses. Survives the operator scrolling
+  // around but resets when Station restarts — handleCopyRiderLink
+  // re-fetches by calling dispatch again (it's idempotent).
+  const [riderLinks, setRiderLinks] = useState<Record<string, string>>({});
   // Inline expansion of a recent-activity row — holds the ticket id of the
   // row the operator is currently "drilling into" (null = all collapsed).
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
@@ -5089,6 +5129,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 onDispatchOrder={handleDispatchOrder}
                 onArriveOrder={handleArrivedOrder}
                 onDeliverOrder={handleDeliverOrder}
+                riderLinks={riderLinks}
+                onCopyRiderLink={handleCopyRiderLink}
               />
             </div>
           )}
@@ -5683,6 +5725,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           onDispatchOrder={handleDispatchOrder}
                           onArriveOrder={handleArrivedOrder}
                           onDeliverOrder={handleDeliverOrder}
+                          riderLinks={riderLinks}
+                          onCopyRiderLink={handleCopyRiderLink}
                         />
                       </div>
                     )}

@@ -135,12 +135,41 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
       destMarkerRef.current = L.marker([dest.lat, dest.lng], { icon: destIcon }).addTo(map);
       mapRef.current = map;
       setMapReady(true);
+
+      // CRITICAL: Leaflet computes tile geometry from the container's
+      // pixel size at init time. When the map mounts inside a dynamic
+      // layout (flex column on mobile, conditional render after a
+      // realtime event, etc.) the container can have width=0 for one
+      // frame and Leaflet locks in an invalid viewport — tiles never
+      // load and the map shows as a blank white box (exactly what was
+      // happening on the customer tracking page). invalidateSize() on
+      // the next animation frame, plus on window resize, forces a
+      // recompute once the layout has settled.
+      requestAnimationFrame(() => {
+        try { map.invalidateSize(); } catch {}
+      });
+      const onResize = () => { try { map.invalidateSize(); } catch {} };
+      window.addEventListener('resize', onResize);
+      // ResizeObserver catches the case where the parent flex row
+      // expands AFTER mount (e.g. when the items card collapses).
+      let ro: ResizeObserver | null = null;
+      if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+        ro = new ResizeObserver(() => { try { map.invalidateSize(); } catch {} });
+        ro.observe(containerRef.current);
+      }
+      // Stash cleanup on the map instance so the outer effect cleanup
+      // can find it without growing more refs.
+      (map as any)._qfloCleanup = () => {
+        window.removeEventListener('resize', onResize);
+        ro?.disconnect();
+      };
     }).catch((e) => {
       console.warn('[OrderMap] Leaflet load failed', e);
     });
     return () => {
       cancelled = true;
       if (mapRef.current) {
+        try { (mapRef.current as any)._qfloCleanup?.(); } catch {}
         try { mapRef.current.remove(); } catch {}
         mapRef.current = null;
       }

@@ -2,6 +2,59 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+// Leaflet via CDN — same pattern as order-map.tsx. Loads once and
+// shares the global window.L instance across the page.
+const LEAFLET_VERSION = '1.9.4';
+const LEAFLET_CSS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`;
+const LEAFLET_JS  = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.js`;
+
+declare global {
+  interface Window {
+    L?: any;
+  }
+}
+
+let leafletLoadPromise: Promise<void> | null = null;
+function ensureLeaflet(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if (window.L) return Promise.resolve();
+  if (leafletLoadPromise) return leafletLoadPromise;
+  leafletLoadPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector(`link[href="${LEAFLET_CSS}"]`)) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = LEAFLET_CSS;
+      link.crossOrigin = '';
+      document.head.appendChild(link);
+    }
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${LEAFLET_JS}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Failed to load Leaflet')));
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = LEAFLET_JS;
+    s.async = true;
+    s.crossOrigin = '';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load Leaflet'));
+    document.head.appendChild(s);
+  });
+  return leafletLoadPromise;
+}
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6_371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 /**
  * Rider portal client. Loaded on the driver's phone after they tap
  * the link sent by the operator. Single-purpose page: request
@@ -63,6 +116,20 @@ export function RiderPortal(props: RiderPortalProps) {
   const watchIdRef = useRef<number | null>(null);
   const lastSentMsRef = useRef<number>(0);
 
+  // Driver's current GPS position (separate from the heartbeat queue —
+  // we update this on every onPos so the map animates smoothly even
+  // between server posts). Null until the first GPS read lands.
+  const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Map refs — same pattern as order-map.tsx. Map renders only when
+  // we have both a destination and Leaflet has loaded.
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<any>(null);
+  const destMarkerRef = useRef<any>(null);
+  const riderMarkerRef = useRef<any>(null);
+  const lineRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
+
   const isDelivered = Boolean(deliveredAt);
   const hasArrived = Boolean(arrivedAt);
 
@@ -115,6 +182,12 @@ export function RiderPortal(props: RiderPortalProps) {
     const onPos = (p: GeolocationPosition) => {
       setGeoStatus('streaming');
       setError(null);
+      // Update local map state on every fix so the rider's pin moves
+      // smoothly even though we only POST to the server every 12s.
+      // The server-side position is throttled separately inside `post`.
+      if (Number.isFinite(p.coords.latitude) && Number.isFinite(p.coords.longitude)) {
+        setRiderPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+      }
       void post(p.coords);
     };
     const onErr = (e: GeolocationPositionError) => {
@@ -155,6 +228,110 @@ export function RiderPortal(props: RiderPortalProps) {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [ticketId, token, isDelivered]);
+
+  // ── Map: initialize once we have a destination. Skip entirely if
+  //    the operator never captured lat/lng — the driver still has the
+  //    Navigate button (which opens GMaps externally) so they're not
+  //    stuck.
+  useEffect(() => {
+    if (destLat == null || destLng == null) return;
+    let cancelled = false;
+    ensureLeaflet().then(() => {
+      if (cancelled || !window.L || !mapContainerRef.current) return;
+      const L = window.L;
+      const map = L.map(mapContainerRef.current, {
+        center: [destLat, destLng],
+        zoom: 14,
+        zoomControl: true,
+        attributionControl: true,
+      });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap',
+      }).addTo(map);
+      const destIcon = L.divIcon({
+        className: 'qflo-rider-dest-icon',
+        html: '<div style="font-size:32px;line-height:1;transform:translate(-50%,-100%)">📍</div>',
+        iconSize: [32, 32],
+      });
+      destMarkerRef.current = L.marker([destLat, destLng], { icon: destIcon }).addTo(map);
+      mapRef.current = map;
+      setMapReady(true);
+
+      // Same invalidateSize defense as the customer map — Leaflet often
+      // mounts in a 0-height frame and locks in a broken viewport.
+      requestAnimationFrame(() => { try { map.invalidateSize(); } catch {} });
+      const onResize = () => { try { map.invalidateSize(); } catch {} };
+      window.addEventListener('resize', onResize);
+      let ro: ResizeObserver | null = null;
+      if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+        ro = new ResizeObserver(() => { try { map.invalidateSize(); } catch {} });
+        ro.observe(mapContainerRef.current);
+      }
+      (map as any)._qfloCleanup = () => {
+        window.removeEventListener('resize', onResize);
+        ro?.disconnect();
+      };
+    }).catch((e) => {
+      console.warn('[rider-portal] Leaflet load failed', e);
+    });
+    return () => {
+      cancelled = true;
+      if (mapRef.current) {
+        try { (mapRef.current as any)._qfloCleanup?.(); } catch {}
+        try { mapRef.current.remove(); } catch {}
+        mapRef.current = null;
+      }
+    };
+  }, [destLat, destLng]);
+
+  // Animate the rider pin + draw a thin connecting line every time a
+  // new GPS fix arrives. fitBounds on first appearance only — after
+  // that we leave the viewport alone so the driver can pinch-zoom to
+  // see street detail without us yanking them back.
+  const fitOnceRef = useRef(false);
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.L) return;
+    if (!riderPos || destLat == null || destLng == null) return;
+    const L = window.L;
+
+    if (!riderMarkerRef.current) {
+      const riderIcon = L.divIcon({
+        className: 'qflo-rider-self-icon',
+        html: '<div style="font-size:30px;line-height:1;transform:translate(-50%,-100%);filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))">🛵</div>',
+        iconSize: [30, 30],
+      });
+      riderMarkerRef.current = L.marker([riderPos.lat, riderPos.lng], { icon: riderIcon }).addTo(mapRef.current);
+    } else {
+      riderMarkerRef.current.setLatLng([riderPos.lat, riderPos.lng]);
+    }
+
+    // Straight dashed line rider → destination. Visual aid only; the
+    // real route comes from the external Maps app launched via
+    // Navigate.
+    const latlngs = [[riderPos.lat, riderPos.lng], [destLat, destLng]] as any;
+    if (!lineRef.current) {
+      lineRef.current = L.polyline(latlngs, {
+        color: '#3b82f6', weight: 3, opacity: 0.7, dashArray: '6 6',
+      }).addTo(mapRef.current);
+    } else {
+      lineRef.current.setLatLngs(latlngs);
+    }
+
+    if (!fitOnceRef.current) {
+      const bounds = L.latLngBounds([
+        [riderPos.lat, riderPos.lng],
+        [destLat, destLng],
+      ]);
+      mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      fitOnceRef.current = true;
+    }
+  }, [riderPos, mapReady, destLat, destLng]);
+
+  // Distance for the header chip — recomputes on every GPS fix.
+  const distanceKm = (riderPos && destLat != null && destLng != null)
+    ? haversineKm(riderPos, { lat: destLat, lng: destLng })
+    : null;
 
   const callApi = async (path: 'arrived' | 'delivered'): Promise<any> => {
     setBusy(path);
@@ -245,6 +422,30 @@ export function RiderPortal(props: RiderPortalProps) {
           </div>
         )}
       </section>
+
+      {/* Embedded map — destination pin (📍) + driver's own pin (🛵)
+          + dashed line between them. Helps the driver eyeball whether
+          they're heading the right way without leaving the page. The
+          turn-by-turn route still comes from the external Maps app
+          launched via the Navigate button above. Hidden when the
+          operator never captured lat/lng (just text address). */}
+      {destLat != null && destLng != null && (
+        <section style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#fff' }}>
+          <div style={{
+            padding: '6px 10px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            background: '#f8fafc', fontSize: 12,
+          }}>
+            <span style={{ color: '#64748b', fontWeight: 700 }}>🗺️ Route preview</span>
+            <span style={{ fontWeight: 800, color: '#3b82f6' }}>
+              {distanceKm == null
+                ? 'Locating…'
+                : `${distanceKm < 0.1 ? '<0.1' : distanceKm.toFixed(1)} km away`}
+            </span>
+          </div>
+          <div ref={mapContainerRef} style={{ width: '100%', height: 220 }} />
+        </section>
+      )}
 
       {/* Action buttons — disabled state mirrors the lifecycle. */}
       <section style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>

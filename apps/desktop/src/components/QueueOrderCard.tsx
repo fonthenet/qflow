@@ -125,6 +125,15 @@ export interface QueueOrderCardProps {
   onDispatchOrder?: (ticketId: string) => void;
   onArriveOrder?: (ticketId: string) => void;
   onDeliverOrder?: (ticketId: string) => void;
+  /** Driver portal URL captured from /api/orders/dispatch's response.
+   *  When present we render a copy + open button-pair on the card so
+   *  the operator can re-paste the link to the rider at any time
+   *  without having to dispatch again. */
+  riderLink?: string | null;
+  /** Re-fetch the driver link (calls dispatch idempotently). Used when
+   *  the operator opens Station after a previous shift and needs the
+   *  link for an already-dispatched ticket whose URL isn't in memory. */
+  onCopyRiderLink?: (ticketId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +239,8 @@ export function QueueOrderCard({
   onDispatchOrder,
   onArriveOrder,
   onDeliverOrder,
+  riderLink,
+  onCopyRiderLink,
 }: QueueOrderCardProps) {
   const [showOverflow, setShowOverflow] = useState(false);
   // itemId → note editor open
@@ -488,18 +499,105 @@ export function QueueOrderCard({
         );
       })()}
 
-      {/* Dispatch state pill — once the operator hits Dispatch, the
-          card shows "🛵 Out for delivery" so it's clear the customer
-          has been notified and the order is in transit. Cleared once
-          the Delivered button moves the ticket to served. */}
+      {/* Dispatched-state row — pill + driver link. Once the operator
+          hits Dispatch, the card shows "🛵 Out for delivery" plus the
+          driver portal URL with copy + open buttons so the operator
+          can re-paste the link to the driver at any time without
+          dispatching again. The link is the same HMAC-token URL the
+          dispatch API returns; we expose it here as a button-pair so
+          it's one tap to copy or open in a browser tab.
+          Falls back to a "Get driver link" button when riderLink isn't
+          known yet (e.g. ticket was dispatched in a previous Station
+          session and the operator just reopened the app). */}
       {svcType === 'delivery' && isServing && (ticket as any).dispatched_at && (
         <div style={{
-          display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 4,
-          padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
-          background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
-          border: '1px solid rgba(245,158,11,0.4)',
+          display: 'flex', flexDirection: 'column', gap: 6,
+          padding: '8px 10px', borderRadius: 8,
+          background: 'rgba(245,158,11,0.08)',
+          border: '1px solid rgba(245,158,11,0.35)',
         }}>
-          🛵 {tl('Out for delivery')}
+          <div style={{
+            display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 4,
+            padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+            background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+            border: '1px solid rgba(245,158,11,0.4)',
+          }}>
+            🛵 {tl('Out for delivery')}
+          </div>
+          {riderLink ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+              <input
+                type="text"
+                readOnly
+                value={riderLink}
+                onClick={(e) => { (e.target as HTMLInputElement).select(); }}
+                onFocus={(e) => { e.target.select(); }}
+                style={{
+                  flex: 1, minWidth: 0,
+                  padding: '4px 6px', borderRadius: 4,
+                  fontSize: 10, fontFamily: 'monospace',
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface, #fff)',
+                  color: 'var(--text)',
+                  colorScheme: 'light dark' as any,
+                }}
+              />
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await navigator.clipboard.writeText(riderLink);
+                  } catch {
+                    // Last-ditch fallback for old Electron contexts
+                    // without async clipboard — select the input.
+                    const el = (e.currentTarget.previousSibling as HTMLInputElement | null);
+                    el?.select();
+                    try { document.execCommand('copy'); } catch {}
+                  }
+                }}
+                title={tl('Copy driver link to clipboard')}
+                style={{
+                  padding: '4px 10px', borderRadius: 4,
+                  fontSize: 10, fontWeight: 700,
+                  background: '#3b82f6', color: '#fff',
+                  border: 'none', cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                📋 {tl('Copy')}
+              </button>
+              <a
+                href={riderLink}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title={tl('Open driver portal in a new tab')}
+                style={{
+                  padding: '4px 10px', borderRadius: 4,
+                  fontSize: 10, fontWeight: 700,
+                  background: 'transparent', color: '#3b82f6',
+                  border: '1px solid #3b82f6',
+                  textDecoration: 'none',
+                  flexShrink: 0,
+                }}
+              >
+                🔗 {tl('Open')}
+              </a>
+            </div>
+          ) : (onCopyRiderLink && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCopyRiderLink(ticket.id); }}
+              style={{
+                alignSelf: 'flex-start',
+                padding: '4px 10px', borderRadius: 4,
+                fontSize: 10, fontWeight: 700,
+                background: '#3b82f6', color: '#fff',
+                border: 'none', cursor: 'pointer',
+              }}
+            >
+              📋 {tl('Get driver link')}
+            </button>
+          ))}
         </div>
       )}
 

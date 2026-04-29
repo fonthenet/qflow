@@ -71,6 +71,12 @@ export interface QueueOrdersCanvasProps {
   onDispatchOrder?: (ticketId: string) => void;
   onArriveOrder?: (ticketId: string) => void;
   onDeliverOrder?: (ticketId: string) => void;
+  /** Driver portal URL cache, keyed by ticketId. The Station owns this
+   *  state (populated from /api/orders/dispatch responses). The canvas
+   *  just looks up the URL per card and passes it down so each
+   *  dispatched delivery card shows the copy/open buttons. */
+  riderLinks?: Record<string, string>;
+  onCopyRiderLink?: (ticketId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +114,8 @@ export function QueueOrdersCanvas({
   onDispatchOrder,
   onArriveOrder,
   onDeliverOrder,
+  riderLinks,
+  onCopyRiderLink,
 }: QueueOrdersCanvasProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
     translate(locale, key, values);
@@ -453,6 +461,8 @@ export function QueueOrdersCanvas({
                 onDispatchOrder={onDispatchOrder}
                 onArriveOrder={onArriveOrder}
                 onDeliverOrder={onDeliverOrder}
+                riderLink={riderLinks?.[ticket.id] ?? null}
+                onCopyRiderLink={onCopyRiderLink}
               />
             );
           }),
