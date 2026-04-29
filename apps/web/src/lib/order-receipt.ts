@@ -11,9 +11,9 @@ import 'server-only';
  *
  *   ✅ Order #FIX-0083 delivered. Enjoy your meal! 🍽️
  *
- *   • Couscous royal × 1     1 200 DA
- *   • Tajine poulet × 2      2 000 DA
- *   • Eau minérale × 1          80 DA
+ *   • 1× Couscous royal — 1 200 DA
+ *   • 2× Tajine poulet  — 2 000 DA
+ *   • 1× Eau minérale   —    80 DA
  *   ─────────────
  *   Total: 3 280 DA — Paid on delivery
  *
@@ -93,7 +93,7 @@ export async function buildOrderReceiptMessage(
     return [headerLine, '', thanks, trackUrl ? `\n${trackUrl}` : ''].filter(Boolean).join('\n');
   }
 
-  // Compute total + format each line with name × qty and a money column.
+  // Compute total + format each line as "qty× name — money".
   let total = 0;
   const lines: string[] = [];
   for (const r of rows) {
@@ -101,7 +101,11 @@ export async function buildOrderReceiptMessage(
     const lineTotal = unit * (r.qty ?? 0);
     total += lineTotal;
     const money = `${lineTotal.toFixed(2)} ${currency}`;
-    lines.push(`• ${r.name} × ${r.qty}  —  ${money}`);
+    // Quantity FIRST so the line reads naturally: "1× Rechta — 900 DA"
+    // matches the cart confirm summary the customer saw earlier in
+    // the flow. Old format was "Rechta × 1 — 900 DA" which read awkward
+    // ("rechta times one") and didn't match the confirm template.
+    lines.push(`• ${r.qty}× ${r.name} — ${money}`);
   }
 
   const totalLabel = tr(locale, 'Total', 'Total', 'المجموع');
