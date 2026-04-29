@@ -173,10 +173,13 @@ export function RidersPanel({
           <input
             value={draftPhone}
             onChange={e => setDraftPhone(e.target.value)}
-            placeholder="+213 555 123 456"
+            placeholder="0555 123 456"
             required
             style={{ ...inputCssStyle, fontFamily: 'ui-monospace, monospace', direction: 'ltr' }}
           />
+          <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', marginTop: 3 }}>
+            {tl('Local number — country is taken from your business settings.')}
+          </div>
         </div>
         <button
           type="submit"

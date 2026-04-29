@@ -38,10 +38,14 @@ async function resolveOrgId(request: NextRequest, providedOrgId: string | null):
   const supabase = createAdminClient() as any;
   const { data: { user } } = await supabase.auth.getUser(token);
   if (!user) return null;
+  // Schema column is `auth_user_id`, not `user_id` — the staff table
+  // links to Supabase auth via the auth.users.id FK on auth_user_id.
+  // Querying user_id silently returned nothing and 401'd every staff
+  // call.
   const { data: staff } = await supabase
     .from('staff')
     .select('organization_id')
-    .eq('user_id', user.id)
+    .eq('auth_user_id', user.id)
     .maybeSingle();
   const myOrg = staff?.organization_id ?? null;
   if (!myOrg) return null;
@@ -88,18 +92,16 @@ export async function POST(request: NextRequest) {
   if (!rawPhone) return NextResponse.json({ ok: false, error: 'phone required' }, { status: 400 });
 
   // Normalise to E.164 (no leading +) so it matches what the WA
-  // webhook gives us as `from`. normalizePhone handles country guess
-  // from the org's timezone if no country prefix is supplied.
+  // webhook gives us as `from`. We derive country from the
+  // organization itself — operator just types the local number
+  // (e.g. "0555 123 456") and we prepend the right dial code from
+  // the org's `country` (ISO-2) or `timezone`. Country takes
+  // precedence because it's an explicit user-set value.
   const supabase = createAdminClient() as any;
-  // Resolve country from the org's timezone for phone normalisation
-  // when the caller didn't supply one.
-  let country: string | undefined = body.country;
-  if (!country) {
-    const { data: org } = await supabase
-      .from('organizations').select('timezone').eq('id', orgId).maybeSingle();
-    country = org?.timezone ?? undefined;
-  }
-  const phone = normalizePhone(rawPhone, country) ?? rawPhone;
+  const { data: org } = await supabase
+    .from('organizations').select('country, timezone').eq('id', orgId).maybeSingle();
+  const phone =
+    normalizePhone(rawPhone, org?.timezone ?? null, org?.country ?? null) ?? rawPhone;
 
   // INSERT with ON CONFLICT (organization_id, phone) → reactivate +
   // update name. Treats "add an existing inactive rider again" as a

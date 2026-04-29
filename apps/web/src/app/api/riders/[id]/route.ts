@@ -30,8 +30,9 @@ async function resolveOrgId(request: NextRequest): Promise<{ orgId: string | nul
   const supabase = createAdminClient() as any;
   const { data: { user } } = await supabase.auth.getUser(token);
   if (!user) return { orgId: null, isServiceRole: false };
+  // Staff table links to auth.users via auth_user_id (NOT user_id).
   const { data: staff } = await supabase
-    .from('staff').select('organization_id').eq('user_id', user.id).maybeSingle();
+    .from('staff').select('organization_id').eq('auth_user_id', user.id).maybeSingle();
   return { orgId: staff?.organization_id ?? null, isServiceRole: false };
 }
 
@@ -70,13 +71,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.phone === 'string') {
     const p = body.phone.trim();
     if (!p) return NextResponse.json({ ok: false, error: 'phone cannot be empty' }, { status: 400 });
-    let country: string | undefined = body.country;
-    if (!country) {
-      const { data: org } = await supabase
-        .from('organizations').select('timezone').eq('id', existing.organization_id).maybeSingle();
-      country = org?.timezone ?? undefined;
-    }
-    patch.phone = normalizePhone(p, country) ?? p;
+    // Derive country from the org (same as POST /api/riders).
+    const { data: org } = await supabase
+      .from('organizations').select('country, timezone').eq('id', existing.organization_id).maybeSingle();
+    patch.phone = normalizePhone(p, org?.timezone ?? null, org?.country ?? null) ?? p;
   }
   if (typeof body.is_active === 'boolean') {
     patch.is_active = body.is_active;
