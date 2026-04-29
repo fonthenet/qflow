@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { MapboxLiveMap, MAPBOX_TOKEN_CONFIGURED } from '@/components/maps/mapbox-live-map';
 
 // Map: static <img>, not iframe. iOS WhatsApp's in-app browser blocks
 // third-party iframes via Tracking Prevention — both OSM and Google
@@ -365,25 +366,39 @@ export function RiderPortal(props: RiderPortalProps) {
                 : `${distanceKm < 0.1 ? '<0.1' : distanceKm.toFixed(1)} km to drop-off`}
             </span>
           </div>
-          <a
-            href={mapsHref ?? undefined}
-            target="_blank"
-            rel="noreferrer"
-            style={{ display: 'block' }}
-          >
-            <img
-              src={mapUrl}
-              alt="map"
-              width={MAP_W}
-              height={MAP_H}
-              style={{
-                width: '100%', height: 'auto', display: 'block',
-                aspectRatio: `${MAP_W} / ${MAP_H}`,
-                objectFit: 'cover',
-                background: '#e2e8f0',
-              }}
+          {MAPBOX_TOKEN_CONFIGURED && dest ? (
+            // Live interactive map (UberEats / DoorDash-style). The
+            // 🛵 marker animates smoothly between GPS fixes — no
+            // tile re-fetch, no flicker.
+            <MapboxLiveMap
+              destLat={dest.lat}
+              destLng={dest.lng}
+              riderLat={riderPos?.lat ?? null}
+              riderLng={riderPos?.lng ?? null}
+              height={300}
+              fitBoth={false /* don't fight the driver's pinch-zoom */}
             />
-          </a>
+          ) : (
+            <a
+              href={mapsHref ?? undefined}
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: 'block' }}
+            >
+              <img
+                src={mapUrl}
+                alt="map"
+                width={MAP_W}
+                height={MAP_H}
+                style={{
+                  width: '100%', height: 'auto', display: 'block',
+                  aspectRatio: `${MAP_W} / ${MAP_H}`,
+                  objectFit: 'cover',
+                  background: '#e2e8f0',
+                }}
+              />
+            </a>
+          )}
         </section>
       )}
 

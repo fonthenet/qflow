@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
+import { MapboxLiveMap, MAPBOX_TOKEN_CONFIGURED } from '@/components/maps/mapbox-live-map';
 
 /**
  * Live delivery map for the customer tracking page.
@@ -198,35 +199,47 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
           </span>
         )}
       </div>
-      <a href={fullMapHref} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
-        {imgSrc ? (
-          <img
-            src={imgSrc}
-            alt={tr(locale, 'Map showing driver and destination', 'Carte du livreur', 'خريطة السائق')}
-            width={MAP_W}
-            height={MAP_H}
-            style={{
-              width: '100%', height: 'auto', display: 'block',
+      {/* Live map. Mapbox GL JS when NEXT_PUBLIC_MAPBOX_TOKEN is
+          set (renders to <canvas>, animates the rider pin smoothly
+          without re-fetching tiles — same approach UberEats uses).
+          Falls back to Google Static when no Mapbox token, then to
+          a tappable placeholder when no Google key either. */}
+      {MAPBOX_TOKEN_CONFIGURED ? (
+        <MapboxLiveMap
+          destLat={dest.lat}
+          destLng={dest.lng}
+          riderLat={rider?.lat ?? null}
+          riderLng={rider?.lng ?? null}
+          height={360}
+        />
+      ) : (
+        <a href={fullMapHref} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+          {imgSrc ? (
+            <img
+              src={imgSrc}
+              alt={tr(locale, 'Map showing driver and destination', 'Carte du livreur', 'خريطة السائق')}
+              width={MAP_W}
+              height={MAP_H}
+              style={{
+                width: '100%', height: 'auto', display: 'block',
+                aspectRatio: `${MAP_W} / ${MAP_H}`,
+                objectFit: 'cover',
+                background: '#e2e8f0',
+              }}
+            />
+          ) : (
+            <div style={{
+              width: '100%',
               aspectRatio: `${MAP_W} / ${MAP_H}`,
-              objectFit: 'cover',
               background: '#e2e8f0',
-            }}
-          />
-        ) : (
-          // Fallback: no Google key → show a clickable placeholder.
-          // The link still opens Google Maps externally so the
-          // customer can navigate.
-          <div style={{
-            width: '100%',
-            aspectRatio: `${MAP_W} / ${MAP_H}`,
-            background: '#e2e8f0',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#64748b', fontSize: 13, fontWeight: 600,
-          }}>
-            🗺️ {tr(locale, 'Tap to open map', 'Voir la carte', 'افتح الخريطة')}
-          </div>
-        )}
-      </a>
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#64748b', fontSize: 13, fontWeight: 600,
+            }}>
+              🗺️ {tr(locale, 'Tap to open map', 'Voir la carte', 'افتح الخريطة')}
+            </div>
+          )}
+        </a>
+      )}
       <div style={{
         textAlign: 'center', padding: '6px 10px', fontSize: 11,
         color: '#3b82f6', background: '#f8fafc', fontWeight: 600,
