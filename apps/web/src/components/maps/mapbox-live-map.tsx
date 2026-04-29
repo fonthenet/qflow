@@ -4,80 +4,82 @@ import { useEffect, useRef, useState } from 'react';
 
 /**
  * Live interactive map component shared by the customer tracking page
- * and the driver portal. Renders Mapbox GL JS via CDN — uses WebGL +
- * <canvas>, NOT an iframe, so iOS WhatsApp's Tracking Prevention
- * doesn't block it the way it blocked openstreetmap.org / Google
- * Maps Embed.
+ * and the driver portal. Uses MapLibre GL JS (open-source fork of
+ * Mapbox GL JS, identical API) with free OpenFreeMap vector tiles —
+ * no account required anywhere.
  *
- * Behaviour:
- *   - First mount: load mapbox-gl JS + CSS from jsdelivr CDN once
- *     (cached across page navigations within the session)
- *   - Initialise map centred on the destination
- *   - Add a 📍 marker for the destination (static)
- *   - Add a 🛵 marker for the rider (animates via Marker.setLngLat
- *     as new positions arrive — no full re-render, no tile re-fetch)
- *   - On position update, smoothly pan/zoom to fit both points so
- *     the customer/driver always sees the route at a useful scale
+ * Why this stack:
+ *   - WebGL + <canvas> rendering — NOT an iframe, so iOS WhatsApp's
+ *     Tracking Prevention can't block it. Same architecture UberEats
+ *     and DoorDash use for their live tracking pages.
+ *   - Marker.setLngLat() repositions the DOM marker via a CSS
+ *     transform — no tile re-fetch, no flicker. Smooth animation
+ *     between GPS fixes.
+ *   - MapLibre GL JS is BSD-3 licensed, OpenFreeMap is donation-
+ *     funded with Bunny CDN backing. Free for commercial use, no
+ *     API key, no rate limit at our usage scale.
  *
- * Failure modes:
- *   - No token configured → render an "ask the operator to set
- *     NEXT_PUBLIC_MAPBOX_TOKEN" placeholder
- *   - Script load fails (CDN down, offline, CSP) → render a
- *     "map unavailable" placeholder so the rest of the page works
- *   - WebGL not supported → onWebglContextLost fires, we render
- *     the placeholder
+ * Failure modes handled:
+ *   - CDN script fails to load → 'map_unavailable' placeholder
+ *   - WebGL not supported by browser → caught at init, placeholder
+ *   - OpenFreeMap CDN unreachable → tiles fail to load but the map
+ *     shell still renders; we don't fall over
+ *   - dest lat/lng missing → caller shouldn't render this component
+ *     (handled in the parent JSX)
+ *
+ * Cost: $0. No account, no API key, no env var.
  */
 
-const MAPBOX_VERSION = '3.7.0';
-const MAPBOX_JS = `https://cdn.jsdelivr.net/npm/mapbox-gl@${MAPBOX_VERSION}/dist/mapbox-gl.js`;
-const MAPBOX_CSS = `https://cdn.jsdelivr.net/npm/mapbox-gl@${MAPBOX_VERSION}/dist/mapbox-gl.css`;
+const MAPLIBRE_VERSION = '4.7.1';
+const MAPLIBRE_JS = `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js`;
+const MAPLIBRE_CSS = `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`;
+
+// OpenFreeMap "liberty" style — clean, modern look, OSM data with
+// a colourful but not-overwhelming palette. Other styles available:
+//   /styles/positron (light grey, less detail)
+//   /styles/bright   (vivid, high-contrast)
+const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
 declare global {
-  interface Window { mapboxgl?: any }
+  interface Window { maplibregl?: any }
 }
 
-let mapboxLoadPromise: Promise<any> | null = null;
-function ensureMapbox(token: string): Promise<any> {
+let maplibreLoadPromise: Promise<any> | null = null;
+function ensureMaplibre(): Promise<any> {
   if (typeof window === 'undefined') return Promise.resolve(null);
-  if (window.mapboxgl) {
-    if (!window.mapboxgl.accessToken) window.mapboxgl.accessToken = token;
-    return Promise.resolve(window.mapboxgl);
-  }
-  if (mapboxLoadPromise) return mapboxLoadPromise;
-  mapboxLoadPromise = new Promise((resolve, reject) => {
-    if (!document.querySelector(`link[href="${MAPBOX_CSS}"]`)) {
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (maplibreLoadPromise) return maplibreLoadPromise;
+  maplibreLoadPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector(`link[href="${MAPLIBRE_CSS}"]`)) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = MAPBOX_CSS;
+      link.href = MAPLIBRE_CSS;
       document.head.appendChild(link);
     }
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${MAPBOX_JS}"]`);
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${MAPLIBRE_JS}"]`);
     if (existing) {
-      if (window.mapboxgl) {
-        if (!window.mapboxgl.accessToken) window.mapboxgl.accessToken = token;
-        resolve(window.mapboxgl);
+      if (window.maplibregl) {
+        resolve(window.maplibregl);
         return;
       }
       existing.addEventListener('load', () => {
-        if (!window.mapboxgl) return reject(new Error('mapbox-gl not on window'));
-        if (!window.mapboxgl.accessToken) window.mapboxgl.accessToken = token;
-        resolve(window.mapboxgl);
+        if (window.maplibregl) resolve(window.maplibregl);
+        else reject(new Error('maplibregl not on window'));
       });
-      existing.addEventListener('error', () => reject(new Error('Failed to load mapbox-gl')));
+      existing.addEventListener('error', () => reject(new Error('Failed to load maplibre-gl')));
       return;
     }
     const s = document.createElement('script');
-    s.src = MAPBOX_JS;
+    s.src = MAPLIBRE_JS;
     s.async = true;
     s.onload = () => {
-      if (!window.mapboxgl) return reject(new Error('mapbox-gl not on window'));
-      window.mapboxgl.accessToken = token;
-      resolve(window.mapboxgl);
+      if (window.maplibregl) resolve(window.maplibregl);
+      else reject(new Error('maplibregl not on window'));
     };
-    s.onerror = () => reject(new Error('Failed to load mapbox-gl'));
+    s.onerror = () => reject(new Error('Failed to load maplibre-gl'));
     document.head.appendChild(s);
   });
-  return mapboxLoadPromise;
+  return maplibreLoadPromise;
 }
 
 export interface MapboxLiveMapProps {
@@ -106,24 +108,18 @@ export function MapboxLiveMap({
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
-
-  // ── Initialise the map once we have a destination + token ────────
+  // ── Initialise the map once we have a destination ────────────────
   useEffect(() => {
-    if (!token) {
-      setError('no_token');
-      return;
-    }
     let cancelled = false;
-    ensureMapbox(token).then((mb) => {
+    ensureMaplibre().then((ml) => {
       if (cancelled || !containerRef.current) return;
       try {
-        const map = new mb.Map({
+        const map = new ml.Map({
           container: containerRef.current,
-          style: 'mapbox://styles/mapbox/streets-v12',
+          style: MAP_STYLE_URL,
           center: [destLng, destLat],
           zoom: 14,
-          attributionControl: false,
+          attributionControl: { compact: true },
           // Touch gestures only — desktop-style scroll-wheel zoom is
           // jarring inside a chat WebView where the page itself is
           // also scrollable.
@@ -134,14 +130,14 @@ export function MapboxLiveMap({
 
         // Destination marker
         const destEl = document.createElement('div');
-        destEl.style.cssText = 'font-size:32px;line-height:1;user-select:none';
+        destEl.style.cssText = 'font-size:32px;line-height:1;user-select:none;cursor:default';
         destEl.textContent = '📍';
-        destMarkerRef.current = new mb.Marker({ element: destEl, anchor: 'bottom' })
+        destMarkerRef.current = new ml.Marker({ element: destEl, anchor: 'bottom' })
           .setLngLat([destLng, destLat])
           .addTo(map);
 
         // Add a route line source/layer once the style finishes loading.
-        // We populate the line geometry in the rider-update effect.
+        // We populate the geometry in the rider-update effect.
         map.on('load', () => {
           if (cancelled) return;
           if (!map.getSource('rider-path')) {
@@ -166,9 +162,17 @@ export function MapboxLiveMap({
           setReady(true);
         });
 
+        map.on('error', (e: any) => {
+          // Tile errors are common (network blips) — don't crash. Only
+          // surface a hard error when the style itself fails to load.
+          if (e?.error?.message && /style/i.test(e.error.message)) {
+            console.warn('[maplibre] style error', e.error);
+          }
+        });
+
         // Auto-resize when the container changes size (parent layout
-        // shifts, viewport rotation). Mapbox doesn't observe its own
-        // container — without this the map stretches with bad math.
+        // shifts, viewport rotation). MapLibre doesn't observe its
+        // own container — without this the map stretches with bad math.
         if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
           const ro = new ResizeObserver(() => {
             try { map.resize(); } catch {}
@@ -177,11 +181,11 @@ export function MapboxLiveMap({
           (map as any)._qfloRO = ro;
         }
       } catch (e: any) {
-        console.warn('[mapbox] init failed', e);
+        console.warn('[maplibre] init failed', e);
         setError(e?.message ?? 'init_failed');
       }
     }).catch((e) => {
-      console.warn('[mapbox] CDN load failed', e);
+      console.warn('[maplibre] CDN load failed', e);
       setError(e?.message ?? 'load_failed');
     });
 
@@ -196,13 +200,13 @@ export function MapboxLiveMap({
       riderMarkerRef.current = null;
       lineSourceAddedRef.current = false;
     };
-  }, [destLat, destLng, token]);
+  }, [destLat, destLng]);
 
   // ── Update rider marker + path on every position change ──────────
   useEffect(() => {
     const map = mapRef.current;
-    const mb = window.mapboxgl;
-    if (!ready || !map || !mb) return;
+    const ml = window.maplibregl;
+    if (!ready || !map || !ml) return;
 
     if (riderLat == null || riderLng == null) {
       if (riderMarkerRef.current) {
@@ -216,13 +220,12 @@ export function MapboxLiveMap({
       const el = document.createElement('div');
       el.style.cssText = 'font-size:34px;line-height:1;user-select:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));transition:transform 0.6s ease-out';
       el.textContent = '🛵';
-      riderMarkerRef.current = new mb.Marker({ element: el, anchor: 'center' })
+      riderMarkerRef.current = new ml.Marker({ element: el, anchor: 'center' })
         .setLngLat([riderLng, riderLat])
         .addTo(map);
     } else {
-      // setLngLat animates the marker DOM element to the new position.
-      // No tile re-fetch, no map redraw — just a CSS transform under
-      // the hood. Smooth.
+      // setLngLat repositions the DOM marker via CSS transform.
+      // No tile re-fetch, no map redraw — just a smooth move.
       riderMarkerRef.current.setLngLat([riderLng, riderLat]);
     }
 
@@ -244,7 +247,7 @@ export function MapboxLiveMap({
     // Auto-fit bounds with a smooth fly animation.
     if (fitBoth) {
       try {
-        const bounds = new mb.LngLatBounds([riderLng, riderLat], [destLng, destLat])
+        const bounds = new ml.LngLatBounds([riderLng, riderLat], [destLng, destLat])
           .extend([destLng, destLat]);
         map.fitBounds(bounds, { padding: 60, maxZoom: 16, duration: 1200 });
       } catch {}
@@ -253,9 +256,6 @@ export function MapboxLiveMap({
 
   // ── Render ────────────────────────────────────────────────────────
   if (error) {
-    const reason = error === 'no_token'
-      ? 'Map not configured.'
-      : 'Map unavailable on this connection.';
     return (
       <div style={{
         height, background: '#f1f5f9',
@@ -264,7 +264,7 @@ export function MapboxLiveMap({
         color: '#64748b', fontSize: 13, gap: 4,
       }}>
         <span style={{ fontSize: 28 }}>🗺️</span>
-        <span>{reason}</span>
+        <span>Map unavailable on this connection.</span>
       </div>
     );
   }
@@ -272,6 +272,9 @@ export function MapboxLiveMap({
   return <div ref={containerRef} style={{ width: '100%', height, background: '#e2e8f0' }} />;
 }
 
-export const MAPBOX_TOKEN_CONFIGURED = Boolean(
-  typeof process !== 'undefined' && process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
-);
+/**
+ * Always true — MapLibre + OpenFreeMap requires no env var. Kept as
+ * a constant export so the call sites' conditional render syntax
+ * doesn't have to change.
+ */
+export const MAPBOX_TOKEN_CONFIGURED = true;
