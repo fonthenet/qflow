@@ -65,8 +65,17 @@ function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 const MAP_W = 640;
 const MAP_H = 360;
 
+/**
+ * Public moped emoji image — Twemoji 🛵 hosted on jsdelivr's CDN.
+ * Google Static Maps fetches this URL to render the rider's pin as
+ * a recognizable moped icon instead of a plain colored circle.
+ * Twemoji is open-source and the jsdelivr mirror is rock-solid.
+ */
+const MOPED_ICON_URL = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f6f5.png';
+
 /** Google Static Maps URL with rider + destination markers + a thin
- *  path line between them. Needs Maps Static API enabled on the key. */
+ *  path line between them. Rider uses the moped icon; destination
+ *  stays as a flag-style red pin so it's distinguishable. */
 function gmapsStaticUrl(
   key: string,
   rider: { lat: number; lng: number } | null,
@@ -77,14 +86,17 @@ function gmapsStaticUrl(
   params.set('scale', '2'); // retina
   params.set('maptype', 'roadmap');
   params.set('key', key);
+  // Destination — small red pin labeled H (home).
+  params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
 
   if (rider) {
-    params.append('markers', `color:blue|label:D|${rider.lat},${rider.lng}`);
-    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
+    // Rider — custom moped icon. anchor:center keeps the icon's
+    // optical center at the actual lat/lng. scale:2 doubles the icon
+    // for retina output sharpness.
+    params.append('markers', `icon:${MOPED_ICON_URL}|anchor:center|scale:2|${rider.lat},${rider.lng}`);
     params.append('path', `color:0x3b82f6cc|weight:4|${rider.lat},${rider.lng}|${dest.lat},${dest.lng}`);
-    // No center/zoom — Google auto-fits to the markers + path.
+    // No center/zoom — Google auto-fits to all elements.
   } else {
-    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
     params.set('center', `${dest.lat},${dest.lng}`);
     params.set('zoom', '15');
   }

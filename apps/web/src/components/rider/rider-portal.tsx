@@ -24,6 +24,9 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+/** Public moped emoji image — see order-map.tsx for the rationale. */
+const MOPED_ICON_URL = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f6f5.png';
+
 function gmapsStaticUrl(
   key: string,
   rider: { lat: number; lng: number } | null,
@@ -34,12 +37,13 @@ function gmapsStaticUrl(
   params.set('scale', '2');
   params.set('maptype', 'roadmap');
   params.set('key', key);
+  // Destination — red H pin.
+  params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
   if (rider) {
-    params.append('markers', `color:blue|label:D|${rider.lat},${rider.lng}`);
-    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
+    // Rider — moped icon, centered on the actual lat/lng.
+    params.append('markers', `icon:${MOPED_ICON_URL}|anchor:center|scale:2|${rider.lat},${rider.lng}`);
     params.append('path', `color:0x3b82f6cc|weight:4|${rider.lat},${rider.lng}|${dest.lat},${dest.lng}`);
   } else {
-    params.append('markers', `color:red|label:H|${dest.lat},${dest.lng}`);
     params.set('center', `${dest.lat},${dest.lng}`);
     params.set('zoom', '15');
   }
@@ -113,9 +117,11 @@ export function RiderPortal(props: RiderPortalProps) {
   const watchIdRef = useRef<number | null>(null);
   const lastSentMsRef = useRef<number>(0);
 
-  // Driver's current GPS position. Null until the first onPos fires.
-  // We use this for the map image and the distance chip.
-  const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
+  // Driver's current GPS position + accuracy radius (meters). Null
+  // until the first onPos fires. Accuracy renders as "± Xm" so the
+  // driver knows when signal is weak (e.g. inside a building) and
+  // the map pin may not match their real spot.
+  const [riderPos, setRiderPos] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
 
   const isDelivered = Boolean(deliveredAt);
   const hasArrived = Boolean(arrivedAt);
@@ -172,7 +178,11 @@ export function RiderPortal(props: RiderPortalProps) {
       // Update local map state on every fix. The new lat/lng goes
       // straight into the static-map URL on the next render.
       if (Number.isFinite(p.coords.latitude) && Number.isFinite(p.coords.longitude)) {
-        setRiderPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+        setRiderPos({
+          lat: p.coords.latitude,
+          lng: p.coords.longitude,
+          accuracy: typeof p.coords.accuracy === 'number' ? p.coords.accuracy : null,
+        });
       }
       void post(p.coords);
     };
@@ -333,7 +343,21 @@ export function RiderPortal(props: RiderPortalProps) {
             background: '#f8fafc', fontSize: 12,
           }}>
             <span style={{ color: '#64748b', fontWeight: 700 }}>
-              🗺️ {riderPos ? 'Your route' : 'Destination'}
+              🛵 {riderPos ? 'Live route' : 'Destination'}
+              {/* GPS accuracy chip — only when we know it. Anything
+                  >50m hints at indoor signal / urban canyon and
+                  warns the driver the map pin may lag reality. */}
+              {riderPos?.accuracy != null && (
+                <span style={{
+                  marginInlineStart: 6,
+                  fontSize: 10, fontWeight: 600,
+                  padding: '1px 6px', borderRadius: 4,
+                  background: riderPos.accuracy > 50 ? '#fef3c7' : '#e0f2fe',
+                  color: riderPos.accuracy > 50 ? '#b45309' : '#0369a1',
+                }}>
+                  ±{Math.round(riderPos.accuracy)}m
+                </span>
+              )}
             </span>
             <span style={{ fontWeight: 800, color: '#3b82f6' }}>
               {distanceKm == null
