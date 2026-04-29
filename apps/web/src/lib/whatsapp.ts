@@ -303,17 +303,38 @@ export async function sendWhatsAppLocationRequest({
   to: string;
   /** Bubble text shown above the Send Location button. */
   bodyText: string;
-  /** Plain-text version sent when Meta isn't configured (Twilio fallback)
-   *  or when the interactive call fails. Should include explicit
-   *  alternative instructions ("Or just type the address…"). */
+  /** Plain-text version sent alongside / instead of the interactive
+   *  bubble. Should include explicit alternative instructions
+   *  ("Tap 📎 → Location" + "Or just type the address…") so the
+   *  customer can complete the flow even when the interactive
+   *  bubble doesn't render. */
   fallbackText: string;
   timezone?: string;
 }): Promise<WhatsAppSendResult> {
+  // Always send the plain-text fallback FIRST. Some WhatsApp clients
+  // (older versions, certain regions) misrender the interactive
+  // location_request_message bubble as a "couldn't load" placeholder
+  // or as a forwarded location pin — the API call succeeds (Meta
+  // returns 200), but the customer's screen shows nothing usable. By
+  // sending the text first, the customer always has working
+  // instructions regardless of whether the interactive bubble below
+  // it renders correctly.
+  //
+  // Cost: one extra outbound message per delivery order (~free since
+  // we're inside the 24h customer-initiated window). Worth it — losing
+  // a delivery customer at the address step is far more expensive.
+  const textResult = await sendWhatsAppMessage({ to, body: fallbackText, timezone });
+
   const metaConfig = getMetaWhatsAppConfig();
   if (metaConfig) {
     const normalizedTo = normalizePhone(to, timezone);
     if (!normalizedTo) {
-      return { ok: false, provider: 'meta', error: 'Phone number is not valid' };
+      // Phone normalisation failed — the text already went out, so
+      // the customer still has instructions. Surface the error for
+      // logging but don't pretend the whole call failed.
+      return textResult.ok
+        ? textResult
+        : { ok: false, provider: 'meta', error: 'Phone number is not valid' };
     }
     try {
       const res = await fetch(
@@ -342,17 +363,14 @@ export async function sendWhatsAppLocationRequest({
         const data = await res.json().catch(() => ({}));
         return { ok: true, provider: 'meta', to: normalizedTo, sid: data?.messages?.[0]?.id };
       }
-      // Interactive send failed — Meta sometimes rejects when the
-      // 24h customer-initiated window has lapsed. Fall through to a
-      // plain text send so the customer at least sees a usable prompt.
       const errBody = await res.text().catch(() => '');
-      console.warn('[whatsapp:locationRequest] Meta failed, falling back to text:', errBody.slice(0, 200));
+      console.warn('[whatsapp:locationRequest] Meta interactive failed (text fallback already sent):', errBody.slice(0, 200));
     } catch (e: any) {
-      console.warn('[whatsapp:locationRequest] Meta call threw, falling back to text:', e?.message);
+      console.warn('[whatsapp:locationRequest] Meta interactive threw (text fallback already sent):', e?.message);
     }
   }
-  // Twilio path or Meta failure → plain text. The fallback copy carries
-  // its own instructions (paperclip → Location → Send Current Location)
-  // so the customer can still complete the flow.
-  return sendWhatsAppMessage({ to, body: fallbackText, timezone });
+  // Either Meta isn't configured (Twilio path) or the interactive
+  // attempt failed. The text fallback already went out at the top, so
+  // we just return its result.
+  return textResult;
 }
