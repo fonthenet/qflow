@@ -185,28 +185,89 @@ function tplAskAddressFallback(locale: Locale): string {
 }
 
 function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: string, orgName: string): string {
+  // Itemised cart lines so the customer sees exactly what they're
+  // about to confirm — earlier we collapsed to "1 items · 900 DA"
+  // which made it impossible to spot a wrong item before sending.
+  // Each line is `• qty× name — line_total currency`.
   let total = 0;
+  const itemLines: string[] = [];
   for (const itemId of Object.keys(payload.cart)) {
-    total += payload.cart[itemId].unit_price * payload.cart[itemId].qty;
+    const it = payload.cart[itemId];
+    const lineTotal = it.unit_price * it.qty;
+    total += lineTotal;
+    itemLines.push(`• ${it.qty}× ${it.name} — ${lineTotal.toFixed(2)} ${currency}`);
   }
-  const itemCount = Object.values(payload.cart).reduce((s, c) => s + c.qty, 0);
   const svc = payload.service === 'delivery' ? (locale === 'ar' ? 'توصيل' : locale === 'en' ? 'Delivery' : 'Livraison')
     : (locale === 'ar' ? 'استلام' : locale === 'en' ? 'Takeout' : 'À emporter');
-  // Notes preview — only render the line when the customer actually
-  // entered something. Trim quoted display to keep the summary compact.
+
+  // Address line — only on delivery, only when we have a captured
+  // street. Truncated so it doesn't push the YES/NO out of view on a
+  // phone if the address is very long.
+  const street = payload.delivery_address?.street?.trim();
+  const addressLine = (payload.service === 'delivery' && street)
+    ? (locale === 'ar' ? `📍 *${street}*\n`
+       : locale === 'en' ? `📍 *${street}*\n`
+       : `📍 *${street}*\n`)
+    : '';
+
+  // Notes preview — only render when the customer actually entered one.
   const noteText = payload.customer_notes?.trim();
   const notesPreview = noteText
-    ? (locale === 'ar' ? `\n📝 ملاحظة: _${noteText}_`
-       : locale === 'en' ? `\n📝 Note: _${noteText}_`
-       : `\n📝 Note : _${noteText}_`)
+    ? (locale === 'ar' ? `📝 ملاحظة: _${noteText}_\n`
+       : locale === 'en' ? `📝 Note: _${noteText}_\n`
+       : `📝 Note : _${noteText}_\n`)
     : '';
+
   if (locale === 'ar') {
-    return `✅ هل تؤكد؟\n\nاسم: *${payload.customer_name}*\n${itemCount} منتج · ${total.toFixed(2)} ${currency} · ${svc} في *${orgName}*${notesPreview}\n\nأرسل *نعم* للتأكيد، *لا* للإلغاء.`;
+    const lines = [
+      '✅ *هل تؤكد؟*',
+      '',
+      `🛒 *سلتك* (${svc} في *${orgName}*)`,
+      ...itemLines,
+      '',
+      `*المجموع: ${total.toFixed(2)} ${currency}*`,
+      '',
+      `👤 ${payload.customer_name}`,
+      addressLine ? `📍 ${street}` : '',
+      noteText ? `📝 _${noteText}_` : '',
+      '',
+      'أرسل *نعم* للتأكيد، *لا* للإلغاء.',
+    ].filter(Boolean);
+    return lines.join('\n');
   }
   if (locale === 'en') {
-    return `✅ Confirm order?\n\nName: *${payload.customer_name}*\n${itemCount} items · ${total.toFixed(2)} ${currency} · ${svc} at *${orgName}*${notesPreview}\n\nReply *YES* to send, *NO* to cancel.`;
+    const lines = [
+      '✅ *Confirm order?*',
+      '',
+      `🛒 *Your cart* (${svc} at *${orgName}*)`,
+      ...itemLines,
+      '',
+      `*Total: ${total.toFixed(2)} ${currency}*`,
+      '',
+      `👤 ${payload.customer_name}`,
+      addressLine ? `📍 ${street}` : '',
+      noteText ? `📝 _${noteText}_` : '',
+      '',
+      'Reply *YES* to send, *NO* to cancel.',
+    ].filter(Boolean);
+    return lines.join('\n');
   }
-  return `✅ Confirmer la commande ?\n\nNom : *${payload.customer_name}*\n${itemCount} articles · ${total.toFixed(2)} ${currency} · ${svc} chez *${orgName}*${notesPreview}\n\nRépondez *OUI* pour envoyer, *NON* pour annuler.`;
+  // French
+  const lines = [
+    '✅ *Confirmer la commande ?*',
+    '',
+    `🛒 *Votre panier* (${svc} chez *${orgName}*)`,
+    ...itemLines,
+    '',
+    `*Total : ${total.toFixed(2)} ${currency}*`,
+    '',
+    `👤 ${payload.customer_name}`,
+    addressLine ? `📍 ${street}` : '',
+    noteText ? `📝 _${noteText}_` : '',
+    '',
+    'Répondez *OUI* pour envoyer, *NON* pour annuler.',
+  ].filter(Boolean);
+  return lines.join('\n');
 }
 
 /**
