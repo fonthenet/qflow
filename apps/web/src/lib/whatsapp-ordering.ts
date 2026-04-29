@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendWhatsAppMessage, sendWhatsAppLocationRequest } from '@/lib/whatsapp';
 import { reverseGeocode } from '@/lib/geocoding';
 import { resolveRestaurantServiceType, computeOrderEtaMinutes, type CartItem } from '@qflo/shared';
 import { nanoid } from 'nanoid';
@@ -158,12 +158,21 @@ function tplCart(payload: OrderSessionPayload, locale: Locale, currency: string)
 }
 
 /**
- * Address prompt — short and direct. Earlier versions walked the
- * customer through "Tap 📎 → Location" mechanics, but that suggestion
- * caused confusion (and pulled the eye toward the misrendering
- * interactive bubble Meta sometimes ships). Just ask for the address.
- * The customer already knows how to share a location pin if they
- * want to; otherwise typing it works.
+ * Short prompt shown above the interactive "Send Location" button on
+ * Meta. Intentionally tight — the button itself carries the action.
+ */
+function tplAskAddressInteractive(locale: Locale): string {
+  if (locale === 'ar') return '📍 شاركنا عنوان التوصيل بنقرة واحدة:';
+  if (locale === 'en') return '📍 Share the delivery address — one tap:';
+  return "📍 Partagez l'adresse de livraison en un clic :";
+}
+
+/**
+ * Plain-text fallback used when the interactive Location Request is
+ * unavailable (Twilio, very old WA clients, Meta-side error). Short
+ * by design — the paperclip walkthrough is dropped since most
+ * customers know how to share a location pin from WhatsApp's UI, and
+ * typing the address always works.
  */
 function tplAskAddressFallback(locale: Locale): string {
   if (locale === 'ar') {
@@ -687,13 +696,15 @@ export async function handleOrderReviewInput(
       await supabase.from('whatsapp_sessions')
         .update({ custom_intake_data: payload, state: 'pending_order_address' })
         .eq('id', session.id);
-      // Plain-text address prompt. The interactive Location Request
-      // bubble misrendered as "couldn't load" on some WhatsApp client
-      // builds, trapping customers at the address step. A short text
-      // prompt is universally reliable; the customer can still share
-      // a location pin via the standard WhatsApp UX, and our webhook
-      // handles both location and text input here.
-      await sendMessage({ to: identifier, body: tplAskAddressFallback(locale) });
+      // One-tap "Send Location" interactive bubble on Meta. Falls back
+      // to plain text on Twilio / Meta failure. This is the same call
+      // pattern the feature shipped with originally — putting it back
+      // exactly as it was.
+      await sendWhatsAppLocationRequest({
+        to: identifier,
+        bodyText: tplAskAddressInteractive(locale),
+        fallbackText: tplAskAddressFallback(locale),
+      });
       return;
     }
     // Takeout: skip the address step entirely and go straight to the
@@ -806,9 +817,13 @@ export async function handleOrderAddressInput(
 
   const trimmed = input.trim().slice(0, 500);
   if (trimmed.length < 5) {
-    // Re-prompt with the plain-text address prompt — same as the first
-    // ask. Avoids the broken interactive bubble entirely.
-    await sendMessage({ to: identifier, body: tplAskAddressFallback(locale) });
+    // Re-prompt with the same one-tap interactive button so customers
+    // who fat-fingered a 1-char address aren't stuck typing a long form.
+    await sendWhatsAppLocationRequest({
+      to: identifier,
+      bodyText: tplAskAddressInteractive(locale),
+      fallbackText: tplAskAddressFallback(locale),
+    });
     return;
   }
   payload.delivery_address = { street: trimmed };
