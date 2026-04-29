@@ -1010,7 +1010,7 @@ export function QueueOrderCard({
                     border: '1px solid rgba(245,158,11,0.4)',
                     color: '#f59e0b', fontSize: 12, fontWeight: 700,
                   }}>
-                    ⏳ {tl('Awaiting')} {assignedRider?.name ?? tl('rider')}…
+                    ⏳ {tl('Pending')} — {assignedRider?.name ?? tl('rider')}
                     {/* Reassign control — small text link in case the
                         operator picked the wrong rider or the rider
                         is unresponsive. Triggers another rider pick. */}
@@ -1034,8 +1034,25 @@ export function QueueOrderCard({
                         {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
                           <option key={r.id} value={r.id}>{r.name}</option>
                         ))}
-                        <option value="__unassign" style={{ color: '#ef4444' }}>— {tl('Unassign')} —</option>
                       </select>
+                    )}
+                    {/* Cancel — pulls the assignment back before the
+                        rider has accepted. Same /api/orders/assign with
+                        riderId=null sentinel. */}
+                    {onAssignRider && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAssignRider(ticket.id, '__unassign'); }}
+                        title={tl('Cancel assignment — rider has not accepted yet')}
+                        style={{
+                          marginInlineStart: availableRiders && availableRiders.length > 0 ? 0 : 'auto',
+                          padding: '2px 8px', borderRadius: 4,
+                          background: 'transparent', color: '#ef4444',
+                          border: '1px solid rgba(239,68,68,0.5)',
+                          fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >
+                        ✕ {tl('Cancel')}
+                      </button>
                     )}
                   </div>
                 );

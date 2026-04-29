@@ -1038,7 +1038,7 @@ function ExpandedTicketModal({
                       border: '1px solid rgba(245,158,11,0.4)',
                       color: '#f59e0b', fontSize: 14, fontWeight: 700,
                     }}>
-                      ⏳ {tl('Awaiting')} {assignedRider?.name ?? tl('rider')}…
+                      ⏳ {tl('Pending')} — {assignedRider?.name ?? tl('rider')}
                     </div>
                     {onAssignRider && availableRiders && availableRiders.length > 0 && (
                       <select
@@ -1054,8 +1054,21 @@ function ExpandedTicketModal({
                         {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
                           <option key={r.id} value={r.id}>{r.name}</option>
                         ))}
-                        <option value="__unassign" style={{ color: '#ef4444' }}>— {tl('Unassign')} —</option>
                       </select>
+                    )}
+                    {onAssignRider && (
+                      <button
+                        onClick={() => onAssignRider(ticket.id, '__unassign')}
+                        title={tl('Cancel assignment — rider has not accepted yet')}
+                        style={{
+                          ...modalBtnStyle('#ef4444', false),
+                          background: 'transparent',
+                          border: '1px solid rgba(239,68,68,0.5)',
+                          color: '#ef4444',
+                        }}
+                      >
+                        ✕ {tl('Cancel')}
+                      </button>
                     )}
                   </>
                 );

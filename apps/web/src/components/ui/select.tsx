@@ -22,9 +22,19 @@ import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 
-const Select = SelectPrimitive.Root;
-const SelectGroup = SelectPrimitive.Group;
-const SelectValue = SelectPrimitive.Value;
+// React 19's @types/react widened FC's return to `ReactNode | Promise<ReactNode>`,
+// which breaks `<SelectPrimitive.Root>` JSX usage ("not a valid JSX element type").
+// Wrapping the primitives forces a concrete ReactElement return so the build
+// type-checks. Behavior identical — pure passthrough.
+const Select = (props: React.ComponentProps<typeof SelectPrimitive.Root>) => (
+  <SelectPrimitive.Root {...props} />
+);
+const SelectGroup = (props: React.ComponentProps<typeof SelectPrimitive.Group>) => (
+  <SelectPrimitive.Group {...props} />
+);
+const SelectValue = (props: React.ComponentProps<typeof SelectPrimitive.Value>) => (
+  <SelectPrimitive.Value {...props} />
+);
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
