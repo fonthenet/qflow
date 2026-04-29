@@ -49,11 +49,30 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          // Geolocation MUST be allowed on self for the rider portal
+          // — drivers stream GPS via watchPosition. Camera + mic stay
+          // blocked. Was previously geolocation=() which denied it
+          // entirely; that's why GPS was unreliable.
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self)' },
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
           {
+            // CSP: locked down by default, with explicit allowances
+            // for the third-party origins the live tracking maps
+            // need.
+            //   - script-src + style-src include cdn.jsdelivr.net so
+            //     MapLibre GL JS can load. Pinned-version URL.
+            //   - connect-src includes tiles.openfreemap.org for the
+            //     vector tile fetches MapLibre makes.
+            //   - worker-src 'blob:' because MapLibre spawns Web
+            //     Workers for tile decoding (Safari refuses without).
+            //   - img-src already allowed https: which covers the
+            //     Google Static Maps fallback path + Twemoji icons.
+            // Without these, every map attempt (Leaflet, OSM iframe,
+            // Google Embed, MapLibre) failed because the browser
+            // blocked the script/connect/frame request before our
+            // code ever ran.
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://vercel.live; frame-src 'self'; object-src 'none'; base-uri 'self'",
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://vercel.live https://tiles.openfreemap.org https://api.mapbox.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'",
           },
         ],
       },
