@@ -4432,33 +4432,45 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     is_active: boolean; last_seen_at: string | null;
   }>>([]);
   useEffect(() => {
-    if (!session?.organization_id) return;
+    if (!session?.organization_id) {
+      console.log('[riders] no org id yet, deferring load');
+      return;
+    }
     let cancelled = false;
+    let attempts = 0;
     const load = async () => {
+      attempts++;
       try {
         const token = await getStaffJwt();
-        if (!token) return;
+        if (!token) {
+          console.warn('[riders] no staff JWT yet, will retry');
+          return;
+        }
         const res = await cloudFetch(
           `https://qflo.net/api/riders?organization_id=${session.organization_id}`,
           { headers: { Authorization: `Bearer ${token}` } },
         );
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
-        if (res.ok && data?.riders) {
-          // Only show active riders in the picker. Inactive ones stay
-          // in the data so historical assignments still resolve their
-          // names.
-          setRiders((data.riders as any[]).filter((r) => r.is_active !== false));
+        if (!res.ok) {
+          console.warn(`[riders] load failed (HTTP ${res.status})`, data?.error ?? '');
+          return;
         }
-      } catch { /* keep last state */ }
+        const list = (data.riders as any[] ?? []).filter((r) => r.is_active !== false);
+        console.log(`[riders] loaded ${list.length} active rider${list.length === 1 ? '' : 's'} (attempt ${attempts})`);
+        // Only show active riders in the picker. Inactive ones stay
+        // in the data so historical assignments still resolve their
+        // names.
+        setRiders(list);
+      } catch (e: any) {
+        console.warn('[riders] load threw:', e?.message);
+      }
     };
+    // Tight initial cadence (5 s) so a freshly-added rider shows up
+    // on the order card almost immediately. Same loader handles the
+    // case where the staff JWT isn't ready on the very first call.
     load();
-    // Light polling — riders rarely change, so 60 s is plenty. The
-    // Realtime publication on the table also broadcasts INSERT/UPDATE
-    // but plumbing that through would need a dedicated channel; this
-    // poll is simpler and covers the case where another operator
-    // adds a rider while this Station is open.
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 5_000);
     return () => { cancelled = true; clearInterval(t); };
   }, [session?.organization_id]);
 

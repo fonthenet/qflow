@@ -35,6 +35,11 @@ export function RidersPanel({
   const [saving, setSaving] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [draftPhone, setDraftPhone] = useState('');
+  // Inline edit state. When an editing row is set, its inputs replace
+  // the static name + phone cells in the table. Save commits via PATCH.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
 
   const getJwt = async (): Promise<string> => {
     try {
@@ -112,6 +117,58 @@ export function RidersPanel({
     await load();
   };
 
+  const startEdit = (id: string, name: string, phone: string) => {
+    setEditingId(id);
+    setEditName(name);
+    setEditPhone(phone);
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName('');
+    setEditPhone('');
+  };
+  const saveEdit = async () => {
+    if (!editingId) return;
+    const name = editName.trim();
+    const phone = editPhone.trim();
+    if (!name || !phone) return;
+    onError(null);
+    const token = await getJwt();
+    const res = await cloudFetch(`${CLOUD_URL}/api/riders/${editingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, phone }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      onError(data?.error ?? `Failed to update rider (${res.status})`);
+      return;
+    }
+    onSuccess(tl('Rider updated'));
+    cancelEdit();
+    await load();
+  };
+
+  const deleteRider = async (id: string, name: string) => {
+    // Hard delete — confirmation prompt because this is irreversible.
+    // Historical tickets keep the rider's name in their event metadata;
+    // assigned_rider_id becomes null via the FK ON DELETE SET NULL.
+    if (!confirm(tl(`Delete ${name}? Historical orders won't be affected.`))) return;
+    onError(null);
+    const token = await getJwt();
+    const res = await cloudFetch(`${CLOUD_URL}/api/riders/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      onError(data?.error ?? `Failed to delete rider (${res.status})`);
+      return;
+    }
+    onSuccess(tl('Rider deleted'));
+    await load();
+  };
+
   const formatRelativeTime = (iso: string | null): string => {
     if (!iso) return tl('Never');
     const ms = Date.now() - new Date(iso).getTime();
@@ -151,14 +208,21 @@ export function RidersPanel({
         {tl('The 24-hour WhatsApp window must be open — riders should message the bot at least once per shift (e.g. "CHECK Fix") for free notifications.')}
       </div>
 
-      {/* Add form */}
+      {/* Add form. Two-column grid for the inputs so name + phone
+          stay top-aligned regardless of label / helper-text length;
+          the Add button sits in its own column with a fixed width.
+          Helper text moved out of the input column to a single-line
+          footnote below the row — keeps the inputs aligned without
+          a column-only "phantom" helper for the name field. */}
       <form onSubmit={addRider} style={{
-        display: 'flex', gap: 8, alignItems: 'flex-end',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr auto',
+        gap: 12, alignItems: 'end',
         padding: 12, marginBottom: 16,
         background: 'rgba(100,116,139,0.08)', borderRadius: 10,
         border: '1px solid var(--border, #475569)',
       }}>
-        <div style={{ flex: 1 }}>
+        <div>
           <div style={microKickerStyle}>{tl('Name')}</div>
           <input
             value={draftName}
@@ -168,7 +232,7 @@ export function RidersPanel({
             style={inputCssStyle}
           />
         </div>
-        <div style={{ flex: 1 }}>
+        <div>
           <div style={microKickerStyle}>{tl('WhatsApp phone')}</div>
           <input
             value={draftPhone}
@@ -177,9 +241,6 @@ export function RidersPanel({
             required
             style={{ ...inputCssStyle, fontFamily: 'ui-monospace, monospace', direction: 'ltr' }}
           />
-          <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', marginTop: 3 }}>
-            {tl('Local number — country is taken from your business settings.')}
-          </div>
         </div>
         <button
           type="submit"
@@ -189,10 +250,21 @@ export function RidersPanel({
             background: 'var(--primary, #3b82f6)', color: '#fff',
             fontWeight: 700, fontSize: 14, cursor: 'pointer',
             opacity: saving ? 0.6 : 1,
+            whiteSpace: 'nowrap',
           }}
         >
           {saving ? tl('Adding…') : `+ ${tl('Add rider')}`}
         </button>
+        {/* Single-line helper underneath the whole row, spanning all
+            three columns. Doesn't affect the alignment of the inputs
+            above it. */}
+        <div style={{
+          gridColumn: '1 / -1',
+          fontSize: 10, color: 'var(--text3, #64748b)',
+          marginTop: -4,
+        }}>
+          {tl('Local number — country is taken from your business settings.')}
+        </div>
       </form>
 
       {/* List */}
@@ -213,10 +285,29 @@ export function RidersPanel({
               </tr>
             </thead>
             <tbody>
-              {riders.map(r => (
+              {riders.map(r => {
+                const editing = editingId === r.id;
+                return (
                 <tr key={r.id} style={{ borderTop: '1px solid var(--border, #475569)', opacity: r.is_active ? 1 : 0.55 }}>
-                  <td style={{ padding: '10px 12px', fontSize: 14, color: 'var(--text)' }}>{r.name}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text2, #94a3b8)', fontFamily: 'ui-monospace, monospace', direction: 'ltr' }}>{r.phone}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 14, color: 'var(--text)' }}>
+                    {editing ? (
+                      <input
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        autoFocus
+                        style={inputCssStyle}
+                      />
+                    ) : (r.name)}
+                  </td>
+                  <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text2, #94a3b8)', fontFamily: 'ui-monospace, monospace', direction: 'ltr' }}>
+                    {editing ? (
+                      <input
+                        value={editPhone}
+                        onChange={e => setEditPhone(e.target.value)}
+                        style={{ ...inputCssStyle, fontFamily: 'ui-monospace, monospace', direction: 'ltr' }}
+                      />
+                    ) : (r.phone)}
+                  </td>
                   <td style={{ padding: '10px 12px', fontSize: 12 }}>
                     {r.last_seen_at ? (
                       <span style={{
@@ -240,20 +331,76 @@ export function RidersPanel({
                     )}
                   </td>
                   <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                    <button
-                      onClick={() => toggleActive(r.id, r.is_active)}
-                      style={{
-                        padding: '5px 12px', borderRadius: 6,
-                        background: 'transparent', color: r.is_active ? '#ef4444' : '#22c55e',
-                        border: `1px solid ${r.is_active ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)'}`,
-                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      }}
-                    >
-                      {r.is_active ? tl('Deactivate') : tl('Activate')}
-                    </button>
+                    {editing ? (
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button
+                          onClick={saveEdit}
+                          disabled={!editName.trim() || !editPhone.trim()}
+                          style={{
+                            padding: '5px 12px', borderRadius: 6,
+                            background: '#22c55e', color: '#fff',
+                            border: 'none',
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          }}
+                        >
+                          {tl('Save')}
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          style={{
+                            padding: '5px 10px', borderRadius: 6,
+                            background: 'transparent', color: 'var(--text2, #94a3b8)',
+                            border: '1px solid var(--border, #475569)',
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          }}
+                        >
+                          {tl('Cancel')}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button
+                          onClick={() => startEdit(r.id, r.name, r.phone)}
+                          title={tl('Edit')}
+                          style={{
+                            padding: '5px 10px', borderRadius: 6,
+                            background: 'transparent', color: 'var(--primary, #3b82f6)',
+                            border: '1px solid rgba(59,130,246,0.4)',
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          }}
+                        >
+                          ✏ {tl('Edit')}
+                        </button>
+                        <button
+                          onClick={() => toggleActive(r.id, r.is_active)}
+                          title={r.is_active ? tl('Deactivate (keep history)') : tl('Activate')}
+                          style={{
+                            padding: '5px 10px', borderRadius: 6,
+                            background: 'transparent', color: r.is_active ? '#f59e0b' : '#22c55e',
+                            border: `1px solid ${r.is_active ? 'rgba(245,158,11,0.4)' : 'rgba(34,197,94,0.4)'}`,
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          }}
+                        >
+                          {r.is_active ? tl('Pause') : tl('Activate')}
+                        </button>
+                        <button
+                          onClick={() => deleteRider(r.id, r.name)}
+                          title={tl('Delete permanently')}
+                          style={{
+                            padding: '5px 10px', borderRadius: 6,
+                            background: 'transparent', color: '#ef4444',
+                            border: '1px solid rgba(239,68,68,0.4)',
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          }}
+                        >
+                          🗑 {tl('Delete')}
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

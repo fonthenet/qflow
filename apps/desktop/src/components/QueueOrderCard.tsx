@@ -1047,7 +1047,34 @@ export function QueueOrderCard({
                   </select>
                 );
               }
-              // Legacy Dispatch fallback (no riders configured yet).
+              // Empty-state: no riders configured yet. Show a tappable
+              // prompt that opens Business Admin → Drivers so the
+              // operator knows where to add one. Replaces the legacy
+              // Dispatch button which was the wrong affordance here
+              // (we want them to set up riders, not dispatch a non-
+              // existent driver).
+              if (onAssignRider) {
+                return (
+                  <button
+                    onClick={() => {
+                      const evt = new CustomEvent('qf:open-business-admin', { detail: { tab: 'riders' } });
+                      window.dispatchEvent(evt);
+                    }}
+                    style={{
+                      flex: 1, padding: '8px 10px', borderRadius: 8,
+                      background: 'transparent', color: '#f59e0b',
+                      border: '1px dashed rgba(245,158,11,0.5)',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    }}
+                    title={tl('Open Business Admin → Drivers')}
+                  >
+                    🛵 + {tl('Add a driver to assign this order')}
+                  </button>
+                );
+              }
+              // Legacy Dispatch fallback (operator cards that don't
+              // wire onAssignRider — e.g. from older Station builds
+              // still propagating).
               return onDispatchOrder ? (
                 <button
                   onClick={() => onDispatchOrder(ticket.id)}

@@ -92,11 +92,12 @@ export async function POST(request: NextRequest) {
   if (!rawPhone) return NextResponse.json({ ok: false, error: 'phone required' }, { status: 400 });
 
   // Normalise to E.164 (no leading +) so it matches what the WA
-  // webhook gives us as `from`. We derive country from the
+  // webhook gives us as `from`. Country derived from the
   // organization itself — operator just types the local number
-  // (e.g. "0555 123 456") and we prepend the right dial code from
-  // the org's `country` (ISO-2) or `timezone`. Country takes
-  // precedence because it's an explicit user-set value.
+  // (e.g. "0555 123 456") and the server prepends the right dial
+  // code based on the org's `country` (ISO-2) or `timezone`.
+  // Country takes precedence because it's an explicit user-set
+  // value; timezone is the secondary signal.
   const supabase = createAdminClient() as any;
   const { data: org } = await supabase
     .from('organizations').select('country, timezone').eq('id', orgId).maybeSingle();

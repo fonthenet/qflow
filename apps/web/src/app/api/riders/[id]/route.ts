@@ -111,10 +111,15 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!isServiceRole && existing.organization_id !== orgId) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
   }
-  // Soft-delete only. Historical assignments keep referencing this row.
+  // Hard delete — this is the explicit Delete action operators expect.
+  // tickets.assigned_rider_id references riders with ON DELETE SET NULL,
+  // so historical orders won't break: their assigned_rider_id becomes
+  // null and the ticket_event audit log keeps the rider's name in
+  // metadata. Operators who just want to pause a rider should use
+  // PATCH { is_active: false } via the Deactivate button instead.
   const { error } = await supabase
     .from('riders')
-    .update({ is_active: false })
+    .delete()
     .eq('id', id);
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
