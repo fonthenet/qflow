@@ -56,6 +56,11 @@ export async function updateSession(request: NextRequest, requestHeaders?: Heade
   // Public routes that don't need auth
   const publicPrefixes = [
     '/q/', '/ticket/', '/display/', '/d/', '/k/', '/kiosk/', '/join/', '/book/',
+    // Rider portal: stateless HMAC-token in the URL grants the driver
+    // GPS-streaming access to one specific delivery. Drivers don't have
+    // Qflo accounts, so the route MUST be public — without this entry
+    // the middleware redirected /rider/<ticketId>/<token> to /login.
+    '/rider/',
     '/login', '/register', '/history', '/scan/', '/api/',
     // Marketing & legal pages
     '/solutions', '/pricing', '/how-it-works', '/contact', '/resources', '/docs',
