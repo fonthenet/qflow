@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendWhatsAppMessage, sendWhatsAppLocationRequest } from '@/lib/whatsapp';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { reverseGeocode } from '@/lib/geocoding';
 import { resolveRestaurantServiceType, computeOrderEtaMinutes, type CartItem } from '@qflo/shared';
 import { nanoid } from 'nanoid';
@@ -158,56 +158,21 @@ function tplCart(payload: OrderSessionPayload, locale: Locale, currency: string)
 }
 
 /**
- * Short prompt shown above the interactive "Send Location" button on
- * Meta. Intentionally tight — the button itself carries the action.
- */
-function tplAskAddressInteractive(locale: Locale): string {
-  if (locale === 'ar') return '📍 شاركنا عنوان التوصيل بنقرة واحدة:';
-  if (locale === 'en') return '📍 Share the delivery address — one tap:';
-  return "📍 Partagez l'adresse de livraison en un clic :";
-}
-
-/**
- * Long fallback prompt used on Twilio / older WA clients that can't
- * render the interactive Location Request. Walks the customer through
- * the manual paperclip → Location flow and offers a typed-address
- * alternative so the journey doesn't dead-end.
+ * Address prompt — short and direct. Earlier versions walked the
+ * customer through "Tap 📎 → Location" mechanics, but that suggestion
+ * caused confusion (and pulled the eye toward the misrendering
+ * interactive bubble Meta sometimes ships). Just ask for the address.
+ * The customer already knows how to share a location pin if they
+ * want to; otherwise typing it works.
  */
 function tplAskAddressFallback(locale: Locale): string {
   if (locale === 'ar') {
-    return [
-      '📍 *أرسل عنوان التوصيل*',
-      '',
-      'أسهل طريقة:',
-      '   1. اضغط على 📎',
-      '   2. اختر *الموقع*',
-      '   3. أرسل *الموقع الحالي* أو حدد عنوانك',
-      '',
-      'أو فقط اكتب العنوان (الشارع، التفاصيل، تعليمات السائق).',
-    ].join('\n');
+    return '📍 *أرسل عنوان التوصيل*\n\nاكتب العنوان (الشارع، التفاصيل، تعليمات السائق) أو شارك موقعك.';
   }
   if (locale === 'en') {
-    return [
-      '📍 *Send the delivery address*',
-      '',
-      'Easiest way:',
-      '   1. Tap 📎',
-      '   2. Choose *Location*',
-      '   3. Send *Current Location* or pick the spot',
-      '',
-      'Or just type the address (street, details, driver instructions).',
-    ].join('\n');
+    return '📍 *Send the delivery address*\n\nType the address (street, details, driver instructions) or share your location.';
   }
-  return [
-    "📍 *Envoyez l'adresse de livraison*",
-    '',
-    'Le plus simple :',
-    '   1. Appuyez sur 📎',
-    '   2. Choisissez *Localisation*',
-    '   3. Envoyez *Position actuelle* ou choisissez l\'endroit',
-    '',
-    'Ou tapez simplement l\'adresse (rue, détails, instructions livreur).',
-  ].join('\n');
+  return "📍 *Envoyez l'adresse de livraison*\n\nTapez l'adresse (rue, détails, instructions livreur) ou partagez votre position.";
 }
 
 function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: string, orgName: string): string {
@@ -722,13 +687,13 @@ export async function handleOrderReviewInput(
       await supabase.from('whatsapp_sessions')
         .update({ custom_intake_data: payload, state: 'pending_order_address' })
         .eq('id', session.id);
-      // One-tap "Send Location" interactive bubble on Meta; long
-      // text-instructions fallback on Twilio / old clients.
-      await sendWhatsAppLocationRequest({
-        to: identifier,
-        bodyText: tplAskAddressInteractive(locale),
-        fallbackText: tplAskAddressFallback(locale),
-      });
+      // Plain-text address prompt. The interactive Location Request
+      // bubble misrendered as "couldn't load" on some WhatsApp client
+      // builds, trapping customers at the address step. A short text
+      // prompt is universally reliable; the customer can still share
+      // a location pin via the standard WhatsApp UX, and our webhook
+      // handles both location and text input here.
+      await sendMessage({ to: identifier, body: tplAskAddressFallback(locale) });
       return;
     }
     // Takeout: skip the address step entirely and go straight to the
@@ -817,18 +782,14 @@ export async function handleOrderAddressInput(
     (payload as any).delivery_address.lng = longitude;
     if (resolvedCity) (payload as any).delivery_address.city = resolvedCity;
 
-    // Idempotent transition — only fire echo + notes prompt on the
-    // FIRST delivery of this location message. If Meta replays the
-    // webhook (or the customer re-shares the same pin), the second
-    // call sees state=pending_order_notes and bails silently. Without
-    // this lock the customer would receive the "Got your pin" + notes
-    // prompt twice for a single share.
-    const { data: addrAdvanced } = await supabase.from('whatsapp_sessions')
+    // Address captured (pin path) → ask for kitchen notes before the
+    // final confirm. Plain unconditional update — earlier we tried an
+    // optimistic state-lock here, but it interacted badly with the
+    // delivery flow; the duplicate-prompt risk is small enough to
+    // accept versus blocking real updates.
+    await supabase.from('whatsapp_sessions')
       .update({ custom_intake_data: payload, state: 'pending_order_notes' })
-      .eq('id', session.id)
-      .eq('state', 'pending_order_address')
-      .select('id');
-    if (!addrAdvanced || addrAdvanced.length === 0) return; // duplicate — bail
+      .eq('id', session.id);
 
     // Echo back so the customer can sanity-check before confirming.
     const echoStreet = resolvedCity ? `${resolvedStreet}, ${resolvedCity}` : resolvedStreet;
@@ -845,24 +806,17 @@ export async function handleOrderAddressInput(
 
   const trimmed = input.trim().slice(0, 500);
   if (trimmed.length < 5) {
-    // Re-prompt with the same one-tap interactive button so customers
-    // who fat-fingered a 1-char address aren't stuck typing a long form.
-    await sendWhatsAppLocationRequest({
-      to: identifier,
-      bodyText: tplAskAddressInteractive(locale),
-      fallbackText: tplAskAddressFallback(locale),
-    });
+    // Re-prompt with the plain-text address prompt — same as the first
+    // ask. Avoids the broken interactive bubble entirely.
+    await sendMessage({ to: identifier, body: tplAskAddressFallback(locale) });
     return;
   }
   payload.delivery_address = { street: trimmed };
 
-  // Text-address path — same idempotent state-lock as the pin path.
-  const { data: textAdvanced } = await supabase.from('whatsapp_sessions')
+  // Text address captured → ask for kitchen notes before confirming.
+  await supabase.from('whatsapp_sessions')
     .update({ custom_intake_data: payload, state: 'pending_order_notes' })
-    .eq('id', session.id)
-    .eq('state', 'pending_order_address')
-    .select('id');
-  if (!textAdvanced || textAdvanced.length === 0) return; // duplicate — bail
+    .eq('id', session.id);
 
   await sendMessage({ to: identifier, body: tplAskNotes(locale, payload.service) });
 }
