@@ -3665,6 +3665,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.ok) {
+        console.warn('[dispatch] failed', { ticketId, status: res.status, error: data?.error, code: data?.code });
         showToast(t('Could not dispatch: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
         return;
       }
@@ -4481,32 +4482,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // 'rider_assigned' ticket_event for audit. dispatched_at is set
   // when the rider sends ACCEPT — not here.
   const handleAssignRider = async (ticketId: string, riderId: string) => {
+    // Sentinel "__unassign" → clear assignment via /api/orders/assign
+    // with riderId=null. Same endpoint, same auth — one route to rule
+    // assign / reassign / unassign.
+    const isUnassign = riderId === '__unassign';
     try {
       const token = await getStaffJwt();
       const res = await cloudFetch('https://qflo.net/api/orders/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ticketId, riderId }),
+        body: JSON.stringify({ ticketId, riderId: isUnassign ? null : riderId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.ok) {
-        showToast(t('Could not assign rider: {error}', { error: data?.error ?? `HTTP ${res.status}` }), 'error');
+        const errMsg = data?.error ?? `HTTP ${res.status}`;
+        console.warn('[assign] failed', { ticketId, riderId, status: res.status, error: errMsg });
+        showToast(t(isUnassign ? 'Could not unassign: {error}' : 'Could not assign rider: {error}', { error: errMsg }), 'error');
         return;
       }
       const tk = tickets.find((x) => x.id === ticketId);
-      const rider = riders.find((r) => r.id === riderId);
-      // notify=false means the WA send failed inline — outbox cron
-      // will retry; meanwhile show an amber toast so the operator
-      // knows the rider didn't get the ping yet.
-      if (data.notified) {
-        showToast(t('Assigned to {rider} — they will see the order on WhatsApp', { rider: rider?.name ?? '' }), 'success');
+      if (isUnassign) {
+        showToast(t('Order {ticket} unassigned', { ticket: tk?.ticket_number ?? '' }), 'success');
+        addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Unassigned'), ticketId);
       } else {
-        showToast(t('Assigned. WhatsApp window may be closed — call {rider} or wait for them to send CHECK.', { rider: rider?.name ?? '' }), 'info');
+        const rider = riders.find((r) => r.id === riderId);
+        // notify=false means the WA send failed inline — outbox cron
+        // will retry; meanwhile show an amber toast so the operator
+        // knows the rider didn't get the ping yet.
+        if (data.notified) {
+          showToast(t('Assigned to {rider} — they will see the order on WhatsApp', { rider: rider?.name ?? '' }), 'success');
+        } else {
+          showToast(t('Assigned. WhatsApp window may be closed — call {rider} or wait for them to send CHECK.', { rider: rider?.name ?? '' }), 'info');
+        }
+        addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Assigned'), ticketId);
       }
-      addActivity(tk?.ticket_number ?? ticketId.slice(0, 6), translate(locale, 'Assigned'), ticketId);
       fetchTickets();
     } catch (err: any) {
-      showToast(t('Could not assign rider: {error}', { error: err?.message ?? 'Network error' }), 'error');
+      console.warn('[assign] threw', err?.message);
+      showToast(t(isUnassign ? 'Could not unassign: {error}' : 'Could not assign rider: {error}', { error: err?.message ?? 'Network error' }), 'error');
     }
   };
   // Inline expansion of a recent-activity row — holds the ticket id of the
@@ -5818,6 +5831,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           onDeliverOrder={handleDeliverOrder}
                           riderLinks={riderLinks}
                           onCopyRiderLink={handleCopyRiderLink}
+                          availableRiders={riders}
+                          onAssignRider={handleAssignRider}
                         />
                       </div>
                     )}

@@ -49,13 +49,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  let body: { ticketId?: string; riderId?: string };
+  let body: { ticketId?: string; riderId?: string | null };
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { ticketId, riderId } = body;
-  if (!ticketId || !riderId) {
-    return NextResponse.json({ ok: false, error: 'ticketId and riderId required' }, { status: 400 });
+  const { ticketId } = body;
+  // Empty string from a select.value falls through to null — both mean unassign.
+  const riderId: string | null = body.riderId == null || body.riderId === '' ? null : body.riderId;
+  const isUnassign = riderId === null;
+  if (!ticketId) {
+    return NextResponse.json({ ok: false, error: 'ticketId required' }, { status: 400 });
   }
 
   const supabase = createAdminClient() as any;
@@ -77,6 +80,50 @@ export async function POST(request: NextRequest) {
       { ok: false, error: `Ticket must be in 'serving' state to assign (current: ${ticket.status})`, code: 'wrong_state' },
       { status: 409 },
     );
+  }
+
+  // ── Unassign branch ────────────────────────────────────────────
+  // No rider scope-check needed; just clear the assignment + reset
+  // dispatched_at so the order is back to "needs assignment" state.
+  // Notify the previously-assigned rider (if any) so they don't
+  // keep waiting on a pickup that's no longer theirs.
+  if (isUnassign) {
+    const { data: prevRider } = ticket.assigned_rider_id
+      ? await supabase.from('riders')
+          .select('id, name, phone').eq('id', ticket.assigned_rider_id).maybeSingle()
+      : { data: null };
+
+    const { error: updErr } = await supabase
+      .from('tickets')
+      .update({ assigned_rider_id: null, dispatched_at: null })
+      .eq('id', ticket.id)
+      .is('delivered_at', null);
+    if (updErr) {
+      return NextResponse.json({ ok: false, error: updErr.message }, { status: 500 });
+    }
+
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticket.id,
+      event_type: 'rider_unassigned',
+      metadata: {
+        previous_rider_id: ticket.assigned_rider_id ?? null,
+        previous_rider_name: prevRider?.name ?? null,
+      },
+    }).then(() => {}, () => {});
+
+    // Courtesy ping to the previous rider (only if we have a phone).
+    if (prevRider?.phone) {
+      const { enqueueWaJob } = await import('@/lib/whatsapp-outbox');
+      void enqueueWaJob({
+        ticketId: ticket.id,
+        action: 'order_other',
+        toPhone: prevRider.phone,
+        body: `🚫 Order *${ticket.ticket_number}* has been unassigned. You don't need to deliver this one.`,
+        payload: { rider_id: prevRider.id, kind: 'rider_unassigned' },
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({ ok: true, ticket_id: ticket.id, unassigned: true });
   }
 
   // Resolve the rider, scope-check against the ticket's org.

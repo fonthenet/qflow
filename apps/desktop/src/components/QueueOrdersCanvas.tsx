@@ -535,6 +535,14 @@ export function QueueOrdersCanvas({
           onDispatchOrder={onDispatchOrder ? (id) => { onDispatchOrder(id); } : undefined}
           onArriveOrder={onArriveOrder ? (id) => { onArriveOrder(id); } : undefined}
           onDeliverOrder={onDeliverOrder ? (id) => { onDeliverOrder(id); setExpandedId(null); } : undefined}
+          availableRiders={availableRiders}
+          onAssignRider={onAssignRider}
+          assignedRider={(() => {
+            const rid = (expandedTicket as any).assigned_rider_id;
+            if (!rid || !availableRiders) return null;
+            const r = availableRiders.find((x) => x.id === rid);
+            return r ? { id: r.id, name: r.name, phone: r.phone } : null;
+          })()}
         />
       )}
     </div>
@@ -573,6 +581,13 @@ interface ExpandedTicketModalProps {
   onDispatchOrder?: (id: string) => void;
   onArriveOrder?: (id: string) => void;
   onDeliverOrder?: (id: string) => void;
+  // In-house rider assignment — same contract as QueueOrderCard so
+  // the enlarged view uses the identical Assign / Awaiting / Out-for-
+  // delivery affordances and hits /api/orders/assign just like the
+  // small card. Sentinel rider id `__unassign` clears the assignment.
+  availableRiders?: Array<{ id: string; name: string; phone: string; last_seen_at: string | null }>;
+  onAssignRider?: (ticketId: string, riderId: string) => void;
+  assignedRider?: { id: string; name: string; phone: string } | null;
 }
 
 function ExpandedTicketModal({
@@ -580,6 +595,7 @@ function ExpandedTicketModal({
   onClose, onPark, onResume, onRecall, onAddItems, onCall, onStartServing, onComplete,
   onNoShow, onCancel, onTransfer, onRequeue, onBan, onItemNote,
   onDispatchOrder, onArriveOrder, onDeliverOrder,
+  availableRiders, onAssignRider, assignedRider,
 }: ExpandedTicketModalProps) {
   const tl = (key: string, values?: Record<string, string | number | null | undefined>) =>
     translate(locale, key, values);
@@ -945,22 +961,121 @@ function ExpandedTicketModal({
             </button>
           )}
           {isServing && (() => {
-            // Delivery cards get the dispatch → delivered two-step flow
-            // here too, mirroring the small card. Each button hits the
-            // dedicated /api/orders/* endpoint in Station.tsx, fires the
-            // customer-facing WhatsApp template, and refreshes locally.
+            // Delivery cards: identical contract to QueueOrderCard.
+            //   stage 1, no rider           → 🛵 Assign rider… (or + Add a driver)
+            //   stage 1, rider assigned      → ⏳ Awaiting <name> + Reassign / Unassign
+            //   stage 2, dispatched          → 🛵 Out for delivery — <name> + Arrived/Delivered + Unassign
+            //   stage 2, arrived             → Delivered + Unassign
+            // All transitions go through /api/orders/assign (assign /
+            // unassign / reassign) or /api/orders/{arrived,delivered}.
+            // The Dispatch button is gone — rider ACCEPT in WA is what
+            // flips dispatched_at.
             const isDeliveryTicket = svcType === 'delivery';
             const isDispatched = Boolean((ticket as any).dispatched_at);
-            if (isDeliveryTicket && (onDispatchOrder || onDeliverOrder)) {
-              const isArrived = Boolean((ticket as any).arrived_at);
+            const isArrived = Boolean((ticket as any).arrived_at);
+            const isAssignedToRider = Boolean((ticket as any).assigned_rider_id);
+
+            if (isDeliveryTicket && (onAssignRider || onDispatchOrder || onDeliverOrder)) {
+              // STAGE 1 — no rider yet, kitchen done.
+              if (!isDispatched && !isAssignedToRider) {
+                if (onAssignRider && availableRiders && availableRiders.length > 0) {
+                  return (
+                    <select
+                      defaultValue=""
+                      onChange={(e) => { const rid = e.target.value; if (rid) onAssignRider(ticket.id, rid); }}
+                      style={{
+                        ...modalBtnStyle('#f59e0b', true),
+                        padding: '10px 14px',
+                        appearance: 'auto',
+                        colorScheme: 'light dark' as any,
+                      }}
+                    >
+                      <option value="" disabled>🛵 {tl('Assign rider')}…</option>
+                      {availableRiders.map((r) => (
+                        <option key={r.id} value={r.id} style={{ background: 'var(--surface)', color: 'var(--text)' }}>
+                          {r.name}{r.last_seen_at && (Date.now() - new Date(r.last_seen_at).getTime() < 24 * 60 * 60 * 1000)
+                            ? '  ✓ online'
+                            : '  ⚠ may be offline'}
+                        </option>
+                      ))}
+                    </select>
+                  );
+                }
+                if (onAssignRider) {
+                  return (
+                    <button
+                      onClick={() => {
+                        const evt = new CustomEvent('qf:open-business-admin', { detail: { tab: 'riders' } });
+                        window.dispatchEvent(evt);
+                      }}
+                      style={{
+                        ...modalBtnStyle('#f59e0b', false),
+                        background: 'transparent',
+                        border: '1px dashed rgba(245,158,11,0.5)',
+                        color: '#f59e0b',
+                      }}
+                    >
+                      🛵 + {tl('Add a driver to assign this order')}
+                    </button>
+                  );
+                }
+                // No assign handler at all — fall back to legacy Dispatch.
+                return onDispatchOrder ? (
+                  <button onClick={() => onDispatchOrder(ticket.id)} style={modalBtnStyle('#f59e0b', true)}>
+                    🛵 {tl('Dispatch')}
+                  </button>
+                ) : null;
+              }
+
+              // STAGE 1 — rider assigned, awaiting ACCEPT.
+              if (!isDispatched && isAssignedToRider) {
+                return (
+                  <>
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      padding: '10px 14px', borderRadius: 8,
+                      background: 'rgba(245,158,11,0.10)',
+                      border: '1px solid rgba(245,158,11,0.4)',
+                      color: '#f59e0b', fontSize: 14, fontWeight: 700,
+                    }}>
+                      ⏳ {tl('Awaiting')} {assignedRider?.name ?? tl('rider')}…
+                    </div>
+                    {onAssignRider && availableRiders && availableRiders.length > 0 && (
+                      <select
+                        defaultValue=""
+                        onChange={(e) => { const rid = e.target.value; if (rid) onAssignRider(ticket.id, rid); }}
+                        style={{
+                          ...modalBtnStyle('var(--text2)', false),
+                          padding: '10px 12px', appearance: 'auto',
+                          colorScheme: 'light dark' as any,
+                        }}
+                      >
+                        <option value="" disabled>{tl('Reassign')}…</option>
+                        {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                        <option value="__unassign" style={{ color: '#ef4444' }}>— {tl('Unassign')} —</option>
+                      </select>
+                    )}
+                  </>
+                );
+              }
+
+              // STAGE 2 — dispatched (rider accepted). Show Arrived /
+              // Delivered + Unassign so the operator can pull the order
+              // back if the rider goes silent.
               return (
                 <>
-                  {!isDispatched && onDispatchOrder && (
-                    <button onClick={() => onDispatchOrder(ticket.id)} style={modalBtnStyle('#f59e0b', true)}>
-                      🛵 {tl('Dispatch')}
-                    </button>
-                  )}
-                  {isDispatched && !isArrived && onArriveOrder && (
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'rgba(245,158,11,0.10)',
+                    border: '1px solid rgba(245,158,11,0.4)',
+                    color: '#f59e0b', fontSize: 14, fontWeight: 700,
+                  }}>
+                    🛵 {tl('Out for delivery')}{assignedRider?.name ? ` — ${assignedRider.name}` : ''}
+                  </div>
+                  {!isArrived && onArriveOrder && (
                     <button onClick={() => onArriveOrder(ticket.id)} style={modalBtnStyle('#3b82f6', true)}>
                       🚪 {tl('Arrived')}
                     </button>
@@ -968,6 +1083,20 @@ function ExpandedTicketModal({
                   {onDeliverOrder && (
                     <button onClick={() => onDeliverOrder(ticket.id)} style={modalBtnStyle('var(--success, #22c55e)', true)}>
                       ✓ {tl('Delivered')}
+                    </button>
+                  )}
+                  {onAssignRider && (
+                    <button
+                      onClick={() => onAssignRider(ticket.id, '__unassign')}
+                      style={{
+                        ...modalBtnStyle('#ef4444', false),
+                        background: 'transparent',
+                        border: '1px solid rgba(239,68,68,0.5)',
+                        color: '#ef4444',
+                      }}
+                      title={tl('Pull this order back from the rider')}
+                    >
+                      ✕ {tl('Unassign')}
                     </button>
                   )}
                 </>

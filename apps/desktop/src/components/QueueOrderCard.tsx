@@ -587,6 +587,25 @@ export function QueueOrderCard({
                 🗺️ {tl('Track')}
               </a>
             )}
+            {/* Unassign — pulls the order back from the rider mid-flight.
+                Operator uses this when a rider is unresponsive or needs
+                reshuffling. Clears assigned_rider_id + dispatched_at via
+                /api/orders/assign with riderId=null. */}
+            {onAssignRider && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAssignRider(ticket.id, '__unassign'); }}
+                title={tl('Pull this order back from the rider')}
+                style={{
+                  padding: '2px 8px', borderRadius: 999,
+                  fontSize: 10, fontWeight: 700,
+                  background: 'transparent', color: '#ef4444',
+                  border: '1px solid rgba(239,68,68,0.5)',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕ {tl('Unassign')}
+              </button>
+            )}
           </div>
           {riderLink ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
@@ -1015,6 +1034,7 @@ export function QueueOrderCard({
                         {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
                           <option key={r.id} value={r.id}>{r.name}</option>
                         ))}
+                        <option value="__unassign" style={{ color: '#ef4444' }}>— {tl('Unassign')} —</option>
                       </select>
                     )}
                   </div>
