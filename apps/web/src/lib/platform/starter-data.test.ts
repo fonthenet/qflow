@@ -18,7 +18,7 @@ describe('starter office seed data', () => {
       officeName: 'Central Services',
     });
 
-    expect(record.operatingHours?.monday?.open).toBe('08:00');
+    expect(record.operatingHours?.monday?.open).toBe('09:00');
     expect(record.settings.platform_template_id).toBe('public-service');
     expect(Array.isArray(record.settings.platform_service_areas)).toBe(true);
     expect((record.settings.platform_service_areas as unknown[]).length).toBeGreaterThanOrEqual(3);
@@ -62,8 +62,8 @@ describe('starter office seed data', () => {
 
     expect(desks).toHaveLength(starterOffice.desks.length);
     expect(desks[0]?.desk.department_id).toBe('dept-consult');
-    expect(desks[0]?.desk.name).toBe('accueil');
-    expect(desks.find((entry) => entry.desk.name === 'cabinet')?.serviceIds).toEqual([
+    expect(desks[0]?.desk.name).toBe('reception');
+    expect(desks.find((entry) => entry.desk.name === 'exam-room')?.serviceIds).toEqual([
       'svc-consult',
       'svc-control',
       'svc-cert',

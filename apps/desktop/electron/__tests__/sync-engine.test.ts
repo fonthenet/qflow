@@ -4,15 +4,19 @@ import { createTestDB } from './helpers';
 
 // Mock electron safeStorage
 vi.mock('electron', () => ({
+  app: { isPackaged: false },
   safeStorage: {
     isEncryptionAvailable: () => false,
     decryptString: () => '',
   },
 }));
 
-// Mock logTicketEvent from db module
+// Mock db module
 vi.mock('../db', () => ({
   logTicketEvent: vi.fn(),
+  setSyncNotifier: vi.fn(),
+  enqueueSync: vi.fn(),
+  deriveOrgIdForSyncItem: vi.fn(),
 }));
 
 // Import after mocks are set up
@@ -190,7 +194,7 @@ describe('SyncEngine', () => {
           if (match) patchedIds.push(match[1]);
           return { ok: true, status: 200, json: async () => [{ id: match?.[1] }] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.syncNow();
@@ -287,7 +291,7 @@ describe('SyncEngine', () => {
           // Retry after token refresh succeeds
           return { ok: true, status: 200, json: async () => [{ id: 'ticket-1' }] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.syncNow();
@@ -311,7 +315,7 @@ describe('SyncEngine', () => {
         if (opts?.method === 'PATCH') {
           return { ok: false, status: 401, json: async () => ([]) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       // Run syncNow multiple times to accumulate failures
@@ -341,7 +345,7 @@ describe('SyncEngine', () => {
         if (opts?.method === 'PATCH') {
           return { ok: false, status: 401, json: async () => ([]) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.syncNow();
@@ -370,7 +374,7 @@ describe('SyncEngine', () => {
         if (opts?.method === 'PATCH') {
           return { ok: false, status: 401, json: async () => ([]) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.syncNow();
@@ -462,7 +466,7 @@ describe('SyncEngine', () => {
         if (opts?.method === 'PATCH') {
           return { ok: true, status: 200, json: async () => [{ id: 'ticket-1' }] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       // Trip the breaker
@@ -519,7 +523,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/office_holidays')) {
           return { ok: true, json: async () => [] };
         }
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving')) {
           return { ok: true, json: async () => [
             { id: 't-1', ticket_number: 'GEN-001', office_id: 'office-1', department_id: 'dept-1', service_id: 'svc-1', desk_id: null, status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', called_at: null, called_by_staff_id: null, serving_started_at: null, completed_at: null, cancelled_at: null, parked_at: null, recall_count: 0, notes: null, is_remote: false, appointment_id: null, source: 'walk_in' },
           ] };
@@ -527,7 +531,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/tickets') && url.includes('status=in.(served,no_show,cancelled)')) {
           return { ok: true, json: async () => [] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.pullLatest();
@@ -571,7 +575,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/services')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/desks')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/office_holidays')) return { ok: true, json: async () => [] };
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving')) {
           // Cloud says ticket is still 'waiting'
           return { ok: true, json: async () => [
             { id: 't-1', ticket_number: 'GEN-001', office_id: 'office-1', department_id: 'dept-1', service_id: null, desk_id: null, status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', called_at: null, called_by_staff_id: null, serving_started_at: null, completed_at: null, cancelled_at: null, parked_at: null, recall_count: 0, notes: null, is_remote: false, appointment_id: null, source: 'walk_in' },
@@ -580,7 +584,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/tickets') && url.includes('status=in.(served,no_show,cancelled)')) {
           return { ok: true, json: async () => [] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.pullLatest();
@@ -615,7 +619,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/services')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/desks')) return { ok: true, json: async () => [] };
         if (url.includes('/rest/v1/office_holidays')) return { ok: true, json: async () => [] };
-        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving)')) {
+        if (url.includes('/rest/v1/tickets') && url.includes('status=in.(waiting,called,serving')) {
           return { ok: true, json: async () => [
             { id: 't-new', ticket_number: 'CS-001', office_id: 'office-1', department_id: 'd1', status: 'waiting', priority: 0, customer_data: '{}', created_at: '2026-01-01T10:00:00Z', is_remote: false, source: 'walk_in' },
           ] };
@@ -623,7 +627,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/tickets') && url.includes('status=in.(served,no_show,cancelled)')) {
           return { ok: true, json: async () => [] };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.pullLatest();
@@ -654,7 +658,7 @@ describe('SyncEngine', () => {
         if (url.includes('/auth/v1/token')) {
           return { ok: true, json: async () => ({ access_token: newToken, refresh_token: 'rt-new' }) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       const token = await engine.ensureFreshToken();
@@ -679,7 +683,7 @@ describe('SyncEngine', () => {
           // Simulate some latency
           return { ok: true, json: async () => ({ access_token: VALID_TOKEN, refresh_token: 'rt' }) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       // Fire two concurrent ensureFreshToken calls
@@ -784,7 +788,7 @@ describe('SyncEngine', () => {
         if (url.includes('/auth/v1/token')) {
           return { ok: true, json: async () => ({ access_token: VALID_TOKEN, refresh_token: 'rt' }) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       const token = await engine.ensureFreshToken();
@@ -801,7 +805,7 @@ describe('SyncEngine', () => {
         if (url.includes('/auth/v1/token')) {
           return { ok: true, json: async () => ({ access_token: VALID_TOKEN, refresh_token: 'rt' }) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       const token = await engine.ensureFreshToken();
@@ -835,7 +839,7 @@ describe('SyncEngine', () => {
         if (url.includes('/rest/v1/ticket_events')) {
           return { ok: true, status: 201, json: async () => ({}) };
         }
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.syncNow();
@@ -876,7 +880,7 @@ describe('SyncEngine', () => {
       fetchMock.mockImplementation(async (url: string) => {
         if (url.includes('/auth/v1/token')) return { ok: true, json: async () => ({ access_token: VALID_TOKEN, refresh_token: 'rt' }) };
         if (url.includes('/rest/v1/ticket_events')) return { ok: true, status: 201, json: async () => ({}) };
-        return { ok: true, json: async () => ({}) };
+        return { ok: true, json: async () => [] };
       });
 
       await engine.syncNow();
