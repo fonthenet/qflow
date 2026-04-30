@@ -59,6 +59,14 @@ export interface EnqueueWaJobInput {
   /** Override the default 5-attempt cap if needed (e.g. a less-critical
    *  notification might cap at 3). */
   maxAttempts?: number;
+  /** Override the default idempotency key (`ticketId:action:whatsapp`).
+   *  Required when the same (ticket, action, channel) tuple can fire
+   *  legitimately more than once with different content — e.g. rider
+   *  assign/unassign cycles, where each rider gets their own message.
+   *  Pass something deterministic per intended message (e.g. include
+   *  rider id, attempt number, or a kind label) so reassignments don't
+   *  collide with the previous rider's notification row. */
+  idempotencyKey?: string;
 }
 
 export interface EnqueueWaJobResult {
@@ -107,7 +115,10 @@ export async function enqueueWaJob(input: EnqueueWaJobInput): Promise<EnqueueWaJ
   const supabase = createAdminClient() as any;
   const { ticketId, action, toPhone, body, payload, maxAttempts = 5 } = input;
 
-  const idempotencyKey = `${ticketId}:${action}:whatsapp`;
+  // Default idempotency: one row per (ticket, action). Callers that
+  // legitimately need multiple sends (e.g. rider reassignment cycles)
+  // pass an explicit key including a discriminator like rider id.
+  const idempotencyKey = input.idempotencyKey ?? `${ticketId}:${action}:whatsapp`;
 
   // Insert (or no-op on conflict) the outbox row. We start in
   // 'pending' status; the inline send below will flip it to 'sent'

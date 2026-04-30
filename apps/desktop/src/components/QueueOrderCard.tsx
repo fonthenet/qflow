@@ -1030,7 +1030,7 @@ export function QueueOrderCard({
                           colorScheme: 'light dark' as any,
                         }}
                       >
-                        <option value="" disabled>{tl('Reassign')}</option>
+                        <option value="" disabled hidden>{tl('Reassign')}</option>
                         {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
                           <option key={r.id} value={r.id}>{r.name}</option>
                         ))}
@@ -1066,14 +1066,15 @@ export function QueueOrderCard({
                       if (riderId) onAssignRider(ticket.id, riderId);
                     }}
                     style={{
-                      flex: 1, padding: '8px 10px', borderRadius: 8,
-                      background: '#f59e0b', color: '#fff',
-                      border: 'none', fontWeight: 700, fontSize: 13,
+                      flex: 1, padding: '10px 14px', borderRadius: 10,
+                      background: 'rgba(245,158,11,0.08)', color: '#f59e0b',
+                      border: '2px solid rgba(245,158,11,0.7)',
+                      fontWeight: 800, fontSize: 14,
                       cursor: 'pointer',
                       colorScheme: 'light dark' as any,
                     }}
                   >
-                    <option value="" disabled>🛵 {tl('Assign rider')}…</option>
+                    <option value="" disabled hidden>🛵 {tl('Assign rider')}…</option>
                     {availableRiders.map((r) => (
                       <option key={r.id} value={r.id} style={{ background: 'var(--surface)', color: 'var(--text)' }}>
                         {r.name}{r.last_seen_at && (Date.now() - new Date(r.last_seen_at).getTime() < 24 * 60 * 60 * 1000)

@@ -979,18 +979,28 @@ function ExpandedTicketModal({
               // STAGE 1 — no rider yet, kitchen done.
               if (!isDispatched && !isAssignedToRider) {
                 if (onAssignRider && availableRiders && availableRiders.length > 0) {
+                  // Outlined orange — matches the enlarged-card aesthetic
+                  // (transparent fill, orange ring, orange text, native
+                  // chevron). The native <select> wrapper renders the
+                  // chevron; we only style the trigger.
                   return (
                     <select
                       defaultValue=""
                       onChange={(e) => { const rid = e.target.value; if (rid) onAssignRider(ticket.id, rid); }}
                       style={{
-                        ...modalBtnStyle('#f59e0b', true),
-                        padding: '10px 14px',
+                        padding: '14px 18px',
+                        borderRadius: 12,
+                        background: 'rgba(245,158,11,0.08)',
+                        color: '#f59e0b',
+                        border: '2px solid rgba(245,158,11,0.7)',
+                        fontWeight: 800,
+                        fontSize: 17,
+                        cursor: 'pointer',
                         appearance: 'auto',
                         colorScheme: 'light dark' as any,
                       }}
                     >
-                      <option value="" disabled>🛵 {tl('Assign rider')}…</option>
+                      <option value="" disabled hidden>🛵 {tl('Assign rider')}…</option>
                       {availableRiders.map((r) => (
                         <option key={r.id} value={r.id} style={{ background: 'var(--surface)', color: 'var(--text)' }}>
                           {r.name}{r.last_seen_at && (Date.now() - new Date(r.last_seen_at).getTime() < 24 * 60 * 60 * 1000)
@@ -1050,7 +1060,7 @@ function ExpandedTicketModal({
                           colorScheme: 'light dark' as any,
                         }}
                       >
-                        <option value="" disabled>{tl('Reassign')}…</option>
+                        <option value="" disabled hidden>{tl('Reassign')}…</option>
                         {availableRiders.filter((r) => r.id !== assignedRider?.id).map((r) => (
                           <option key={r.id} value={r.id}>{r.name}</option>
                         ))}

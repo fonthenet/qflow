@@ -120,6 +120,10 @@ export async function POST(request: NextRequest) {
         toPhone: prevRider.phone,
         body: `🚫 Order *${ticket.ticket_number}* has been unassigned. You don't need to deliver this one.`,
         payload: { rider_id: prevRider.id, kind: 'rider_unassigned' },
+        // Per-rider idempotency so unassigning the same rider twice on
+        // a ticket (operator double-click, etc.) is a no-op, but a NEW
+        // rider's later message gets through.
+        idempotencyKey: `${ticket.id}:rider_unassigned:${prevRider.id}:whatsapp`,
       }).catch(() => {});
     }
 
@@ -214,10 +218,32 @@ export async function POST(request: NextRequest) {
       toPhone: rider.phone,
       body: ridermsg,
       payload: { rider_id: rider.id, kind: 'rider_assignment' },
+      // Per-rider idempotency: each assignment to a different rider
+      // gets its own outbox row, so reassigning Max → Mehdi delivers
+      // a fresh message to Mehdi. Reassigning back to Max within the
+      // same ticket is still idempotent (he doesn't get spammed).
+      idempotencyKey: `${ticket.id}:rider_assignment:${rider.id}:whatsapp`,
     });
     notified = r.delivered;
     notifyError = r.lastError ?? null;
+    if (!notified) {
+      console.warn('[orders/assign] WA enqueue did not deliver inline', {
+        ticketId: ticket.id,
+        riderId: rider.id,
+        riderPhone: rider.phone,
+        jobId: r.jobId,
+        lastError: r.lastError,
+      });
+    }
   } catch (e: any) {
+    // Was previously swallowed silently — explicit log so Vercel runtime
+    // logs surface env / supabase issues that prevent the outbox row.
+    console.warn('[orders/assign] WA enqueue threw', {
+      ticketId: ticket.id,
+      riderId: rider.id,
+      message: e?.message,
+      stack: e?.stack,
+    });
     notifyError = e?.message ?? 'unknown';
   }
 
