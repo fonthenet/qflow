@@ -126,6 +126,48 @@ export async function updateOrganizationProfile(data: {
   const context = await getStaffContext();
   await requireOrganizationAdmin(context);
 
+  if (data.timezone && typeof data.timezone === 'string') {
+    if (data.timezone.length > 64) {
+      return { error: 'Timezone must not exceed maximum length of 64 characters' };
+    }
+    try {
+      const validTimezones = Intl.supportedValuesOf('timeZone');
+      if (!validTimezones.includes(data.timezone)) {
+        return { error: 'Invalid timezone' };
+      }
+    } catch {
+      return { error: 'Invalid timezone' };
+    }
+  }
+
+  if (data.locale_primary && typeof data.locale_primary === 'string') {
+    if (data.locale_primary.length > 64) {
+      return { error: 'Locale must not exceed maximum length of 64 characters' };
+    }
+
+    const { data: org } = await context.supabase
+      .from('organizations')
+      .select('country')
+      .eq('id', context.staff.organization_id)
+      .single();
+
+    const countryToUse = data.country ?? org?.country;
+    if (countryToUse) {
+      const { data: config } = await context.supabase
+        .from('country_config')
+        .select('locale_default, locale_fallbacks')
+        .eq('country_code', countryToUse)
+        .maybeSingle();
+
+      if (config) {
+        const allowed = [config.locale_default, ...(config.locale_fallbacks ?? [])];
+        if (!allowed.includes(data.locale_primary)) {
+          return { error: 'Locale not allowed for this country' };
+        }
+      }
+    }
+  }
+
   const { error } = await context.supabase
     .from('organizations')
     .update({
