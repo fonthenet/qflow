@@ -68,6 +68,28 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Belt-and-suspenders: confirm the org has delivery turned on before
+  // dispatching. UI gates already prevent the call but this protects
+  // against direct API hits from outside the operator surface.
+  {
+    const { data: officeRow } = await supabase
+      .from('offices').select('organization_id').eq('id', ticket.office_id).maybeSingle();
+    const ticketOrgId = (officeRow as any)?.organization_id ?? null;
+    if (ticketOrgId) {
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('delivery_enabled')
+        .eq('id', ticketOrgId)
+        .maybeSingle();
+      if (!(orgRow as any)?.delivery_enabled) {
+        return NextResponse.json(
+          { ok: false, error: 'Delivery is not enabled for this business.', code: 'delivery_disabled' },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   // Resolve the rider (if assigning). Org-scope check so an admin can't
   // accidentally assign a rider from another org. tickets has no
   // organization_id column — the org is reachable via offices.

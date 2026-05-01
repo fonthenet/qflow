@@ -149,6 +149,23 @@ export async function POST(request: NextRequest) {
     .eq('id', ticket.office_id)
     .maybeSingle();
   const orgId = officeRow?.organization_id ?? null;
+
+  // Belt-and-suspenders: confirm the org has delivery turned on. The
+  // UI gates already prevent the call from being made, but rejecting
+  // here means a stray API caller can't bypass the feature flag.
+  if (orgId) {
+    const { data: orgRow } = await supabase
+      .from('organizations')
+      .select('delivery_enabled')
+      .eq('id', orgId)
+      .maybeSingle();
+    if (!orgRow?.delivery_enabled) {
+      return NextResponse.json(
+        { ok: false, error: 'Delivery is not enabled for this business.', code: 'delivery_disabled' },
+        { status: 409 },
+      );
+    }
+  }
   if (!orgId) {
     return NextResponse.json({ ok: false, error: 'Office not found' }, { status: 404 });
   }

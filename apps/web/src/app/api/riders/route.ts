@@ -106,7 +106,16 @@ export async function POST(request: NextRequest) {
   // value; timezone is the secondary signal.
   const supabase = createAdminClient() as any;
   const { data: org } = await supabase
-    .from('organizations').select('country, timezone').eq('id', orgId).maybeSingle();
+    .from('organizations').select('country, timezone, delivery_enabled').eq('id', orgId).maybeSingle();
+  // Don't accept new riders for orgs that haven't enabled delivery —
+  // surfaces a clean error instead of silently creating an unreachable
+  // record that the rest of the rail won't surface anyway.
+  if (!org?.delivery_enabled) {
+    return NextResponse.json(
+      { ok: false, error: 'Enable delivery for this business before adding drivers.', code: 'delivery_disabled' },
+      { status: 409 },
+    );
+  }
   const phone =
     normalizePhone(rawPhone, org?.timezone ?? null, org?.country ?? null) ?? rawPhone;
 

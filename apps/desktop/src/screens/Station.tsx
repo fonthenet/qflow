@@ -2029,6 +2029,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // no-op until that lands; never seed an Algerian timezone.
   const [officeTimezone, setOfficeTimezone] = useState<string>('UTC');
   const [orgSettings, setOrgSettings] = useState<Record<string, any>>({});
+  // Per-org delivery feature flag — gates the rider roster fetch + any
+  // rider/dispatch UI. Default false until the org row loads so we
+  // don't briefly flash the rider rail before settings arrive.
+  const [deliveryEnabled, setDeliveryEnabled] = useState<boolean>(false);
   const [countryConfig, setCountryConfig] = useState<CountryConfig | null>(null);
   // Currency display is driven by the org's country config — never a
   // hardcoded 'DA'. Symbol/decimals come from country_config; falls back
@@ -2051,11 +2055,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           await ensureAuth();
           const sb = await getSupabase();
           // Get org timezone + settings via the organization_id
-          const { data: orgData } = await sb.from('organizations').select('timezone, settings').eq('id', session.organization_id).single();
+          const { data: orgData } = await sb.from('organizations').select('timezone, settings, delivery_enabled').eq('id', session.organization_id).single();
           if (orgData?.timezone) tz = normalizeOfficeTimezone(orgData.timezone);
           // Read auto_no_show_timeout (stored in minutes)
           const fetchedOrgSettings = (orgData?.settings ?? {}) as Record<string, any>;
           if (!cancelled) setOrgSettings(fetchedOrgSettings);
+          if (!cancelled) setDeliveryEnabled(Boolean((orgData as any)?.delivery_enabled));
           // Kick off the offline TTS pre-warmer so ticket announcements
           // survive a network drop. Main process throttles + dedupes.
           try {
@@ -4441,6 +4446,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       console.log('[riders] no org id yet, deferring load');
       return;
     }
+    if (!deliveryEnabled) {
+      // Delivery feature off for this org — keep the roster empty so
+      // the order card never offers the Assign dropdown. Reverts to
+      // populated when an admin flips the toggle in BusinessAdminModal
+      // (settingsVersion bumps and this effect re-runs).
+      setRiders([]);
+      return;
+    }
     let cancelled = false;
     let attempts = 0;
     const load = async () => {
@@ -4477,7 +4490,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     load();
     const t = setInterval(load, 5_000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [session?.organization_id]);
+  }, [session?.organization_id, deliveryEnabled]);
 
   // Per-rider, per-ticket assignment handler. Calls /api/orders/assign
   // which (a) sets assigned_rider_id on the ticket, (b) routes a
