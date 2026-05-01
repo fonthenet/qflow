@@ -10,6 +10,9 @@ import {
   RESTAURANT_DEFAULT_SERVICES,
   RESTAURANT_DEFAULT_SETTINGS,
   isRestaurantCategory,
+  SALON_DEFAULT_SERVICES,
+  SALON_DEFAULT_SETTINGS,
+  isSalonCategory,
   type BusinessCategory,
   type CategoryLocale,
 } from '@qflo/shared';
@@ -250,6 +253,12 @@ export async function POST(request: NextRequest) {
     //    behaviour or the operator-customized list.
     const useRestaurantTemplate = isRestaurantCategory(category.value)
       && (!body.services || body.services.length === 0);
+    // Salon / barber / beauty / spa — same pattern as restaurant.
+    // We only seed the trio when the operator hasn't supplied a custom
+    // list. The `controlledByExpertiseToggle` flag (color services) is
+    // not yet wired to a kill switch — services start active.
+    const useSalonTemplate = isSalonCategory(category.value)
+      && (!body.services || body.services.length === 0);
 
     const servicesToSeed = useRestaurantTemplate
       ? RESTAURANT_DEFAULT_SERVICES.map((s) => ({
@@ -262,6 +271,14 @@ export async function POST(request: NextRequest) {
           // Keep the service-type tag in metadata so the UI's restaurant
           // settings tab can find dine-in by type, not by string-matching
           // its name (operators rename services freely).
+          serviceType: s.type,
+        }))
+      : useSalonTemplate
+      ? SALON_DEFAULT_SERVICES.map((s) => ({
+          name: resolveLocalized(s.name, locale),
+          estimatedMinutes: s.estimatedMinutes,
+          code: s.code,
+          isActive: true,
           serviceType: s.type,
         }))
       : (body.services && body.services.length > 0)
@@ -438,6 +455,15 @@ export async function POST(request: NextRequest) {
       // default just above which is false.
       if (isRestaurantCategory(category.value)) {
         Object.assign(channelDefaults, RESTAURANT_DEFAULT_SETTINGS);
+      }
+      // Salon / barber / beauty / spa overlay — stamps:
+      //   - chairs / stylist-choice / walk-ins toggles (all ON)
+      //   - require_appointment_approval (ON — same anti-spam gate)
+      //   - allow_cancellation (ON — server still blocks 'serving')
+      // The booking flow reads salon_stylist_choice_enabled to decide
+      // whether to show the "Pick your stylist" step.
+      if (isSalonCategory(category.value)) {
+        Object.assign(channelDefaults, SALON_DEFAULT_SETTINGS);
       }
     }
     if (vqcId) {
