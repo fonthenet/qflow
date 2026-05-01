@@ -272,13 +272,30 @@ export function ensureAllPresets(
   });
 
   const existing = new Set(cleaned.map((f) => f.key));
-  const applicable: PresetKey[] = ['name', 'phone', 'email', 'party_size', 'age', 'reason'];
+  const applicable: PresetKey[] = ['name', 'phone', 'email', 'party_size', 'age', 'reason', 'stylist'];
   if (isWilayaMarket || !country) applicable.push('wilaya');
+
+  // Per-preset defaults when appending. Most presets default OFF (the
+  // operator opts in); 'stylist' defaults ON because the booking +
+  // kiosk flows already silently no-op when no staff_services rows
+  // exist — so a clinic adding 'stylist' to their list and it being
+  // enabled is harmless, while a salon getting the auto-on saves a
+  // manual toggle. Scoped to booking so kiosk walk-in flow doesn't
+  // ask for a stylist (the kiosk has its own provider step).
+  const defaultsFor = (key: PresetKey): { enabled: boolean; scope?: IntakeFieldScope } => {
+    if (key === 'stylist') return { enabled: true, scope: 'booking' };
+    return { enabled: false };
+  };
 
   const appended: IntakeField[] = [];
   for (const key of applicable) {
     if (!existing.has(key)) {
-      appended.push({ key, type: 'preset', enabled: false, required: false });
+      const d = defaultsFor(key);
+      appended.push({
+        key, type: 'preset',
+        enabled: d.enabled, required: false,
+        ...(d.scope ? { scope: d.scope } : {}),
+      });
     }
   }
   return [...cleaned, ...appended];
