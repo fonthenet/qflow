@@ -396,6 +396,44 @@ export async function getAvailableSlots(
   }
   const { data: existingAppointments } = await existingAppointmentsQuery;
 
+  // ── Time-off ranges that overlap this day (any staff, any reason) ──
+  // staff_time_off rows are half-open intervals. We pull every row
+  // touching today and bucket by staff_id; the slot loop excludes
+  // any stylist whose intervals cover the candidate slot's moment.
+  // Cheap query: typically 0-2 rows per day at salon scale.
+  const dayStartMs = new Date(startOfDay).getTime();
+  const dayEndMs = new Date(endOfDay).getTime();
+  const timeOffByStaff: Map<string, Array<{ startMs: number; endMs: number }>> = new Map();
+  try {
+    const { data: timeOffRows } = await supabase
+      .from('staff_time_off')
+      .select('staff_id, starts_at, ends_at')
+      // Overlap test: row.starts_at < dayEnd AND row.ends_at > dayStart
+      .lt('starts_at', endOfDay)
+      .gt('ends_at', startOfDay);
+    for (const r of timeOffRows ?? []) {
+      const sStart = Date.parse(r.starts_at);
+      const sEnd = Date.parse(r.ends_at);
+      if (!Number.isFinite(sStart) || !Number.isFinite(sEnd)) continue;
+      const list = timeOffByStaff.get(r.staff_id) ?? [];
+      list.push({ startMs: sStart, endMs: sEnd });
+      timeOffByStaff.set(r.staff_id, list);
+    }
+  } catch {
+    // Migration may not have applied to this DB yet — fail open.
+  }
+  // Quick check whether a given staff is off at a given UTC moment.
+  const isStaffOffAt = (sid: string, atMs: number): boolean => {
+    const ranges = timeOffByStaff.get(sid);
+    if (!ranges || ranges.length === 0) return false;
+    for (const r of ranges) {
+      if (atMs >= r.startMs && atMs < r.endMs) return true;
+    }
+    return false;
+  };
+  void dayStartMs; // currently only used as a query bound; the above
+                   // helper handles per-slot timestamps directly.
+
   // ── Salon: count of qualified stylists for this service ──
   // When no specific stylist was picked AND we're a salon-style org,
   // capacity per slot = number of stylists who can do this service,
@@ -553,15 +591,18 @@ export async function getAvailableSlots(
       capacity = coversPerInterval;
     } else if (isSalonOrg && staffId) {
       // Specific-stylist booking: existingAppointments was already
-      // filtered by staffId — slot is taken iff there's a row for it.
-      booked = slotBookingCounts.get(slot) ?? 0;
+      // filtered by staffId — slot is taken iff there's a row for it
+      // OR the stylist has a time-off range covering this slot.
+      const slotMs = new Date(`${date}T${slot}:00Z`).getTime();
+      const offNow = isStaffOffAt(staffId, slotMs);
+      booked = (slotBookingCounts.get(slot) ?? 0) + (offNow ? 1 : 0);
       capacity = 1;
     } else if (isSalonOrg && qualifiedStylistIds.length > 0) {
       // "Any available" — count free stylists at this slot.
       // A stylist counts toward capacity ONLY when they actually
-      // work at this hour on this day (per their work_schedule).
-      // Marie's Tuesday-only schedule means she contributes 0 to
-      // Wednesday's 3pm capacity but 1 to Tuesday's 3pm capacity.
+      // work at this hour on this day (per their work_schedule) AND
+      // they're not on a time-off range that overlaps this slot.
+      const slotMs = new Date(`${date}T${slot}:00Z`).getTime();
       let workingCount = 0;
       let freeCount = 0;
       for (const sid of qualifiedStylistIds) {
@@ -575,6 +616,8 @@ export async function getAvailableSlots(
         //   {open,close} → working only during that window
         if (day === null) continue;
         if (day && (slot < day.open || slot >= day.close)) continue;
+        // Time-off (vacation / sick) trumps the recurring schedule.
+        if (isStaffOffAt(sid, slotMs)) continue;
         workingCount++;
         const taken = slotsTakenByStylist.get(sid);
         if (!taken || !taken.has(slot)) freeCount++;
