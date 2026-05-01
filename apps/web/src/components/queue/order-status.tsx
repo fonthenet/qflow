@@ -323,21 +323,21 @@ export default function OrderStatus(props: OrderStatusProps) {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
           40% { transform: translateY(-7px); opacity: 1; }
         }
-        @keyframes qfo-ride {
-          /* In-place idle-bob instead of horizontal travel. Earlier we
-             slid the bike across the icon box, but the start and end
-             positions didn't match — the loop teleported the emoji
-             back into view mid-frame, looking like the bike was
-             skipping. A gentle vertical bob (think: riding over road
-             bumps) loops perfectly because start === end, costs almost
-             nothing on the GPU (single transform property), and reads
-             as forward motion since the actual journey is shown by
-             the live map below. The 🛵 emoji on iOS is rider-facing-
-             LEFT, so we apply scaleX(-1) to point it right. */
-          0%, 100% { transform: scaleX(-1) translateY(0)    rotate(0deg); }
-          25%      { transform: scaleX(-1) translateY(-1px) rotate(-1.5deg); }
-          50%      { transform: scaleX(-1) translateY(-2px) rotate(0deg); }
-          75%      { transform: scaleX(-1) translateY(-1px) rotate(1.5deg); }
+        @keyframes qfo-bob {
+          /* Soft vertical bob for the line-art scooter — reads as
+             "in motion" without the cartoonish lateral slide. SVG
+             doesn't need the scaleX(-1) hack the iOS emoji required. */
+          0%, 100% { transform: translateY(0)    rotate(0deg); }
+          25%      { transform: translateY(-1px) rotate(-1deg); }
+          50%      { transform: translateY(-1.5px) rotate(0deg); }
+          75%      { transform: translateY(-1px) rotate(1deg); }
+        }
+        @keyframes qfo-shimmer {
+          /* Indeterminate progress bar — UberEats-style "cooking"
+             feedback when there's no concrete ETA. The strip moves
+             from -40% to 140% of its container width. */
+          0%   { transform: translateX(-40%); }
+          100% { transform: translateX(140%); }
         }
         @keyframes qfo-pop-in {
           0%   { transform: scale(0.4); opacity: 0; }
@@ -396,6 +396,50 @@ export default function OrderStatus(props: OrderStatusProps) {
           </p>
         </div>
       </div>
+
+      {/* Preparing progress strip — only during the 'preparing' phase.
+          Indeterminate (no ETA) shimmer that mimics UberEats / DoorDash
+          "your order is being prepared" affordance. Subtle: thin track,
+          tinted progress bar that travels left→right on a 2.2s loop.
+          Skipped on every other phase (the timeline below conveys the
+          journey then). */}
+      {phase === 'preparing' && (
+        <section style={{
+          background: '#fff', borderRadius: 14,
+          boxShadow: '0 1px 3px rgba(15,23,42,0.05)',
+          padding: '14px 16px',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+            marginBottom: 10,
+          }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: '#94a3b8',
+              letterSpacing: 0.5, textTransform: 'uppercase',
+            }}>
+              {tr(locale, 'In the kitchen', 'En cuisine', 'في المطبخ')}
+            </span>
+            <span style={{
+              fontSize: 11, color: '#64748b', fontWeight: 500,
+            }}>
+              {tr(locale, 'We will notify you', 'Nous vous préviendrons', 'سنُعلمك')}
+            </span>
+          </div>
+          <div style={{
+            position: 'relative',
+            height: 4, borderRadius: 999,
+            background: '#f1f5f9',
+            overflow: 'hidden',
+          }}>
+            <span style={{
+              position: 'absolute', insetBlockStart: 0, insetInlineStart: 0,
+              width: '40%', height: '100%', borderRadius: 999,
+              background: `linear-gradient(90deg, transparent, ${banner.tint}, transparent)`,
+              animation: 'qfo-shimmer 2.2s ease-in-out infinite',
+            }} />
+          </div>
+        </section>
+      )}
 
       {/* Live driver map — only when delivery is in flight AND we know
           where to drop the food (lat/lng on the address). The map
@@ -544,103 +588,132 @@ export default function OrderStatus(props: OrderStatusProps) {
  * Each animation is intentionally short and GPU-cheap (transform +
  * opacity only) so it loops indefinitely without battery cost.
  */
+/**
+ * PhaseIcon — refined SVG glyph (no emoji) tinted by phase. Animation
+ * is reserved for the SVG itself (subtle pulse / soft scale) so the
+ * tile reads as "alive but professional", not a cartoon.
+ *
+ * Why SVG over emoji: emoji rendering varies wildly across iOS / Android /
+ * Windows (chef, scooter, door all look different), and the saturated
+ * native renderings make the page feel like a kid's app. A single
+ * monochrome glyph tinted with `currentColor` matches Linear / UberEats /
+ * DoorDash design language — refined, scale-perfect, and CSS-controllable.
+ */
 function PhaseIcon({ phase, tint }: { phase: string; tint: string }) {
   const wrap: React.CSSProperties = {
-    width: 64, height: 64, flexShrink: 0,
+    width: 56, height: 56, flexShrink: 0,
     borderRadius: 14,
-    background: `${tint}15`,
+    background: `${tint}14`,
+    color: tint,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative', overflow: 'hidden',
   };
+  const stroke = 1.8;
+  const size = 26;
+  const baseSvg: React.CSSProperties = { display: 'block' };
 
+  // Pending — line clock with subtle minute-hand sweep.
   if (phase === 'pending') {
     return (
       <div style={wrap}>
-        <span style={{
-          fontSize: 34, animation: 'qfo-spin-slow 2.5s ease-in-out infinite',
-          display: 'inline-block',
-        }}>⏳</span>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+          style={baseSvg}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5" style={{
+            transformOrigin: '12px 12px',
+            animation: 'qfo-spin-slow 4s linear infinite',
+          }} />
+          <path d="M12 12h3.5" />
+        </svg>
       </div>
     );
   }
 
+  // Preparing — pulsing dot ring (kitchen "working" indicator).
   if (phase === 'preparing') {
     return (
-      <div style={{ ...wrap, flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontSize: 28, lineHeight: 1 }}>👨‍🍳</span>
-        {/* Three bouncing dots beneath the chef — universally readable
-            "thinking / working" indicator regardless of locale. */}
-        <span style={{ display: 'inline-flex', gap: 3, marginTop: -2 }}>
-          <span className="qfo-bounce-dot" style={{
-            width: 5, height: 5, borderRadius: '50%', background: tint,
-            animationDelay: '0s',
-          }} />
-          <span className="qfo-bounce-dot" style={{
-            width: 5, height: 5, borderRadius: '50%', background: tint,
-            animationDelay: '0.18s',
-          }} />
-          <span className="qfo-bounce-dot" style={{
-            width: 5, height: 5, borderRadius: '50%', background: tint,
-            animationDelay: '0.36s',
-          }} />
+      <div style={wrap}>
+        <span style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+          {[0, 0.18, 0.36].map((d, i) => (
+            <span key={i} className="qfo-bounce-dot" style={{
+              width: 7, height: 7, borderRadius: '50%', background: 'currentColor',
+              animationDelay: `${d}s`,
+            }} />
+          ))}
         </span>
       </div>
     );
   }
 
+  // On the way — line scooter, gentle vertical bob.
   if (phase === 'on_the_way') {
     return (
       <div style={wrap}>
-        {/* Motorcycle bobbing in place — see qfo-ride keyframes. Uses
-            ease-in-out so each bump feels organic; 1.6s cadence is
-            slow enough to feel relaxed, fast enough to feel alive. */}
-        <span style={{
-          fontSize: 30,
-          animation: 'qfo-ride 1.6s ease-in-out infinite',
-          display: 'inline-block',
-          willChange: 'transform',
-        }}>🛵</span>
+        <svg width={size + 2} height={size} viewBox="0 0 28 24" fill="none"
+          stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+          style={{ ...baseSvg, animation: 'qfo-bob 1.6s ease-in-out infinite' }}>
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="22" cy="18" r="3" />
+          <path d="M6 18h11l3-9" />
+          <path d="M16 9h4" />
+          <path d="M9 18l4-7" />
+        </svg>
       </div>
     );
   }
 
+  // Arrived — line house/door with knock pulse.
   if (phase === 'arrived') {
     return (
       <div style={wrap}>
-        <span style={{
-          fontSize: 34,
-          animation: 'qfo-door-knock 1.4s ease-in-out infinite',
-          display: 'inline-block',
-          transformOrigin: '50% 80%',
-        }}>🚪</span>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+          style={{ ...baseSvg, animation: 'qfo-pulse-soft 1.4s ease-in-out infinite' }}>
+          <path d="M3 21V9l9-6 9 6v12" />
+          <path d="M9 21v-7h6v7" />
+          <circle cx="13.5" cy="17" r="0.6" fill="currentColor" />
+        </svg>
       </div>
     );
   }
 
+  // Delivered / pickup ready — clean check inside a thin circle.
   if (phase === 'delivered' || phase === 'pickup_ready') {
     return (
       <div style={wrap}>
-        <span style={{
-          fontSize: 36,
-          // pop-in plays once on mount, then settles on the final scale.
-          animation: 'qfo-pop-in 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both',
-          display: 'inline-block',
-        }}>✅</span>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+          style={{ ...baseSvg, animation: 'qfo-pop-in 0.55s cubic-bezier(0.34, 1.4, 0.5, 1) both' }}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M8 12.5l2.7 2.7L16 9.5" />
+        </svg>
       </div>
     );
   }
 
+  // Cancelled — line X inside a thin circle, danger tint.
   if (phase === 'cancelled') {
     return (
-      <div style={{ ...wrap, background: '#ef444415' }}>
-        <span style={{ fontSize: 34 }}>❌</span>
+      <div style={{ ...wrap, background: '#ef444412', color: '#ef4444' }}>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+          style={baseSvg}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9 9l6 6M15 9l-6 6" />
+        </svg>
       </div>
     );
   }
 
   return (
     <div style={wrap}>
-      <span style={{ fontSize: 28 }}>ℹ️</span>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+        style={baseSvg}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v4M12 16h.01" />
+      </svg>
     </div>
   );
 }
@@ -673,25 +746,32 @@ function Timeline({ steps, tint }: {
               {next && (
                 <span style={{
                   position: 'absolute',
-                  top: 11,
+                  top: 10,
                   insetInlineStart: '50%',
                   width: '100%',
                   height: 2,
                   background: next.reached ? '#22c55e' : '#e2e8f0',
                   zIndex: 0,
+                  transition: 'background 0.3s',
                 }} />
               )}
               <span style={{
                 position: 'relative', zIndex: 1,
-                display: 'inline-flex', width: 24, height: 24, borderRadius: '50%',
+                display: 'inline-flex', width: 22, height: 22, borderRadius: '50%',
                 alignItems: 'center', justifyContent: 'center',
                 background: dotColor, color: dotTextColor,
-                fontSize: 11, fontWeight: 800,
-                boxShadow: s.current ? `0 0 0 4px ${tint}33` : 'none',
-                transition: 'box-shadow 0.2s',
-                animation: s.current ? 'qfo-pulse-soft 1.6s ease-in-out infinite' : 'none',
+                fontSize: 11, fontWeight: 700,
+                boxShadow: s.current ? `0 0 0 4px ${tint}26` : 'none',
+                transition: 'box-shadow 0.2s, background 0.2s',
               }}>
-                {s.reached ? '✓' : i + 1}
+                {s.reached ? (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12.5l4.5 4.5L19 7.5" />
+                  </svg>
+                ) : (
+                  <span>{i + 1}</span>
+                )}
               </span>
               <span style={{
                 marginTop: 6, fontSize: 10.5, lineHeight: 1.2, textAlign: 'center',
