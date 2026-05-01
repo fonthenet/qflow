@@ -1913,7 +1913,7 @@ export async function handleInboundMessage(
       .from('whatsapp_sessions')
       .select('id, organization_id, office_id, department_id, service_id, state, locale, channel, booking_date, booking_time, booking_customer_name, booking_customer_wilaya, intake_reason')
       .eq(identColBook, identifier)
-      .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm', 'pending_custom_intake'])
+      .in('state', ['booking_select_service', 'booking_select_stylist', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm', 'pending_custom_intake'])
       .eq('channel', channel)
       .gte('last_message_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()) // 15 min TTL since last interaction
       .order('created_at', { ascending: false })
@@ -4365,7 +4365,7 @@ async function startBookingFlow(
   // Clean up existing booking sessions
   await supabase.from('whatsapp_sessions').delete()
     .eq(identCol, identifier)
-    .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm', 'pending_custom_intake'])
+    .in('state', ['booking_select_service', 'booking_select_stylist', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm', 'pending_custom_intake'])
     .eq('channel', channel);
 
   if (!services || services.length === 0) {
@@ -4446,6 +4446,9 @@ async function handleBookingState(
   switch (session.state) {
     case 'booking_select_service':
       return await handleBookingServiceChoice(session, cleaned, identifier, locale, channel, sendMessage);
+
+    case 'booking_select_stylist':
+      return await handleBookingStylistChoice(session, cleaned, identifier, locale, channel, sendMessage);
 
     case 'booking_select_date':
       return await handleBookingDateChoice(session, cleaned, identifier, locale, channel, sendMessage);
@@ -4673,14 +4676,127 @@ async function handleBookingServiceChoice(
   }
 
   const svc = services[idx - 1];
+  // Reset any previous staff pick — choosing a service mid-flow means
+  // the customer might want a different stylist this time.
   await supabase.from('whatsapp_sessions').update({
-    state: 'booking_select_date',
     department_id: svc.department_id,
     service_id: svc.id,
+    booking_staff_id: null,
   }).eq('id', session.id);
 
   const orgName = await getOrgName(session.organization_id);
-  await showAvailableDates(identifier, orgName, session.office_id, svc.id, locale, channel, sendMessage);
+
+  // ── Salon-style: maybe insert a "Pick your stylist" step ──
+  // Gated on:
+  //   - org.settings.intake_fields has 'stylist' enabled (operator
+  //     can toggle the prompt off in Settings → Intake Fields)
+  //   - getAvailableStaffForService returns ≥ 2 candidates (with
+  //     ≤ 1 there's no meaningful choice to offer)
+  // Honoured for any vertical that exposes the stylist intake — not
+  // category-gated, since operators can opt in/out per business.
+  try {
+    const { data: orgRow } = await supabase
+      .from('organizations').select('settings').eq('id', session.organization_id).maybeSingle();
+    const intakeFields: Array<{ key: string; enabled?: boolean; scope?: string }> =
+      Array.isArray((orgRow?.settings as any)?.intake_fields)
+        ? (orgRow!.settings as any).intake_fields
+        : [];
+    const stylistRow = intakeFields.find((f) => f?.key === 'stylist');
+    const askStylist = stylistRow ? stylistRow.enabled !== false : false;
+
+    if (askStylist) {
+      const { getAvailableStaffForService } = await import('@/lib/actions/public-ticket-actions');
+      const r = await getAvailableStaffForService(session.office_id, svc.id);
+      const stylists = (r?.data ?? []) as Array<{ id: string; full_name: string }>;
+      if (stylists.length >= 2) {
+        // Stash the candidate list on the session so the next message
+        // resolves the customer's reply by index without re-fetching.
+        await supabase.from('whatsapp_sessions').update({
+          state: 'booking_select_stylist',
+          // We stuff the candidate ids into custom_intake_data.stylist_choices
+          // (not a perfect home, but the column already exists and is
+          // jsonb — adding a dedicated column for V1 is overkill).
+          custom_intake_data: {
+            ...(session.custom_intake_data ?? {}),
+            stylist_choices: stylists.map((s) => ({ id: s.id, full_name: s.full_name })),
+          },
+        }).eq('id', session.id);
+        const list = stylists.map((s, i) => `${i + 1}. ${s.full_name}`).join('\n');
+        const tail = `0. ${
+          locale === 'ar' ? 'أي مصفف متاح'
+          : locale === 'en' ? 'Any available'
+          : 'N\'importe lequel disponible'
+        }`;
+        const header =
+          locale === 'ar' ? '✂️ اختر المصفف:'
+          : locale === 'en' ? '✂️ Choose your stylist:'
+          : '✂️ Choisissez votre coiffeur·euse :';
+        await sendMessage({
+          to: identifier,
+          body: `${header}\n\n${list}\n${tail}`,
+        });
+        return true;
+      }
+      // ≤1 stylist — auto-pick the lone stylist (or "any") and continue
+      // without bothering the customer.
+      const lone = stylists[0]?.id ?? null;
+      if (lone) {
+        await supabase.from('whatsapp_sessions').update({
+          booking_staff_id: lone,
+        }).eq('id', session.id);
+      }
+    }
+  } catch {
+    // Resolver / settings read failed — fall through to the normal
+    // flow without a stylist step.
+  }
+
+  await supabase.from('whatsapp_sessions').update({
+    state: 'booking_select_date',
+  }).eq('id', session.id);
+  // Refetch the staff_id we may have set above so the dates query
+  // honours it.
+  const { data: refreshed } = await supabase
+    .from('whatsapp_sessions').select('booking_staff_id').eq('id', session.id).maybeSingle();
+  await showAvailableDates(
+    identifier, orgName, session.office_id, svc.id, locale, channel, sendMessage,
+    0, refreshed?.booking_staff_id ?? null,
+  );
+  return true;
+}
+
+async function handleBookingStylistChoice(
+  session: any, cleaned: string, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+): Promise<boolean> {
+  const supabase = createAdminClient() as any;
+  const choices = (session.custom_intake_data as any)?.stylist_choices as
+    Array<{ id: string; full_name: string }> | undefined;
+  const numMatch = cleaned.match(/^(\d{1,2})$/);
+  if (!numMatch || !choices) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+  const idx = parseInt(numMatch[1], 10);
+  // 0 = any available; 1..N = specific stylist
+  let pickedStaffId: string | null = null;
+  if (idx === 0) {
+    pickedStaffId = null;
+  } else if (idx >= 1 && idx <= choices.length) {
+    pickedStaffId = choices[idx - 1].id;
+  } else {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+  await supabase.from('whatsapp_sessions').update({
+    booking_staff_id: pickedStaffId,
+    state: 'booking_select_date',
+  }).eq('id', session.id);
+
+  const orgName = await getOrgName(session.organization_id);
+  await showAvailableDates(
+    identifier, orgName, session.office_id, session.service_id, locale, channel, sendMessage,
+    0, pickedStaffId,
+  );
   return true;
 }
 
@@ -4768,6 +4884,7 @@ async function handleBookingTimeChoice(
     officeId: session.office_id,
     serviceId: session.service_id || session.department_id,
     date: session.booking_date,
+    staffId: session.booking_staff_id ?? undefined,
   });
 
   if (!result.slots || idx < 1 || idx > result.slots.length) {
@@ -5035,6 +5152,9 @@ async function confirmBooking(
       office_id: session.office_id,
       department_id: session.department_id,
       service_id: session.service_id,
+      // Salon: stamp the customer's chosen stylist (or null = "any
+      // available"). Slot generator already prevented double-booking.
+      staff_id: session.booking_staff_id ?? null,
       customer_name: customerName || identifier,
       customer_phone: identifier, // WhatsApp phone number
       scheduled_at: scheduledAt,
@@ -5296,9 +5416,10 @@ async function showAvailableDates(
   identifier: string, orgName: string, officeId: string, serviceId: string,
   locale: Locale, channel: Channel, sendMessage: SendFn,
   page: number = 0,
+  staffId?: string | null,
 ) {
   const { getAvailableDates } = await import('@/lib/slot-generator');
-  const allDates = await getAvailableDates(officeId, serviceId);
+  const allDates = await getAvailableDates(officeId, serviceId, staffId ?? undefined);
 
   if (allDates.length === 0) {
     await sendMessage({ to: identifier, body: t('booking_no_dates', locale) });
@@ -5344,9 +5465,10 @@ async function showAvailableDates(
 async function showAvailableSlots(
   identifier: string, officeId: string, serviceId: string, date: string,
   locale: Locale, channel: Channel, sendMessage: SendFn,
+  staffId?: string | null,
 ) {
   const { getAvailableSlots } = await import('@/lib/slot-generator');
-  const result = await getAvailableSlots({ officeId, serviceId, date });
+  const result = await getAvailableSlots({ officeId, serviceId, date, staffId: staffId ?? undefined });
 
   // If the whole day has nothing to show (no slots at all — closed,
   // holiday, etc.) tell the customer. A day with only taken slots still
