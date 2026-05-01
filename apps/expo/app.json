@@ -24,6 +24,7 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Qflo keeps sharing your location with the customer while the app is in the background, so deliveries don't go silent when your phone locks.",
         "NSLocationAlwaysUsageDescription": "Qflo keeps sharing your location with the customer while the app is in the background.",
         "NSPhotoLibraryAddUsageDescription": "Qflo saves delivery proof photos to your library so you keep a record of completed orders.",
+        "NSPhotoLibraryUsageDescription": "Qflo lets you pick a profile photo from your library.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": ["remote-notification", "location", "fetch", "processing"]
       },
