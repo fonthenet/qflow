@@ -1702,6 +1702,42 @@ export async function handleInboundMessage(
         } else {
           answers[fieldKey] = cleaned;
         }
+      } else if (fieldKey === 'stylist') {
+        // Numbered picker: 0 = any available, 1..N = specific stylist
+        // from cData.stylist_choices (populated by promptIntakeField
+        // when the bot asked the question). Persists both the chosen
+        // staff_id (machine-readable) and full_name (human-readable
+        // for confirmation summary + receipts).
+        const choices = (cData.stylist_choices ?? []) as Array<{ id: string; full_name: string }>;
+        const numMatch = cleaned.match(/^(\d{1,2})$/);
+        if (!numMatch || !choices || choices.length === 0) {
+          // Re-prompt with the picker — never fall back to free text.
+          await promptIntakeField(
+            currentField, identifier, customLocale, sendMessage,
+            customSession.office_id ?? null, customSession.service_id ?? null,
+            channel,
+          );
+          return;
+        }
+        const idx = parseInt(numMatch[1], 10);
+        if (idx === 0) {
+          // Any available — leave blank, store no preferred id.
+          answers[fieldKey] = '';
+        } else if (idx >= 1 && idx <= choices.length) {
+          const picked = choices[idx - 1];
+          answers[fieldKey] = picked.full_name;
+          // Salon-specific machine-readable hint that downstream
+          // surfaces (queue card "wait for X", appointments.staff_id
+          // on confirm) consume.
+          answers['preferred_staff_id'] = picked.id;
+        } else {
+          await promptIntakeField(
+            currentField, identifier, customLocale, sendMessage,
+            customSession.office_id ?? null, customSession.service_id ?? null,
+            channel,
+          );
+          return;
+        }
       } else {
         // Custom fields: 1-200 chars
         if (cleaned.length < 1 || cleaned.length > 200) {
@@ -1714,13 +1750,17 @@ export async function handleInboundMessage(
 
       const nextIndex = currentIndex + 1;
       if (nextIndex < enabledFields.length) {
-        // More fields to collect
+        // More fields to collect — preserve the stored stylist_choices
+        // so the picker doesn't lose its candidate list.
         await supabaseCustom.from('whatsapp_sessions').update({
-          custom_intake_data: { index: nextIndex, answers },
+          custom_intake_data: { ...cData, index: nextIndex, answers },
         }).eq('id', customSession.id);
         const nextField = enabledFields[nextIndex];
-        const nextLabel = getFieldLabel(nextField, customLocale);
-        await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: nextLabel }) });
+        await promptIntakeField(
+          nextField, identifier, customLocale, sendMessage,
+          customSession.office_id ?? null, customSession.service_id ?? null,
+          channel,
+        );
       } else {
         // All fields collected
         if (customSession.booking_date) {
@@ -3173,12 +3213,81 @@ async function askJoinConfirmationDirect(
   }
 
   if (enabledFields.length > 0) {
-    const firstField = enabledFields[0];
-    const fieldLabel = getFieldLabel(firstField, locale);
-    await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
+    await promptIntakeField(
+      enabledFields[0], identifier, locale, sendMessage,
+      sessionData.office_id ?? null,
+      sessionData.service_id ?? null,
+      channel,
+    );
   } else {
     await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
   }
+}
+
+/**
+ * Emit the right prompt for an intake field. Most fields use the
+ * generic `custom_intake_prompt` ("Please enter your <Field>"), but
+ * the 'stylist' preset needs a numbered picker — same shape as the
+ * dedicated booking_select_stylist step. Persists the candidate
+ * choices on the session so the processor can resolve replies by
+ * index without re-fetching.
+ */
+async function promptIntakeField(
+  field: IntakeField,
+  identifier: string,
+  locale: Locale,
+  sendMessage: SendFn,
+  officeId: string | null,
+  serviceId: string | null,
+  channel: Channel = 'whatsapp',
+): Promise<void> {
+  if (field.type === 'preset' && field.key === 'stylist' && officeId && serviceId) {
+    try {
+      const { getAvailableStaffForService } = await import('@/lib/actions/public-ticket-actions');
+      const r = await getAvailableStaffForService(officeId, serviceId);
+      const stylists = (r?.data ?? []) as Array<{ id: string; full_name: string }>;
+
+      if (stylists.length >= 1) {
+        // Persist the candidate list on the session for the answer
+        // parser. The custom_intake_data jsonb already exists on
+        // every pending_custom_intake row, so we tuck choices there.
+        const supabase = createAdminClient() as any;
+        const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+        const { data: sess } = await supabase
+          .from('whatsapp_sessions')
+          .select('id, custom_intake_data')
+          .eq(idCol, identifier)
+          .eq('state', 'pending_custom_intake')
+          .order('created_at', { ascending: false })
+          .limit(1).maybeSingle();
+        if (sess?.id) {
+          const cur = (sess.custom_intake_data as any) ?? { index: 0, answers: {} };
+          await supabase.from('whatsapp_sessions').update({
+            custom_intake_data: {
+              ...cur,
+              stylist_choices: stylists.map((s) => ({ id: s.id, full_name: s.full_name })),
+            },
+          }).eq('id', sess.id);
+        }
+
+        const list = stylists.map((s, i) => `${i + 1}. ${s.full_name}`).join('\n');
+        const anyLabel = locale === 'ar' ? 'أي مصفف متاح'
+          : locale === 'en' ? 'Any available'
+          : "N'importe lequel disponible";
+        const header = locale === 'ar' ? '✂️ اختر المصفف:'
+          : locale === 'en' ? '✂️ Choose your stylist:'
+          : '✂️ Choisissez votre coiffeur·euse :';
+        await sendMessage({ to: identifier, body: `${header}\n\n${list}\n0. ${anyLabel}` });
+        return;
+      }
+      // No qualified stylists — fall through to skip-the-step path.
+    } catch {
+      // Resolver / fetch failed — fall back to the generic prompt
+      // so the customer doesn't get stuck.
+    }
+  }
+  const label = getFieldLabel(field, locale);
+  await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: label }) });
 }
 
 // ── Join confirmation (detects multi-dept/service) ───────────────────

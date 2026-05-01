@@ -212,19 +212,6 @@ export function migrateToIntakeFields(settings: Record<string, any>): IntakeFiel
  * @param excludeKeys  keys to skip (e.g. ['phone'] in WhatsApp — auto-collected)
  * @param context  'sameday' | 'booking' — filters by field scope. Omit to get all enabled fields.
  */
-/**
- * Per-preset scope overrides — the field is hardwired to this scope
- * regardless of what's stored on the row. Belt-and-braces: even if a
- * Settings UI writes scope='both' for these keys, the filter still
- * enforces the right context. Stylist is a booking-only concept (the
- * booking flow has its own picker step; queue-join would render a
- * useless free-text prompt because there's no multi-step UI on
- * sameday intake).
- */
-const PRESET_SCOPE_OVERRIDES: Partial<Record<PresetKey, IntakeFieldScope>> = {
-  stylist: 'booking',
-};
-
 export function getEnabledIntakeFields(
   settings: Record<string, any>,
   excludeKeys?: string[],
@@ -235,12 +222,7 @@ export function getEnabledIntakeFields(
     if (!f.enabled) return false;
     if ((excludeKeys ?? []).includes(f.key)) return false;
     if (context) {
-      // Override the stored scope when a preset has a hard rule —
-      // stylist is booking-only no matter what the UI saved.
-      const overridden = (f.type === 'preset' && f.key in PRESET_SCOPE_OVERRIDES)
-        ? PRESET_SCOPE_OVERRIDES[f.key as PresetKey]
-        : undefined;
-      const scope = overridden ?? f.scope ?? 'both';
+      const scope = f.scope || 'both';
       if (scope !== 'both' && scope !== context) return false;
     }
     return true;
