@@ -7,6 +7,9 @@ import {
   resolveLocalized,
   DEFAULT_OFFICE_HOURS,
   DEFAULT_TIMEZONE,
+  RESTAURANT_DEFAULT_SERVICES,
+  RESTAURANT_DEFAULT_SETTINGS,
+  isRestaurantCategory,
   type BusinessCategory,
   type CategoryLocale,
 } from '@qflo/shared';
@@ -230,20 +233,54 @@ export async function POST(request: NextRequest) {
     const deptIdLocal: string = dept.id;
     const officeLocal = officeRow;
 
-    // 5. Services — operator-customized list, or single category default.
-    const servicesToSeed = (body.services && body.services.length > 0)
-      ? body.services.map((s, idx) => ({
-          name: s.name.trim() || resolveLocalized(category.defaultService.name, locale),
-          estimatedMinutes: Math.max(1, Math.min(480, Number(s.estimatedMinutes) || category.defaultService.estimatedMinutes)),
-          code: idx === 0
-            ? category.defaultService.code
-            : `${category.defaultDepartment.code}${String(idx + 1).padStart(2, '0')}`,
+    // 5. Services.
+    //
+    //  - Restaurant / cafe categories get the universal restaurant
+    //    template: dine-in + takeout + delivery seeded by default. The
+    //    three names match the RESTAURANT_SERVICE_VISUALS regexes, so the
+    //    WhatsApp ordering flow, kitchen-prep classifier, rider system,
+    //    and customer tracking page all classify them correctly out of
+    //    the box. tables-enabled is on by default (operator can flip it
+    //    off in Business Admin → Restaurant tab; that just deactivates
+    //    the dine-in service, takeout/delivery keep working — useful for
+    //    ghost kitchens). The body can still override with `services`
+    //    if the operator wants a different shape from a future UI.
+    //
+    //  - All other verticals get the historical single-default-service
+    //    behaviour or the operator-customized list.
+    const useRestaurantTemplate = isRestaurantCategory(category.value)
+      && (!body.services || body.services.length === 0);
+
+    const servicesToSeed = useRestaurantTemplate
+      ? RESTAURANT_DEFAULT_SERVICES.map((s) => ({
+          name: resolveLocalized(s.name, locale),
+          estimatedMinutes: s.estimatedMinutes,
+          code: s.code,
+          // Tables-toggle defaults to ON, so dine-in is seeded active.
+          // The operator can disable tables later from Business Admin.
+          isActive: true,
+          // Keep the service-type tag in metadata so the UI's restaurant
+          // settings tab can find dine-in by type, not by string-matching
+          // its name (operators rename services freely).
+          serviceType: s.type,
         }))
-      : [{
-          name: resolveLocalized(category.defaultService.name, locale),
-          estimatedMinutes: category.defaultService.estimatedMinutes,
-          code: category.defaultService.code,
-        }];
+      : (body.services && body.services.length > 0)
+        ? body.services.map((s, idx) => ({
+            name: s.name.trim() || resolveLocalized(category.defaultService.name, locale),
+            estimatedMinutes: Math.max(1, Math.min(480, Number(s.estimatedMinutes) || category.defaultService.estimatedMinutes)),
+            code: idx === 0
+              ? category.defaultService.code
+              : `${category.defaultDepartment.code}${String(idx + 1).padStart(2, '0')}`,
+            isActive: true,
+            serviceType: undefined,
+          }))
+        : [{
+            name: resolveLocalized(category.defaultService.name, locale),
+            estimatedMinutes: category.defaultService.estimatedMinutes,
+            code: category.defaultService.code,
+            isActive: true,
+            serviceType: undefined,
+          }];
 
     const { data: svcRows, error: svcErr } = await supabase
       .from('services')
@@ -252,7 +289,7 @@ export async function POST(request: NextRequest) {
         code: s.code,
         name: s.name,
         estimated_service_time: s.estimatedMinutes,
-        is_active: true,
+        is_active: s.isActive,
       })))
       .select('id');
     if (svcErr || !svcRows || svcRows.length === 0) throw new Error(`service: ${svcErr?.message ?? 'no row'}`);
@@ -391,6 +428,17 @@ export async function POST(request: NextRequest) {
       channelDefaults.business_category = category.value;
       channelDefaults.business_setup_wizard_completed_at = new Date().toISOString();
       channelDefaults.platform_template_id = getCategoryTemplateId(category);
+
+      // Restaurant overlay — stamp the universal-restaurant defaults so
+      // /api/moderate-ticket, /api/orders/*, the Order Pad, the WA
+      // ordering flow, and the rider system all read consistent values
+      // from day one. Includes the tables-enabled toggle (operator can
+      // flip later) and forces require_ticket_approval=true so online
+      // orders go through pending_approval — overriding the generic
+      // default just above which is false.
+      if (isRestaurantCategory(category.value)) {
+        Object.assign(channelDefaults, RESTAURANT_DEFAULT_SETTINGS);
+      }
     }
     if (vqcId) {
       channelDefaults.whatsapp_default_virtual_code_id = vqcId;
