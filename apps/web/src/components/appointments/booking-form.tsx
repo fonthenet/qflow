@@ -303,23 +303,50 @@ export function BookingForm({
     setSelectedDate('');
     setSelectedTime('');
     setSelectedStaffId(null);
-    // Fetch staff for the selected service's office
+    // Fetch staff who can perform this service. Two-pass:
+    //   1. all active staff at the office
+    //   2. all staff_services rows for the office's staff
+    // Then filter: include a stylist if (a) they have NO rows at all
+    //  ("can do everything" fallback for shops that haven't set the
+    //  matrix yet) OR (b) they have a row for this specific service.
+    // Stylists who have specialised (any rows exist) but DIDN'T tick
+    // this service are excluded — that's the whole point of the matrix.
     setLoadingStaff(true);
-    getClient().then((client) => client.from('staff')
-      .select('id, full_name')
-      .eq('office_id', office.id)
-      .eq('is_active', true)
-      .order('full_name'))
-      .then(({ data }) => {
-        const members = data ?? [];
-        setStaffMembers(members);
-        setLoadingStaff(false);
-        if (members.length > 0) {
-          setStep('provider');
-        } else {
-          setStep('date');
+    (async () => {
+      try {
+        const client = await getClient();
+        const { data: allStaff } = await client.from('staff')
+          .select('id, full_name')
+          .eq('office_id', office.id)
+          .eq('is_active', true)
+          .order('full_name');
+        const staffList = allStaff ?? [];
+        const staffIds = staffList.map((s: any) => s.id);
+        let filtered = staffList;
+        if (staffIds.length > 0 && service?.id) {
+          const { data: rows } = await client.from('staff_services')
+            .select('staff_id, service_id, is_active')
+            .in('staff_id', staffIds);
+          const allRows = (rows ?? []).filter((r: any) => r.is_active !== false);
+          const specialised = new Set(allRows.map((r: any) => r.staff_id));
+          const canDoThis = new Set(
+            allRows.filter((r: any) => r.service_id === service.id).map((r: any) => r.staff_id),
+          );
+          filtered = staffList.filter((s: any) =>
+            !specialised.has(s.id) || canDoThis.has(s.id),
+          );
         }
-      });
+        setStaffMembers(filtered);
+        setLoadingStaff(false);
+        if (filtered.length > 0) setStep('provider');
+        else setStep('date');
+      } catch {
+        // On any failure fall through with the un-filtered list rather
+        // than blocking the customer's booking.
+        setLoadingStaff(false);
+        setStep('date');
+      }
+    })();
   }
 
   function handleSelectProvider(staffId: string | null) {
