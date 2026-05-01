@@ -178,12 +178,6 @@ export const HAIR_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'color', code: 'HEN',
-    name: { en: 'Henna', fr: 'Henné Cheveux', ar: 'حناء الشعر' },
-    estimatedMinutes: 60,
-    controlledByExpertiseToggle: false,
-  },
-  {
     type: 'styling', code: 'WSH',
     name: { en: 'Wash & Brushing', fr: 'Shampoing + Brushing', ar: 'غسيل وسيشوار' },
     estimatedMinutes: 35,
@@ -260,8 +254,7 @@ export const NAIL_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
 
 /**
  * Spa & Wellness — Algerian shop menu. Hammam is the anchor service;
- * gommage and épilation are universally offered. Henné corps shows
- * up on most spa menus too.
+ * gommage and épilation are universally offered.
  */
 export const SPA_SERVICES: ReadonlyArray<SalonSeedService> = [
   {
@@ -305,12 +298,6 @@ export const SPA_SERVICES: ReadonlyArray<SalonSeedService> = [
     name: { en: 'Eyebrow Shaping', fr: 'Sourcils', ar: 'تنظيف الحواجب' },
     estimatedMinutes: 15,
     controlledByExpertiseToggle: false,
-  },
-  {
-    type: 'other', code: 'HEN',
-    name: { en: 'Body Henna', fr: 'Henné Corps', ar: 'حناء الجسم' },
-    estimatedMinutes: 60,
-    controlledByExpertiseToggle: true,
   },
   {
     type: 'other', code: 'ARO',
