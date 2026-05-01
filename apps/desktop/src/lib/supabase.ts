@@ -26,6 +26,15 @@ export async function restoreSession(accessToken: string, refreshToken: string):
 }
 
 /**
+ * Refresh-skew window. Tokens within this many ms of expiry are
+ * treated as stale so callers don't hit a 401 mid-flight. Bumped
+ * from 60s → 5min so we proactively refresh well before any
+ * long-running query (Station Settings load, Business Admin
+ * reload, kiosk session bootstrap) collides with expiry.
+ */
+const TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
+
+/**
  * Ensure the Supabase client has a valid auth session (for RLS).
  *
  * Strategy:
@@ -36,25 +45,31 @@ export async function restoreSession(accessToken: string, refreshToken: string):
  *    (Electron) or the auth-token HTTP endpoint (kiosk bridge).
  *    CRITICAL: always request AND apply refresh_token so the renderer can
  *    auto-refresh on its own without depending on IPC pushes.
+ *
+ * @param force  When true, skip the cache check and always pull a fresh
+ *   token from the main process. Used by withAuthRetry() after a 401.
  */
-export async function ensureAuth(): Promise<string> {
+export async function ensureAuth(force = false): Promise<string> {
   const sb = await getSupabase();
 
   // 1. Use the current session if it is still fresh. With autoRefresh
   // disabled we MUST refuse expired tokens here, otherwise every query
-  // 401s silently. Treat anything within 60s of expiry as stale so the
-  // caller doesn't hit a 401 mid-flight.
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session?.access_token) {
-      const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-      const freshForMs = expiresAt - Date.now();
-      if (freshForMs > 60_000) {
-        return session.access_token;
+  // 401s silently. Treat anything within TOKEN_REFRESH_SKEW_MS of
+  // expiry as stale so we proactively refresh well before any
+  // long-running operation finishes.
+  if (!force) {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session?.access_token) {
+        const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+        const freshForMs = expiresAt - Date.now();
+        if (freshForMs > TOKEN_REFRESH_SKEW_MS) {
+          return session.access_token;
+        }
+        console.warn('[supabase] cached token expires in', freshForMs, 'ms — fetching fresh from main');
       }
-      console.warn('[supabase] cached token expires in', freshForMs, 'ms — fetching fresh from main');
-    }
-  } catch {}
+    } catch {}
+  }
 
   // 2. No valid session — ask main process for a fresh token
   // Retry once after a short delay — main process may still be refreshing on cold start
@@ -81,6 +96,55 @@ export async function ensureAuth(): Promise<string> {
 
   console.error('[supabase] Auth failed (QF-AUTH-001) — queries will return empty results');
   return '';
+}
+
+/**
+ * Wrap a Supabase call so an auth-shaped failure forces a fresh
+ * token fetch from main process and retries the call once.
+ *
+ * Handles both shapes:
+ *   - Thrown exceptions whose message matches AUTH_FAILURE_RE
+ *   - PostgrestResponse-like results where `.error` is set and matches
+ *
+ * Usage:
+ *   const { data, error } = await withAuthRetry(() =>
+ *     sb.from('offices').select('id').eq('organization_id', orgId)
+ *   );
+ *
+ * Why a wrapper rather than monkey-patching the supabase fetch: keeps
+ * the retry surface explicit. Callers that don't need it (one-shot
+ * checks, fire-and-forget telemetry) opt out by skipping the wrap.
+ */
+const AUTH_FAILURE_RE = /jwt|auth|expired|unauth|forbidden|invalid token|401/i;
+
+/**
+ * The generic `T` is inferred from whatever the supabase builder
+ * resolves to (a `PostgrestSingleResponse<…>` shape with `data` /
+ * `error`). We don't constrain it on the input side because the
+ * builder isn't strictly a `Promise` — it's a thenable. Awaiting
+ * the call yields the resolved shape, and we reach into `.error`
+ * with an `as any` cast for the auth-shape check.
+ */
+export async function withAuthRetry<T>(fn: () => PromiseLike<T>): Promise<T> {
+  await ensureAuth();
+  try {
+    const r = await fn();
+    const errMsg = (r as any)?.error?.message;
+    if (typeof errMsg === 'string' && AUTH_FAILURE_RE.test(errMsg)) {
+      console.warn('[supabase] auth error in response — forcing token refresh', errMsg);
+      await ensureAuth(true);
+      return await fn();
+    }
+    return r;
+  } catch (e: any) {
+    const msg = String(e?.message ?? '');
+    if (AUTH_FAILURE_RE.test(msg)) {
+      console.warn('[supabase] auth error thrown — forcing token refresh', msg);
+      await ensureAuth(true);
+      return await fn();
+    }
+    throw e;
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getSupabase, ensureAuth } from '../lib/supabase';
+import { getSupabase, ensureAuth, withAuthRetry } from '../lib/supabase';
 import { cloudFetch } from '../lib/cloud-fetch';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { TablesPanel } from './TablesPanel';
@@ -133,21 +133,27 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
       await ensureAuth();
       const sb = await getSupabase();
 
+      // Each query goes through withAuthRetry so a stale JWT triggers
+      // a single forced refresh + retry instead of silently returning
+      // empty results. Without this the panel renders 0 across all
+      // tabs when the cached token expired between sessions — the
+      // exact bug reported on 2026-05-01.
+
       // 0) Org-level business_category — drives the Tables tab visibility.
-      const orgRes = await sb
+      const orgRes = await withAuthRetry(() => sb
         .from('organizations')
         .select('settings')
         .eq('id', organizationId)
-        .single();
+        .single());
       const cat = ((orgRes.data?.settings as any)?.business_category ?? '') as string;
       setBusinessCategory(cat);
 
       // 1) Offices are directly scoped by organization_id
-      const offRes = await sb
+      const offRes = await withAuthRetry(() => sb
         .from('offices')
         .select('id, name, is_active')
         .eq('organization_id', organizationId)
-        .order('name');
+        .order('name'));
       if (offRes.error) throw offRes.error;
       const officesData = (offRes.data ?? []) as Office[];
       const officeIds = officesData.map((o) => o.id);
@@ -158,12 +164,12 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
       } else {
         // 2) Departments + Desks scoped via office_id ∈ org offices
         const [deptRes, deskRes] = await Promise.all([
-          sb.from('departments')
+          withAuthRetry(() => sb.from('departments')
             .select('id, name, code, description, office_id, is_active, sort_order')
-            .in('office_id', officeIds).order('name'),
-          sb.from('desks')
+            .in('office_id', officeIds).order('name')),
+          withAuthRetry(() => sb.from('desks')
             .select('id, name, display_name, office_id, department_id, current_staff_id, status, is_active')
-            .in('office_id', officeIds).order('name'),
+            .in('office_id', officeIds).order('name')),
         ]);
         if (deptRes.error) throw deptRes.error;
         if (deskRes.error) throw deskRes.error;
@@ -176,20 +182,20 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
         if (deptIds.length === 0) {
           setServices([]);
         } else {
-          const svcRes = await sb
+          const svcRes = await withAuthRetry(() => sb
             .from('services')
             .select('id, name, code, description, department_id, estimated_service_time, priority, is_active, sort_order')
-            .in('department_id', deptIds).order('name');
+            .in('department_id', deptIds).order('name'));
           if (svcRes.error) throw svcRes.error;
           setServices((svcRes.data ?? []) as Service[]);
         }
       }
 
       // 4) Staff is directly scoped by organization_id
-      const staffRes = await sb
+      const staffRes = await withAuthRetry(() => sb
         .from('staff')
         .select('id, full_name, email, role, office_id, department_id, is_active, availability_status, availability_until')
-        .eq('organization_id', organizationId).order('full_name');
+        .eq('organization_id', organizationId).order('full_name'));
       if (staffRes.error) throw staffRes.error;
       setStaff((staffRes.data ?? []) as StaffRow[]);
     } catch (e: any) {
