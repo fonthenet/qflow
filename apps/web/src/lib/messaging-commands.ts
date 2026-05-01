@@ -325,9 +325,9 @@ const messages: Record<string, Partial<Record<Locale, string>> & Record<'en' | '
     en: 'This ticket is no longer active.',
   },
   cannot_cancel_serving: {
-    fr: 'Votre ticket est en cours de service et ne peut pas être annulé.',
-    ar: 'تذكرتك قيد الخدمة حاليًا ولا يمكن إلغاؤها.',
-    en: 'Your ticket is currently being served and cannot be cancelled.',
+    fr: '🚫 Votre commande a déjà été acceptée et est en préparation — elle ne peut plus être annulée.\n\nPour toute demande, contactez directement le restaurant.',
+    ar: '🚫 طلبك تم قبوله وقيد التحضير — لا يمكن إلغاؤه.\n\nللاستفسار، يرجى التواصل مباشرة مع المطعم.',
+    en: '🚫 Your order was accepted and is being prepared — it can no longer be cancelled.\n\nFor anything else, please contact the restaurant directly.',
   },
   status: {
     fr: '📊 *État de la file — {name}*\n\n🎫 Ticket : *{ticket}*{service}\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\n🔗 Suivre : {url}\n\nRépondez *ANNULER* pour quitter la file.',

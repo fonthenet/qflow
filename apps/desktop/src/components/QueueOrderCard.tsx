@@ -299,6 +299,10 @@ export function QueueOrderCard({
 
   // Service type pill
   const svcType = resolveRestaurantServiceType(serviceName);
+  // Restaurant verticals (dine-in / takeout / delivery) skip the
+  // Call/Serve queue dance — kitchen preps from the moment the order is
+  // accepted. Used to hide those buttons on this card.
+  const isRestaurantFlow = svcType === 'dine_in' || svcType === 'takeout' || svcType === 'delivery';
   const showSvcPill = shouldShowServicePill(svcType);
   const svcVisuals = showSvcPill ? RESTAURANT_SERVICE_VISUALS[svcType] : null;
   const svcLabel = svcType === 'takeout' ? tl('Takeout')
@@ -942,12 +946,15 @@ export function QueueOrderCard({
             {tl('Resume')}
           </button>
         )}
-        {/* Waiting (fresh ticket): operator picks Call (announce only)
-            or Serve (skip the call, jump straight to serving). Same two
-            actions as the rail-list rows, surfaced here so brand-new
-            takeout/delivery orders are actionable from the canvas
-            without first having to find them in the queue panel. */}
-        {isWaiting && (
+        {/* Waiting / Called: operator picks Call (announce only) or
+            Serve (jump straight to serving). HIDDEN for restaurant
+            verticals — dine-in / takeout / delivery walk-ins go directly
+            to 'serving' on creation (no customer to call to a desk, the
+            kitchen just preps). Any legacy ticket still stuck in
+            waiting/called for those svcTypes shows Resume from the
+            overflow menu. Non-restaurant queues (clinic, salon, gov)
+            still need the Call/Serve dance. */}
+        {isWaiting && !isRestaurantFlow && (
           <>
             <button
               onClick={() => onCall(ticket.id)}
@@ -963,7 +970,7 @@ export function QueueOrderCard({
             </button>
           </>
         )}
-        {isCalled && (
+        {isCalled && !isRestaurantFlow && (
           <button
             onClick={() => onStartServing(ticket.id)}
             style={btnStyle('var(--success, #22c55e)', true)}

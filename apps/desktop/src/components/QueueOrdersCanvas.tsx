@@ -955,7 +955,9 @@ function ExpandedTicketModal({
               </button>
             </>
           )}
-          {isCalled && (
+          {/* Serve hidden for restaurant verticals — kitchen-prep starts
+              automatically. Other queues still need the manual Serve. */}
+          {isCalled && svcType !== 'dine_in' && svcType !== 'takeout' && svcType !== 'delivery' && (
             <button onClick={() => onStartServing(ticket.id)} style={modalBtnStyle('var(--success, #22c55e)', true)}>
               {tl('Serve')}
             </button>
