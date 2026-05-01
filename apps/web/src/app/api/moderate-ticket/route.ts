@@ -127,9 +127,24 @@ export async function POST(request: NextRequest) {
   const apptVocabModerate = _getApptVocabVarsModerate(orgCategory, locale, serviceTypeHint);
 
   if (action === 'approve') {
+    // Restaurant orders (dine-in / takeout / delivery) skip the waiting
+    // queue and go straight to 'serving' so the kitchen starts prep
+    // immediately on approval. Non-restaurant tickets (clinic, salon,
+    // gov, bank) still go to 'waiting' since they need a queue position
+    // until the operator calls the customer to a desk.
+    //
+    // Side effect: 'serving' is NOT in the customer-cancellable list
+    // (see messaging-commands.ts handleCancel), so once the operator
+    // approves a restaurant order the customer can't reverse it via WA
+    // — they get the cannot_cancel_serving message.
+    const isRestaurantOrder = serviceTypeHint === 'dine_in' || serviceTypeHint === 'takeout' || serviceTypeHint === 'delivery';
+    const nowIso = new Date().toISOString();
+    const approvedPatch: Record<string, unknown> = isRestaurantOrder
+      ? { status: 'serving', serving_started_at: nowIso, called_at: nowIso, checked_in_at: nowIso }
+      : { status: 'waiting', checked_in_at: nowIso };
     const { error: updErr } = await supabase
       .from('tickets')
-      .update({ status: 'waiting', checked_in_at: new Date().toISOString() })
+      .update(approvedPatch)
       .eq('id', ticket.id)
       .eq('status', 'pending_approval');
     if (updErr) {
@@ -137,10 +152,10 @@ export async function POST(request: NextRequest) {
     }
     await supabase.from('ticket_events').insert({
       ticket_id: ticket.id,
-      event_type: 'joined',
+      event_type: isRestaurantOrder ? 'order_accepted' : 'joined',
       from_status: 'pending_approval',
-      to_status: 'waiting',
-      metadata: { moderated: 'approved' },
+      to_status: isRestaurantOrder ? 'serving' : 'waiting',
+      metadata: { moderated: 'approved', source: 'moderate_ticket' },
     });
 
     // Notify customer through original channel. We surface delivery failure
