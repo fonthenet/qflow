@@ -360,9 +360,24 @@ export async function getAvailableSlots(
     ? new Date(new Date(startOfDay).getTime() - maxTurnMinutes * 60 * 1000).toISOString()
     : startOfDay;
 
+  // Salon-style detection — drives whether we partition slot availability
+  // per-stylist. Mirrors isSalonCategory() in @qflo/shared without
+  // pulling the import for SSR cost / cycle reasons.
+  const isSalonOrg =
+    businessCategory === 'beauty'
+    || businessCategory === 'salon'
+    || businessCategory === 'barber'
+    || businessCategory === 'barbershop'
+    || businessCategory === 'hair_salon'
+    || businessCategory === 'nail_salon'
+    || businessCategory === 'nails'
+    || businessCategory === 'spa';
+
   const existingAppointmentsQuery = supabase
     .from('appointments')
-    .select(isRestaurantOrg ? 'scheduled_at, party_size' : 'scheduled_at')
+    // Always pull staff_id for salon orgs so the per-stylist
+    // partitioning below works. Non-salon flows ignore the column.
+    .select(isRestaurantOrg ? 'scheduled_at, party_size' : 'scheduled_at, staff_id')
     .eq('office_id', officeId)
     // Only cancelled/no_show/declined free up a slot — completed appointments
     // still occupy the time slot (the patient was seen at that time).
@@ -372,7 +387,56 @@ export async function getAvailableSlots(
   if (!isRestaurantOrg) {
     existingAppointmentsQuery.eq('service_id', serviceId);
   }
+  // When the caller asks for a SPECIFIC stylist's calendar, narrow the
+  // appointment fetch to that stylist's bookings only. A slot booked
+  // with Marie has zero effect on Karim's availability — that's the
+  // whole point of the multi-stylist model.
+  if (staffId && !isRestaurantOrg) {
+    existingAppointmentsQuery.eq('staff_id', staffId);
+  }
   const { data: existingAppointments } = await existingAppointmentsQuery;
+
+  // ── Salon: count of qualified stylists for this service ──
+  // When no specific stylist was picked AND we're a salon-style org,
+  // capacity per slot = number of stylists who can do this service
+  // and haven't been booked at that time. We pull the qualified set
+  // once and use it below to override slotsPerInterval per slot.
+  let qualifiedStylistIds: string[] = [];
+  if (isSalonOrg && !staffId && !isRestaurantOrg) {
+    // 1. Active staff at this office (potential stylists)
+    const { data: allStaff } = await supabase
+      .from('staff')
+      .select('id, availability_status, availability_until')
+      .eq('office_id', officeId)
+      .eq('is_active', true);
+    const onFloor = (allStaff ?? []).filter((s: any) => {
+      // Honour soft-expiry: a break that's past due treats the
+      // stylist as available again automatically.
+      if (s.availability_status === 'available') return true;
+      if (s.availability_until) {
+        const t = Date.parse(s.availability_until);
+        if (Number.isFinite(t) && t < Date.now()) return true;
+      }
+      return false;
+    }).map((s: any) => s.id) as string[];
+
+    if (onFloor.length > 0) {
+      // 2. Filter by staff_services matrix. Empty-set fallback —
+      //    a stylist with NO rows can do every service.
+      const { data: matrix } = await supabase
+        .from('staff_services')
+        .select('staff_id, service_id, is_active')
+        .in('staff_id', onFloor);
+      const allRows = (matrix ?? []).filter((r: any) => r.is_active !== false);
+      const specialised = new Set<string>(allRows.map((r: any) => r.staff_id));
+      const canDoThis = new Set<string>(
+        allRows
+          .filter((r: any) => r.service_id === serviceId)
+          .map((r: any) => r.staff_id),
+      );
+      qualifiedStylistIds = onFloor.filter((id) => !specialised.has(id) || canDoThis.has(id));
+    }
+  }
 
   // Count bookings per slot (using office timezone, not server UTC).
   // Guard against malformed rows (missing/invalid scheduled_at) so one
@@ -383,6 +447,13 @@ export async function getAvailableSlots(
   // For restaurant orgs: keep the full list with timestamps and party sizes
   // so we can compute cover overlap per candidate slot below.
   const restaurantReservations: { startMs: number; endMs: number; covers: number }[] = [];
+  // Per-stylist taken-slot index. For salon-style orgs without a
+  // specific staffId, capacity at each slot is the COUNT of qualified
+  // stylists who don't have that slot taken — Marie's 3pm doesn't
+  // block Karim's 3pm. Built unconditionally; only used for the
+  // salon "any available" path below.
+  const slotsTakenByStylist: Map<string, Set<string>> = new Map();
+
   for (const a of existingAppointments ?? []) {
     if (!a?.scheduled_at) continue;
     const d = new Date(a.scheduled_at);
@@ -400,6 +471,12 @@ export async function getAvailableSlots(
       const t = timeInTz(d, orgTimezone);
       slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
       totalDayBookings++;
+      const sid = (a as any).staff_id as string | null;
+      if (sid) {
+        const taken = slotsTakenByStylist.get(sid) ?? new Set<string>();
+        taken.add(t);
+        slotsTakenByStylist.set(sid, taken);
+      }
     }
   }
 
@@ -440,8 +517,17 @@ export async function getAvailableSlots(
     }
 
     // Check capacity.
-    // Restaurants use the cover-cap / turn-time model; others use the
-    // legacy per-slot booking count against slots_per_interval.
+    // Restaurants use the cover-cap / turn-time model.
+    // Salons (no specific stylist picked) use the qualified-stylist
+    // model: capacity = count of stylists who can do this service
+    // and are on the floor; booked = count whose slot is already
+    // taken. A 5-stylist shop has 5 parallel calendars, so 3pm is
+    // available to up to 5 customers simultaneously (each picks a
+    // different stylist) until all 5 are booked at that hour.
+    // Salon + specific stylist: that stylist's calendar only —
+    // capacity 1, booked 0 or 1 based on whether they have an
+    // appointment at this time.
+    // Everything else: legacy per-slot count against slots_per_interval.
     let booked: number;
     let capacity: number;
     if (isRestaurantOrg) {
@@ -453,6 +539,20 @@ export async function getAvailableSlots(
       }
       booked = covers;
       capacity = coversPerInterval;
+    } else if (isSalonOrg && staffId) {
+      // Specific-stylist booking: existingAppointments was already
+      // filtered by staffId — slot is taken iff there's a row for it.
+      booked = slotBookingCounts.get(slot) ?? 0;
+      capacity = 1;
+    } else if (isSalonOrg && qualifiedStylistIds.length > 0) {
+      // "Any available" — count free stylists at this slot.
+      let freeCount = 0;
+      for (const sid of qualifiedStylistIds) {
+        const taken = slotsTakenByStylist.get(sid);
+        if (!taken || !taken.has(slot)) freeCount++;
+      }
+      capacity = qualifiedStylistIds.length;
+      booked = capacity - freeCount;
     } else {
       booked = slotBookingCounts.get(slot) ?? 0;
       capacity = slotsPerInterval;
