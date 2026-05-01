@@ -35,9 +35,11 @@ import {
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import {
   postArrived,
   postDelivered,
+  postRegisterPush,
 } from '@/lib/rider-api';
 import {
   startRiderLocationStream,
@@ -149,6 +151,40 @@ export default function RiderScreen() {
       //   2. the rider taps DELIVERED (handler stops it explicitly)
       //   3. they manually toggle the GPS pill off (future feature)
     };
+  }, [ticketId, token, ticket?.delivered_at]);
+
+  // ── Register the device's push token so the assignment / unassign /
+  //    cancel notifier can hit this rider instantly even when the app
+  //    is closed and the phone is locked. Token is scoped to the
+  //    ticket; cleared server-side when the run completes.
+  useEffect(() => {
+    if (!ticketId || !token) return;
+    if (ticket?.delivered_at) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const existing = await Notifications.getPermissionsAsync();
+        let granted = existing.status === 'granted';
+        if (!granted) {
+          const req = await Notifications.requestPermissionsAsync({
+            ios: { allowAlert: true, allowBadge: false, allowSound: true },
+          });
+          granted = req.status === 'granted';
+        }
+        if (!granted || cancelled) return;
+        const dev = await Notifications.getDevicePushTokenAsync();
+        if (cancelled || !dev?.data) return;
+        await postRegisterPush({
+          ticketId,
+          token,
+          deviceToken: String(dev.data),
+          platform: Platform.OS === 'ios' ? 'ios' : 'android',
+        });
+      } catch (e: any) {
+        console.warn('[rider] push register failed', e?.message);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [ticketId, token, ticket?.delivered_at]);
 
   // ── Periodic re-check of stream status (in case the OS killed it) ──

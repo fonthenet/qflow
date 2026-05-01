@@ -72,6 +72,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Ticket not found' }, { status: 404 });
   }
   if (tk.delivered_at || tk.status === 'served' || tk.status === 'cancelled') {
+    // Run is over — drop the rider push token defensively in case the
+    // terminal-transition path didn't (e.g. the ticket was cancelled
+    // through a path that bypasses lifecycle.onTicketTerminal).
+    void import('@/lib/rider-push').then(({ clearRiderPushToken }) =>
+      clearRiderPushToken(ticketId),
+    ).catch(() => {});
     return NextResponse.json({ ok: true, stopped: true });
   }
 

@@ -137,6 +137,14 @@ export function hasAndroidPushCredentials(): boolean {
   return getGoogleServiceAccountConfig() !== null;
 }
 
+export async function getGoogleFcmAccessToken(): Promise<string> {
+  return getGoogleAccessToken();
+}
+
+export function getFcmProjectId(): string | null {
+  return getGoogleServiceAccountConfig()?.projectId ?? null;
+}
+
 async function getGoogleAccessToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   if (cachedAccessToken && cachedAccessToken.expiresAt > now + 300) {

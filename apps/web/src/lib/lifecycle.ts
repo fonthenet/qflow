@@ -488,9 +488,26 @@ export async function onTicketTerminal(
 
     const { data: ticket } = await sb
       .from('tickets')
-      .select('appointment_id, notes')
+      .select('appointment_id, notes, ticket_number, assigned_rider_id, rider_push_token')
       .eq('id', ticketId)
       .single();
+
+    // If a rider is mid-run on this ticket, push them so the cancel
+    // shows on a locked phone instantly. WhatsApp message they sent
+    // earlier is the durable backup; this is the latency win.
+    if (ticket?.rider_push_token && terminalStatus === 'cancelled' && ticket.assigned_rider_id) {
+      void import('@/lib/rider-push').then(({ sendRiderPush, clearRiderPushToken }) =>
+        sendRiderPush(ticketId, {
+          title: 'Order cancelled',
+          body: `Order ${ticket.ticket_number ?? ''} has been cancelled. Stop the run.`,
+        }).finally(() => clearRiderPushToken(ticketId)),
+      ).catch(() => {});
+    } else if (ticket?.rider_push_token && (terminalStatus === 'served' || terminalStatus === 'no_show')) {
+      // Run finished — drop the token so we don't push a stale device.
+      void import('@/lib/rider-push').then(({ clearRiderPushToken }) =>
+        clearRiderPushToken(ticketId),
+      ).catch(() => {});
+    }
 
     const appointmentStatus =
       terminalStatus === 'served' ? 'completed' :

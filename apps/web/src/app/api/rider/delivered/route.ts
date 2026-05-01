@@ -76,6 +76,12 @@ export async function POST(request: NextRequest) {
     metadata: { delivered_at: nowIso, dispatched_at: ticket.dispatched_at ?? null, source: 'rider_portal' },
   }).then(() => {}, () => {});
 
+  // Run finished — drop the rider's push token so subsequent state
+  // changes don't ping a now-irrelevant device.
+  void import('@/lib/rider-push').then(({ clearRiderPushToken }) =>
+    clearRiderPushToken(ticketId),
+  ).catch(() => {});
+
   // Customer notification status — flipped to true when the WA
   // delivery confirmation is accepted by Meta. Flowed back to the
   // rider portal so the driver sees explicit success/failure.

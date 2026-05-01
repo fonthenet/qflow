@@ -69,3 +69,12 @@ export async function postDelivered(
 ): Promise<{ ok: boolean; delivered_at?: string; noop?: boolean; error?: string }> {
   return postJson('/api/rider/delivered', { ticketId, token });
 }
+
+export async function postRegisterPush(input: {
+  ticketId: string;
+  token: string;
+  deviceToken: string;
+  platform: 'ios' | 'android';
+}): Promise<{ ok: boolean; error?: string }> {
+  return postJson('/api/rider/register-push', input);
+}

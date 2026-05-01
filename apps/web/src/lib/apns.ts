@@ -269,6 +269,27 @@ async function sendAPNsRequest(
   });
 }
 
+export async function sendApnsAlertToToken(params: {
+  deviceToken: string;
+  title: string;
+  body: string;
+  url?: string;
+  bundleId?: string;
+  environment?: 'production' | 'sandbox';
+}): Promise<{ success: boolean; status?: number; reason?: string }> {
+  if (!hasAPNsCredentials()) return { success: false, reason: 'no_credentials' };
+  const target: APNsTarget = {
+    kind: 'alert',
+    environment: params.environment ?? 'production',
+    bundleId: params.bundleId?.trim() || DEFAULT_APNS_BUNDLE_ID,
+  };
+  return sendAlertNotification(
+    params.deviceToken,
+    { title: params.title, body: params.body, url: params.url },
+    target,
+  );
+}
+
 async function sendAlertNotification(
   deviceToken: string,
   payload: APNsPayload,

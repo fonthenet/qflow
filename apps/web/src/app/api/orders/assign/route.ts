@@ -127,6 +127,16 @@ export async function POST(request: NextRequest) {
       }).catch(() => {});
     }
 
+    // Native push to the rider's app (if they had it open). Lights up
+    // even on a locked phone via the high-priority alerts channel — the
+    // WA ping above is the durable fallback.
+    void import('@/lib/rider-push').then(({ sendRiderPush, clearRiderPushToken }) =>
+      sendRiderPush(ticket.id, {
+        title: 'Order unassigned',
+        body: `Order ${ticket.ticket_number} is no longer yours.`,
+      }).finally(() => clearRiderPushToken(ticket.id)),
+    ).catch(() => {});
+
     return NextResponse.json({ ok: true, ticket_id: ticket.id, unassigned: true });
   }
 
