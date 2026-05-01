@@ -87,6 +87,9 @@ function roleLabel(role: string, t: (k: string) => string): string {
     desk_operator: t('Desk Operator'),
     analyst: t('Analyst'),
     agent: t('Agent'),
+    stylist: t('Stylist'),
+    barber: t('Barber'),
+    therapist: t('Therapist'),
   };
   return map[role] ?? role;
 }
@@ -887,7 +890,9 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                         gap: 12, marginBottom: 10,
                       }}>
                         <div style={{ fontSize: 12, color: 'var(--text3, #64748b)' }}>
-                          {t('Add, edit, or deactivate team members. New members get a login created automatically.')}
+                          {isSalonOrgCategory
+                            ? t('Add stylists, receptionists, and admins here. Each new person gets a login automatically — and stylists show up in the booking + kiosk pickers.')
+                            : t('Add, edit, or deactivate team members. New members get a login created automatically.')}
                         </div>
                         {isAllowed && (
                           <button
@@ -1242,9 +1247,17 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
               <div>
                 <label style={labelStyle}>{t('Role')}</label>
                 <select value={staffForm.role ?? ''} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })} style={inputStyle as any}>
-                  {['admin', 'manager', 'branch_admin', 'receptionist', 'desk_operator', 'floor_manager', 'analyst', 'agent'].map(r => (
-                    <option key={r} value={r}>{roleLabel(r, t)}</option>
-                  ))}
+                  {(() => {
+                    // Surface category-specific roles first so the operator
+                    // sees "Stylist" / "Barber" at the top when they're
+                    // setting up a salon. Generic admin/desk roles always
+                    // remain available below.
+                    const salonExtras = isSalonOrgCategory ? ['stylist', 'barber', 'therapist'] : [];
+                    const baseRoles = ['admin', 'manager', 'branch_admin', 'receptionist', 'desk_operator', 'floor_manager', 'analyst', 'agent'];
+                    return [...salonExtras, ...baseRoles].map(r => (
+                      <option key={r} value={r}>{roleLabel(r, t)}</option>
+                    ));
+                  })()}
                 </select>
               </div>
             </div>
