@@ -64,11 +64,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   const supabase = createAdminClient() as any;
+  // Order: active first, then by recency (most-recently-seen riders are
+  // likely on shift right now — they bubble to the top of the operator's
+  // dropdown), then by name as a tiebreaker for never-seen riders.
+  // last_seen_at is updated whenever the rider sends any WA message
+  // (CHECK / ACCEPT / DONE / etc) — see whatsapp-rider-commands.ts.
   const { data, error } = await supabase
     .from('riders')
     .select('id, name, phone, is_active, last_seen_at, created_at')
     .eq('organization_id', orgId)
     .order('is_active', { ascending: false })
+    .order('last_seen_at', { ascending: false, nullsFirst: false })
     .order('name', { ascending: true });
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

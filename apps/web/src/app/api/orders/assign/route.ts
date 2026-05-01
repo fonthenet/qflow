@@ -131,8 +131,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Resolve the rider, scope-check against the ticket's org.
+  // Pull lat/lng too so we can compute the kitchen→drop-off distance/ETA
+  // for the rider WA ping (degrades gracefully when either side is null).
   const { data: officeRow } = await supabase
-    .from('offices').select('organization_id, name, timezone').eq('id', ticket.office_id).maybeSingle();
+    .from('offices')
+    .select('organization_id, name, timezone, latitude, longitude')
+    .eq('id', ticket.office_id)
+    .maybeSingle();
   const orgId = officeRow?.organization_id ?? null;
   if (!orgId) {
     return NextResponse.json({ ok: false, error: 'Office not found' }, { status: 404 });
@@ -196,13 +201,59 @@ export async function POST(request: NextRequest) {
   const note = (ticket.notes ?? '').trim();
   const orgName = officeRow.name ?? '';
 
+  // Distance + ETA — kitchen → drop-off via haversine (no external API).
+  // Helpful even when ETA is rough; lets the rider gauge the run before
+  // accepting. Returns null when either coordinate is missing — we just
+  // skip the line in that case.
+  const { computeDeliveryMetrics, formatDeliveryMetricsLine } = await import('@qflo/shared');
+  const metrics = computeDeliveryMetrics(
+    { latitude: officeRow.latitude ?? null, longitude: officeRow.longitude ?? null },
+    { lat: typeof da?.lat === 'number' ? da.lat : null, lng: typeof da?.lng === 'number' ? da.lng : null },
+  );
+  // Rider-side templates currently use FR by default (we don't store
+  // rider locale yet — drivers are local hires speaking Darija/FR).
+  // When rider locale lands, swap this for rider.locale.
+  const riderLocale: 'en' | 'fr' | 'ar' = 'fr';
+  const distanceLine = metrics ? formatDeliveryMetricsLine(metrics, riderLocale) : '';
+
+  // Batching detection — does this rider already have other in-flight
+  // orders? "In-flight" = serving + assigned but not yet delivered. If
+  // so, surface them in the WA so the rider sees this is a 2-stop run
+  // (or 3, etc.) and can plan the route.
+  const { data: otherInFlight } = await supabase
+    .from('tickets')
+    .select('id, ticket_number, delivery_address, dispatched_at')
+    .eq('assigned_rider_id', rider.id)
+    .eq('status', 'serving')
+    .is('delivered_at', null)
+    .neq('id', ticket.id)
+    .order('dispatched_at', { ascending: true, nullsFirst: false });
+
+  const batchedCount = (otherInFlight ?? []).length;
+  const batchHeader = batchedCount > 0
+    ? `🔗 *Batched run* — you now have ${batchedCount + 1} active deliveries`
+    : '';
+  const batchList = batchedCount > 0
+    ? (otherInFlight ?? []).map((o: any) => {
+        const oda = (o.delivery_address ?? {}) as any;
+        const ostr = typeof oda?.street === 'string' ? oda.street : '';
+        const stage = o.dispatched_at ? '🛵' : '⏳';
+        return `   ${stage} *${o.ticket_number}*${ostr ? ` — ${ostr}` : ''}`;
+      }).join('\n')
+    : '';
+
   const lines: string[] = [
-    `🛵 New delivery for *${orgName}*`,
+    batchHeader || `🛵 New delivery for *${orgName}*`,
+    batchedCount > 0 ? `Latest from *${orgName}*:` : '',
     '',
     `🎫 *${ticket.ticket_number}*`,
     customerName ? `👤 ${customerName}` : '',
     street ? `📍 ${street}` : '',
+    distanceLine,
     note ? `📝 _${note}_` : '',
+    batchedCount > 0 ? '' : '',
+    batchedCount > 0 ? '*Other active orders:*' : '',
+    batchList,
     '',
     `Reply *ACCEPT* to start, *CHECK* to see all your orders.`,
   ].filter(Boolean);
