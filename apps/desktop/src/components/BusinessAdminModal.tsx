@@ -450,24 +450,66 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
   }
 
   // ── Team (staff) ────────────────────────────────────────────────
+  // Both add + edit live on the same staffForm. When `id` is present
+  // we PATCH /api/admin/staff/:id; when absent we POST /api/create-staff
+  // (server creates the auth user + staff row in one shot, same path
+  // the legacy Team Access modal uses).
   const [staffForm, setStaffForm] = useState<Partial<StaffRow> | null>(null);
   const [staffSaving, setStaffSaving] = useState(false);
+  // Add-only fields — collected when staffForm.id is undefined.
+  const [staffNewEmail, setStaffNewEmail] = useState('');
+  const [staffNewPassword, setStaffNewPassword] = useState('');
 
   async function saveStaff(e: React.FormEvent) {
     e.preventDefault();
-    if (!staffForm || !staffForm.id || staffSaving) return;
+    if (!staffForm || staffSaving) return;
     setStaffSaving(true);
     setError(null);
     try {
-      const payload = {
-        full_name: staffForm.full_name,
-        role: staffForm.role,
-        office_id: staffForm.office_id ?? null,
-        department_id: staffForm.department_id ?? null,
-        is_active: staffForm.is_active !== false,
-      };
-      await api('PATCH', `/api/admin/staff/${staffForm.id}`, payload);
-      await flash(t('Team member updated.'));
+      if (staffForm.id) {
+        // Edit path — PATCH same endpoint we used before.
+        const payload = {
+          full_name: staffForm.full_name,
+          role: staffForm.role,
+          office_id: staffForm.office_id ?? null,
+          department_id: staffForm.department_id ?? null,
+          is_active: staffForm.is_active !== false,
+        };
+        await api('PATCH', `/api/admin/staff/${staffForm.id}`, payload);
+        await flash(t('Team member updated.'));
+      } else {
+        // Add path — server creates auth user + staff row.
+        const fullName = (staffForm.full_name ?? '').trim();
+        const email = staffNewEmail.trim();
+        if (!fullName) throw new Error(t('Full name is required'));
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          throw new Error(t('Please enter a valid email address.'));
+        }
+        if (!staffNewPassword || staffNewPassword.length < 6) {
+          throw new Error(t('Password is required and must be at least 6 characters'));
+        }
+        const res = await cloudFetch(`${CLOUD_URL}/api/create-staff`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            password: staffNewPassword,
+            full_name: fullName,
+            role: staffForm.role ?? 'desk_operator',
+            organization_id: organizationId,
+            office_id: staffForm.office_id ?? undefined,
+            department_id: staffForm.department_id ?? undefined,
+            caller_user_id: callerUserId,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({} as any));
+          throw new Error(body?.error || `Request failed (${res.status})`);
+        }
+        await flash(t('Team member added.'));
+        setStaffNewEmail('');
+        setStaffNewPassword('');
+      }
       setStaffForm(null);
       await reload();
     } catch (e: any) {
@@ -747,8 +789,31 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                   {/* ── Team ──────────────────────────────── */}
                   {tab === 'team' && (
                     <>
-                      <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--text3, #64748b)' }}>
-                        {t('Adding new team members stays in the Team Access panel. Here you can edit roles, locations, and deactivate.')}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, marginBottom: 10,
+                      }}>
+                        <div style={{ fontSize: 12, color: 'var(--text3, #64748b)' }}>
+                          {t('Add, edit, or deactivate team members. New members get a login created automatically.')}
+                        </div>
+                        {isAllowed && (
+                          <button
+                            style={btnPrimary}
+                            onClick={() => {
+                              setStaffNewEmail('');
+                              setStaffNewPassword('');
+                              setStaffForm({
+                                full_name: '',
+                                role: 'desk_operator',
+                                office_id: resolveDefaultOfficeId(offices) ?? null,
+                                department_id: null,
+                                is_active: true,
+                              });
+                            }}
+                          >
+                            + {t('New team member')}
+                          </button>
+                        )}
                       </div>
                       <div style={{ border: '1px solid var(--border, #475569)', borderRadius: 10, overflow: 'hidden' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1031,7 +1096,9 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
             width: 520, maxWidth: '96vw', border: '1px solid var(--border, #475569)',
             padding: 22, display: 'flex', flexDirection: 'column', gap: 12,
           }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{t('Edit team member')}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+              {staffForm.id ? t('Edit team member') : t('Add team member')}
+            </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
               <div>
                 <label style={labelStyle}>{t('Full name')}</label>
@@ -1046,6 +1113,38 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                 </select>
               </div>
             </div>
+            {/* Email + password — only collected when creating. After
+                creation the member can change them via /auth/update-
+                password from the email reset link they get. */}
+            {!staffForm.id && (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>{t('Email')}</label>
+                  <input
+                    type="email"
+                    required
+                    autoComplete="off"
+                    value={staffNewEmail}
+                    onChange={e => setStaffNewEmail(e.target.value)}
+                    placeholder="name@business.com"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t('Password')}</label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    value={staffNewPassword}
+                    onChange={e => setStaffNewPassword(e.target.value)}
+                    placeholder={t('Min 6 chars')}
+                    minLength={6}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label style={labelStyle}>{t('Location')}</label>
@@ -1062,10 +1161,12 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                 </select>
               </div>
             </div>
-            <label style={{ display: 'inline-flex', gap: 8, fontSize: 13 }}>
-              <input type="checkbox" checked={staffForm.is_active !== false} onChange={e => setStaffForm({ ...staffForm, is_active: e.target.checked })} />
-              {t('Can sign in')}
-            </label>
+            {staffForm.id && (
+              <label style={{ display: 'inline-flex', gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={staffForm.is_active !== false} onChange={e => setStaffForm({ ...staffForm, is_active: e.target.checked })} />
+                {t('Can sign in')}
+              </label>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={btnGhost} onClick={() => setStaffForm(null)} disabled={staffSaving}>{t('Cancel')}</button>
               <button type="submit" style={{ ...btnPrimary, opacity: staffSaving ? 0.6 : 1 }} disabled={staffSaving}>
