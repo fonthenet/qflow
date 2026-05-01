@@ -157,6 +157,23 @@ interface OrgContext {
   settings: Record<string, any>;
 }
 
+/**
+ * Build the "📞 +213..." line appended to messages that tell the customer
+ * to contact the restaurant directly. Reads org.settings.business_phone
+ * (set during onboarding) with whatsapp_business_phone as a fallback.
+ * Returns an empty string when no phone is configured — callers
+ * concatenate it directly so the message stays clean either way.
+ */
+function buildContactLine(orgSettings: Record<string, any> | null | undefined): string {
+  const phone = (orgSettings?.business_phone as string | undefined)
+    || (orgSettings?.whatsapp_business_phone as string | undefined)
+    || null;
+  if (!phone) return '';
+  const trimmed = String(phone).trim();
+  if (!trimmed) return '';
+  return `\n📞 ${trimmed}`;
+}
+
 /** Locales implemented for WhatsApp/Messenger channels. LINE/KakaoTalk/Zalo (ja/ko/vi) use their own handlers. */
 /**
  * Supported locales for customer-facing messaging.
@@ -325,9 +342,9 @@ const messages: Record<string, Partial<Record<Locale, string>> & Record<'en' | '
     en: 'This ticket is no longer active.',
   },
   cannot_cancel_serving: {
-    fr: '🚫 Votre commande a déjà été acceptée et est en préparation — elle ne peut plus être annulée.\n\nPour toute demande, contactez directement le restaurant.',
-    ar: '🚫 طلبك تم قبوله وقيد التحضير — لا يمكن إلغاؤه.\n\nللاستفسار، يرجى التواصل مباشرة مع المطعم.',
-    en: '🚫 Your order was accepted and is being prepared — it can no longer be cancelled.\n\nFor anything else, please contact the restaurant directly.',
+    fr: '🚫 Votre commande a déjà été acceptée et est en préparation — elle ne peut plus être annulée.\n\nPour toute demande, contactez directement le restaurant.{contact_line}',
+    ar: '🚫 طلبك تم قبوله وقيد التحضير — لا يمكن إلغاؤه.\n\nللاستفسار، يرجى التواصل مباشرة مع المطعم.{contact_line}',
+    en: '🚫 Your order was accepted and is being prepared — it can no longer be cancelled.\n\nFor anything else, please contact the restaurant directly.{contact_line}',
   },
   status: {
     fr: '📊 *État de la file — {name}*\n\n🎫 Ticket : *{ticket}*{service}\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\n🔗 Suivre : {url}\n\nRépondez *ANNULER* pour quitter la file.',
@@ -4064,7 +4081,7 @@ async function handleCancel(
     const fallbackCancelled = await cancelPendingTicketByPhone(identifier, locale, channel, sendMessage, supabase);
     if (fallbackCancelled) return;
     if (ticketRow.status === 'serving') {
-      await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+      await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale, { contact_line: buildContactLine(org.settings) }) });
     } else {
       await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
     }
@@ -4094,7 +4111,7 @@ async function handleCancel(
       .eq('id', session.id);
     // Fallback: try cancelling a different ticket by phone
     const fb1 = await cancelPendingTicketByPhone(identifier, locale, channel, sendMessage, supabase);
-    if (!fb1) await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    if (!fb1) await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale, { contact_line: buildContactLine(org.settings) }) });
     return;
   }
 
@@ -4118,7 +4135,7 @@ async function handleCancel(
       .eq('id', session.id);
     // Fallback: try cancelling a different ticket by phone
     const fb2 = await cancelPendingTicketByPhone(identifier, locale, channel, sendMessage, supabase);
-    if (!fb2) await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    if (!fb2) await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale, { contact_line: buildContactLine(org.settings) }) });
     return;
   }
 
