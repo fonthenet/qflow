@@ -474,10 +474,18 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
   // for salon-style verticals — restaurants and clinics don't model
   // services per staff member.
   const [staffServiceIds, setStaffServiceIds] = useState<string[]>([]);
+  // "Salon-style" detection. business_category is the canonical signal,
+  // but many orgs were created before that field existed (or onboarding
+  // skipped the category step). Fall through to detecting whether any
+  // existing staff member already carries a salon-style role — if Marie
+  // is tagged Stylist, this org IS a salon for the purposes of the
+  // matrix UI / on-floor pill regardless of what settings says.
+  const SALON_ROLES = new Set(['stylist', 'barber', 'therapist']);
   const isSalonOrgCategory = businessCategory === 'beauty'
     || businessCategory === 'salon'
     || businessCategory === 'barbershop'
-    || businessCategory === 'spa';
+    || businessCategory === 'spa'
+    || staff.some((m) => SALON_ROLES.has((m.role ?? '').toLowerCase()));
 
   // Reset & hydrate the matrix whenever the form opens for a different
   // staff row. New staff (no id) start with empty selection; edits
@@ -1248,13 +1256,19 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                 <label style={labelStyle}>{t('Role')}</label>
                 <select value={staffForm.role ?? ''} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })} style={inputStyle as any}>
                   {(() => {
-                    // Surface category-specific roles first so the operator
-                    // sees "Stylist" / "Barber" at the top when they're
-                    // setting up a salon. Generic admin/desk roles always
-                    // remain available below.
-                    const salonExtras = isSalonOrgCategory ? ['stylist', 'barber', 'therapist'] : [];
-                    const baseRoles = ['admin', 'manager', 'branch_admin', 'receptionist', 'desk_operator', 'floor_manager', 'analyst', 'agent'];
-                    return [...salonExtras, ...baseRoles].map(r => (
+                    // Always-available roles. Stylist / Barber / Therapist
+                    // are kept first so they show up regardless of the
+                    // org's stored category — many existing orgs were
+                    // created before business_category was set, and a
+                    // salon owner shouldn't have to fix their settings
+                    // before they can pick "Stylist" for a teammate.
+                    const allRoles = [
+                      'stylist', 'barber', 'therapist',
+                      'admin', 'manager', 'branch_admin',
+                      'receptionist', 'desk_operator',
+                      'floor_manager', 'analyst', 'agent',
+                    ];
+                    return allRoles.map(r => (
                       <option key={r} value={r}>{roleLabel(r, t)}</option>
                     ));
                   })()}

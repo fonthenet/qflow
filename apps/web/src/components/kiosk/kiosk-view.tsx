@@ -125,8 +125,15 @@ export function KioskView({
   const [stylists, setStylists] = useState<Array<{ id: string; full_name: string }>>([]);
   const [selectedStylistId, setSelectedStylistId] = useState<string | null>(null);
   const [loadingStylists, setLoadingStylists] = useState(false);
+  // "Salon-style" detection. business_category is the canonical signal;
+  // settings.salon_chairs_enabled (stamped by the salon onboarding
+  // template) is a redundant signal we honour for orgs that picked
+  // the template but didn't set business_category. Either being true
+  // is enough to show the "Choose your stylist" step.
   const orgCategoryRaw = String(organization?.settings?.business_category ?? '').toLowerCase();
-  const isSalonKiosk = orgCategoryRaw === 'beauty'
+  const salonStampedOn = Boolean(organization?.settings?.salon_stylist_choice_enabled);
+  const isSalonKiosk = salonStampedOn
+    || orgCategoryRaw === 'beauty'
     || orgCategoryRaw === 'salon'
     || orgCategoryRaw === 'barbershop'
     || orgCategoryRaw === 'spa';

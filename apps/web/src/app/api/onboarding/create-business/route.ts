@@ -482,10 +482,26 @@ export async function POST(request: NextRequest) {
       locale_primary: locale,
     };
     if (category) orgUpdate.vertical = category.vertical;
-    await supabase
+    // Surfaced errors only — previously the failure was swallowed which
+    // produced "fax"-style orgs: auth + RPC succeeded, office/dept/service
+    // got seeded, but business_category + channelDefaults never landed
+    // because the update silently bailed. The customer got a happy
+    // signup but a half-configured business.
+    const { error: orgUpdateErr } = await supabase
       .from('organizations')
       .update(orgUpdate as any)
       .eq('id', organizationId);
+    if (orgUpdateErr) {
+      console.error('[onboarding] org settings merge failed', {
+        organizationId,
+        error: orgUpdateErr.message,
+        stamped_keys: Object.keys(channelDefaults),
+      });
+      // Don't 500 — the org/office/staff are usable, the operator can
+      // fix settings later via Business Admin. But surface in logs so
+      // we catch it instead of debugging by examining "why is my org
+      // half-configured?".
+    }
 
     // Pull the staff row even in shell mode so the client gets a proper
     // role back (the RPC created this row). In full-seed mode we already

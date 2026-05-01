@@ -43,12 +43,16 @@ export interface CategoryDefinition {
   emoji: string;
   label: LocalizedText;
   /** The vocabulary the customer sees on their side (e.g. 'Appointment' vs 'Ticket'). */
+  // Must match a slug present in public.verticals — the FK on
+  // organizations.vertical enforces that. Don't drift from the DB
+  // without adding the new slug there too (see migration
+  // 20260501170000_align_verticals_with_categories_spec.sql).
   vertical:
     | 'clinic'
     | 'bank'
-    | 'public_service'
+    | 'public-service'
     | 'restaurant'
-    | 'barbershop'
+    | 'barber'
     | 'education'
     | 'telecom'
     | 'insurance'
@@ -115,7 +119,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     value: 'government',
     emoji: '🏛️',
     label: { en: 'Government', fr: 'Gouvernement', ar: 'الإدارات الحكومية' },
-    vertical: 'public_service',
+    vertical: 'public-service',
     defaultOfficeName: { en: 'Main Office', fr: 'Bureau Principal', ar: 'المكتب الرئيسي' },
     defaultDepartment: {
       name: { en: 'Civil Status', fr: 'État Civil', ar: 'الحالة المدنية' },
@@ -132,7 +136,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     value: 'services',
     emoji: '🏢',
     label: { en: 'Public Services', fr: 'Services Publics', ar: 'الخدمات العمومية' },
-    vertical: 'public_service',
+    vertical: 'public-service',
     defaultOfficeName: { en: 'Main Office', fr: 'Bureau Principal', ar: 'المكتب الرئيسي' },
     defaultDepartment: {
       name: { en: 'Reception', fr: 'Accueil', ar: 'الاستقبال' },
@@ -183,7 +187,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     value: 'beauty',
     emoji: '✂️',
     label: { en: 'Beauty & Spa', fr: 'Beauté & Spa', ar: 'التجميل والعناية' },
-    vertical: 'barbershop',
+    vertical: 'barber',
     defaultOfficeName: { en: 'Main Salon', fr: 'Salon Principal', ar: 'الصالون الرئيسي' },
     defaultDepartment: {
       name: { en: 'Services', fr: 'Prestations', ar: 'الخدمات' },
@@ -357,9 +361,9 @@ export function getCategoryTemplateId(category: CategoryDefinition): string {
   switch (category.vertical) {
     case 'clinic': return 'clinic';
     case 'bank': return 'bank-branch';
-    case 'public_service': return 'public-service';
+    case 'public-service': return 'public-service';
     case 'restaurant': return 'restaurant-waitlist';
-    case 'barbershop': return 'barbershop';
+    case 'barber': return 'barbershop';
     case 'education': return 'education';
     case 'telecom': return 'telecom';
     case 'insurance': return 'insurance';

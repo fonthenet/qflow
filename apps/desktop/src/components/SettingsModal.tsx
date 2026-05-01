@@ -648,6 +648,18 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             label: `${c.emoji} ${resolveLocalized(c.label, (locale === 'ar' ? 'ar' : locale === 'en' ? 'en' : 'fr') as CategoryLocale)}`,
           })),
         },
+        // Country + city — captured at signup but not previously
+        // surfaced in this Business info form. Showing them here so
+        // operators can correct or edit post-signup; the values feed
+        // currency rendering, country-gated payment rails, and the
+        // public directory.
+        { key: 'business_country', label: t('Country'), type: 'enum', default: '', options:
+          [{ value: '', label: '—' }, ...COUNTRIES.map((c) => ({
+            value: c.code,
+            label: `${c.flag} ${resolveLocalized(c.name, (locale === 'ar' ? 'ar' : locale === 'en' ? 'en' : 'fr') as CategoryLocale)}`,
+          }))],
+        },
+        { key: 'business_city', label: t('City'), type: 'text', default: '', placeholder: 'Algiers, Paris, Casablanca…' },
         { key: 'business_description', label: t('sm.field.description'), type: 'textarea', default: '' },
         { key: 'business_website', label: t('sm.field.website'), type: 'text', default: '', placeholder: 'https://example.com' },
         { key: 'business_phone', label: t('sm.field.business_phone'), type: 'text', default: '' },
