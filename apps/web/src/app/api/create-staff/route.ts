@@ -129,17 +129,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Auth error: ${authErr.message}` }, { status: 500 });
   }
 
-  // Create staff record
-  const { error: insertErr } = await supabase.from('staff').insert({
-    email,
-    full_name,
-    role,
-    organization_id,
-    office_id: office_id || null,
-    department_id: department_id || null,
-    is_active: true,
-    auth_user_id: authData.user.id,
-  });
+  // Create staff record. We .select('id') so callers can immediately
+  // associate child resources (e.g. salon's staff_services matrix)
+  // without a follow-up lookup by email.
+  const { data: newStaff, error: insertErr } = await supabase
+    .from('staff')
+    .insert({
+      email,
+      full_name,
+      role,
+      organization_id,
+      office_id: office_id || null,
+      department_id: department_id || null,
+      is_active: true,
+      auth_user_id: authData.user.id,
+    })
+    .select('id')
+    .single();
 
   if (insertErr) {
     // Clean up auth user if staff insert fails
@@ -147,5 +153,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, staff_id: newStaff?.id ?? null });
 }

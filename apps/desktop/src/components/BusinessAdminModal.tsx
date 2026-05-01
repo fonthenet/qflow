@@ -459,6 +459,39 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
   // Add-only fields — collected when staffForm.id is undefined.
   const [staffNewEmail, setStaffNewEmail] = useState('');
   const [staffNewPassword, setStaffNewPassword] = useState('');
+  // Service ↔ stylist matrix. Empty array = "can do every service"
+  // fallback. Loaded on edit-open via GET /api/admin/staff/:id/services
+  // and saved via POST after the staff PATCH succeeds. Surfaced only
+  // for salon-style verticals — restaurants and clinics don't model
+  // services per staff member.
+  const [staffServiceIds, setStaffServiceIds] = useState<string[]>([]);
+  const isSalonOrgCategory = businessCategory === 'beauty'
+    || businessCategory === 'salon'
+    || businessCategory === 'barbershop'
+    || businessCategory === 'spa';
+
+  // Reset & hydrate the matrix whenever the form opens for a different
+  // staff row. New staff (no id) start with empty selection; edits
+  // fetch the current set from the API. The api() helper is mutation-
+  // only, so we use cloudFetch directly here.
+  useEffect(() => {
+    setStaffServiceIds([]);
+    if (!staffForm?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await cloudFetch(
+          `${CLOUD_URL}/api/admin/staff/${staffForm.id}/services`,
+          { method: 'GET' },
+        );
+        const data = await r.json().catch(() => ({}));
+        if (!cancelled && r.ok && Array.isArray(data?.service_ids)) {
+          setStaffServiceIds(data.service_ids);
+        }
+      } catch { /* keep empty default */ }
+    })();
+    return () => { cancelled = true; };
+  }, [staffForm?.id]);
 
   async function saveStaff(e: React.FormEvent) {
     e.preventDefault();
@@ -466,6 +499,7 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
     setStaffSaving(true);
     setError(null);
     try {
+      let targetStaffId = staffForm.id;
       if (staffForm.id) {
         // Edit path — PATCH same endpoint we used before.
         const payload = {
@@ -502,14 +536,42 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
             caller_user_id: callerUserId,
           }),
         });
+        const body = await res.json().catch(() => ({} as any));
         if (!res.ok) {
-          const body = await res.json().catch(() => ({} as any));
           throw new Error(body?.error || `Request failed (${res.status})`);
         }
+        // Capture the newly-created staff id so we can save the
+        // service matrix in the same operator click. /api/create-staff
+        // now returns staff_id; older deploys returned only success.
+        if (typeof body?.staff_id === 'string') targetStaffId = body.staff_id;
         await flash(t('Team member added.'));
         setStaffNewEmail('');
         setStaffNewPassword('');
       }
+
+      // Salon-only: persist the service ↔ stylist matrix. Skipped for
+      // restaurants / clinics where this concept doesn't apply, AND
+      // skipped on add when /api/create-staff didn't return a staff_id
+      // (older deploy — operator can re-open the row to set it).
+      if (isSalonOrgCategory && targetStaffId) {
+        try {
+          const r = await cloudFetch(
+            `${CLOUD_URL}/api/admin/staff/${targetStaffId}/services`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ service_ids: staffServiceIds }),
+            },
+          );
+          if (!r.ok) {
+            const eb = await r.json().catch(() => ({}));
+            console.warn('[business-admin] save matrix failed', eb?.error);
+          }
+        } catch (e: any) {
+          console.warn('[business-admin] save matrix threw', e?.message);
+        }
+      }
+
       setStaffForm(null);
       await reload();
     } catch (e: any) {
@@ -1161,6 +1223,53 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                 </select>
               </div>
             </div>
+            {/* Salon: services this stylist can perform. Empty list =
+                "can do every service" fallback (matches the server-side
+                semantic in /api/admin/staff/:id/services). Only shown for
+                beauty / barber / spa categories — restaurants and
+                clinics don't model services per staff. */}
+            {isSalonOrgCategory && services.length > 0 && (
+              <div>
+                <label style={labelStyle}>{t('Services this person can do')}</label>
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: 6,
+                  padding: 8, borderRadius: 8,
+                  background: 'var(--surface2, #0f172a)',
+                  border: '1px solid var(--border, #475569)',
+                }}>
+                  {services.map((s) => {
+                    const checked = staffServiceIds.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setStaffServiceIds((prev) => checked
+                            ? prev.filter((x) => x !== s.id)
+                            : [...prev, s.id]);
+                        }}
+                        style={{
+                          padding: '4px 10px', borderRadius: 999,
+                          fontSize: 12, fontWeight: 600,
+                          border: `1px solid ${checked ? '#22c55e' : 'var(--border, #475569)'}`,
+                          background: checked ? 'rgba(34,197,94,0.15)' : 'transparent',
+                          color: checked ? '#86efac' : 'var(--text2, #94a3b8)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {checked ? '✓ ' : ''}{s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 4 }}>
+                  {staffServiceIds.length === 0
+                    ? t('No selection — they can do every service.')
+                    : t('Only the selected services will be offered when customers book this person.')}
+                </div>
+              </div>
+            )}
+
             {staffForm.id && (
               <label style={{ display: 'inline-flex', gap: 8, fontSize: 13 }}>
                 <input type="checkbox" checked={staffForm.is_active !== false} onChange={e => setStaffForm({ ...staffForm, is_active: e.target.checked })} />
