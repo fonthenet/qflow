@@ -235,11 +235,10 @@ function RootNavigator() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(operator)" options={{ headerShown: false }} />
         <Stack.Screen name="(admin)" options={{ headerShown: false }} />
-        {/* Rider deeplink — qflo.net/rider/<ticketId>/<token> opens
-            this screen when the app is installed (universal link on
-            iOS, app link on Android). Headerless: the screen renders
-            its own header with order context + GPS status pill. */}
-        <Stack.Screen name="rider/[id]/[token]" options={{ headerShown: false }} />
+        {/* Rider section — wraps deeplink (per-ticket HMAC), login,
+            verify, home, history, settings. The nested layout handles
+            its own auth gate. */}
+        <Stack.Screen name="rider" options={{ headerShown: false }} />
         <Stack.Screen
           name="admin/bookings"
           options={{
