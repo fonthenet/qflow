@@ -501,15 +501,25 @@ export function RiderPortal(props: RiderPortalProps) {
                   href={mapsHref}
                   target="_blank"
                   rel="noreferrer"
+                  aria-label="Open turn-by-turn directions"
                   style={{
-                    padding: '8px 14px', borderRadius: 999,
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '12px 18px', borderRadius: 999,
                     background: '#0f172a', color: '#fff',
-                    fontWeight: 600, fontSize: 12, textDecoration: 'none',
-                    letterSpacing: 0.1, whiteSpace: 'nowrap', flexShrink: 0,
-                    boxShadow: '0 2px 6px rgba(15,23,42,0.18)',
+                    fontWeight: 700, fontSize: 14, textDecoration: 'none',
+                    letterSpacing: 0.2, whiteSpace: 'nowrap', flexShrink: 0,
+                    boxShadow: '0 4px 12px rgba(15,23,42,0.24), 0 1px 3px rgba(15,23,42,0.10)',
                   }}
                 >
-                  Navigate →
+                  {/* Compass-pin glyph — universal "navigate" semantic.
+                      Inline-SVG so it tints with currentColor and never
+                      depends on emoji rendering. */}
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M16 8l-2 6-6 2 2-6 6-2z" fill="currentColor" stroke="none" />
+                  </svg>
+                  Navigate
                 </a>
               )}
             </div>

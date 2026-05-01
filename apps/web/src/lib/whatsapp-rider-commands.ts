@@ -597,14 +597,15 @@ function tplOrderDetails(t: AssignedTicket, rider: RiderRow): string {
   const customerName = (t.customer_data as any)?.name ?? '—';
   const customerPhone = (t.customer_data as any)?.phone ?? null;
   const street = (t.delivery_address as any)?.street ?? '';
-  const lat = (t.delivery_address as any)?.lat;
-  const lng = (t.delivery_address as any)?.lng;
   const note = (t.notes ?? '').trim();
   const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
   const portal = buildRiderPortalUrl(cloudUrl, t.id);
-  const mapsLink = (typeof lat === 'number' && typeof lng === 'number')
-    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&dir_action=navigate`
-    : null;
+  // Single link — the portal handles BOTH live GPS streaming AND
+  // launches Google Maps for turn-by-turn nav via its big sticky
+  // Navigate button. Earlier we sent two links (GMaps deeplink +
+  // portal); the rider had to remember which one to tap. Now: one
+  // link, both functions inside.
+  void rider;
 
   const lines: string[] = [
     `✅ *${t.ticket_number}* accepted`,
@@ -615,9 +616,9 @@ function tplOrderDetails(t: AssignedTicket, rider: RiderRow): string {
     street ? `🏠 ${street}` : '',
     note ? `📝 _${note}_` : '',
     DIV,
-    mapsLink ? `🗺️ Navigate: ${mapsLink}` : '',
-    `🛵 Live tracking + buttons: ${portal}`,
+    `🛵 Open the run: ${portal}`,
     '',
+    '_Tap the link to start live tracking + open turn-by-turn directions._',
     'Reply *ARRIVED* when at the door · *DONE* when delivered.',
   ].filter(Boolean);
   return lines.join('\n');
