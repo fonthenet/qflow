@@ -738,6 +738,7 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                   {tab === 'tables' && (
                     <TablesPanel
                       officeId={resolveDefaultOfficeId(offices)}
+                      organizationId={organizationId}
                       locale={locale}
                       canManage={isAllowed}
                     />

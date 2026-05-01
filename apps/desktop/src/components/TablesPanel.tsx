@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
+import { cloudFetch } from '../lib/cloud-fetch';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { summarizeOccupancy, type RestaurantTable, type TableStatus } from '@qflo/shared';
+
+const CLOUD_URL = 'https://qflo.net';
 
 // ── Tables management panel ────────────────────────────────────────
 // Full CRUD for restaurant_tables, live occupancy summary, manual
@@ -10,6 +13,9 @@ import { summarizeOccupancy, type RestaurantTable, type TableStatus } from '@qfl
 
 interface Props {
   officeId: string | null;
+  /** Org id needed for the master "Tables enabled" toggle which is
+   *  org-scoped (one switch covers all the org's offices). */
+  organizationId: string;
   locale: DesktopLocale;
   canManage: boolean;
 }
@@ -40,13 +46,76 @@ const EMPTY_FORM: TableForm = {
   zone: '', reservable: true, status: 'available',
 };
 
-export function TablesPanel({ officeId, locale, canManage }: Props) {
+export function TablesPanel({ officeId, organizationId, locale, canManage }: Props) {
   const t = useCallback((k: string, vars?: Record<string, any>) => translate(locale, k, vars), [locale]);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<TableForm | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // ── Master toggle: tables enabled (org-scoped) ───────────────────
+  // Reads/writes settings.restaurant_tables_enabled via the dedicated
+  // endpoint, which also flips every dine-in service's is_active so
+  // WA ordering, kiosk menu, and Order Pad all hide dine-in when off.
+  // Defaults to true on first load (matches server-side fallback).
+  const [tablesEnabled, setTablesEnabled] = useState<boolean>(true);
+  const [toggleBusy, setToggleBusy] = useState(false);
+
+  const getJwt = useCallback(async (): Promise<string> => {
+    try {
+      const r = await (window as any).qf?.auth?.getToken?.();
+      if (r?.ok && typeof r.token === 'string') return r.token;
+      if (typeof r === 'string') return r;
+    } catch { /* ignore */ }
+    return '';
+  }, []);
+
+  // Hydrate the toggle from the server on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getJwt();
+        const res = await cloudFetch(
+          `${CLOUD_URL}/api/admin/organization/restaurant-tables?organization_id=${organizationId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && typeof data.enabled === 'boolean') {
+          setTablesEnabled(data.enabled);
+        }
+      } catch { /* leave default true */ }
+    })();
+    return () => { cancelled = true; };
+  }, [organizationId, getJwt]);
+
+  const toggleTables = async (next: boolean) => {
+    if (toggleBusy) return;
+    setToggleBusy(true);
+    setError(null);
+    // Optimistic update — on failure we revert.
+    const prev = tablesEnabled;
+    setTablesEnabled(next);
+    try {
+      const token = await getJwt();
+      const res = await cloudFetch(`${CLOUD_URL}/api/admin/organization/restaurant-tables`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ organization_id: organizationId, enabled: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        setTablesEnabled(prev);
+        setError(data?.error ?? `Failed to update (${res.status})`);
+      }
+    } catch (e: any) {
+      setTablesEnabled(prev);
+      setError(e?.message ?? 'Failed to update');
+    } finally {
+      setToggleBusy(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!officeId) { setTables([]); setLoading(false); return; }
@@ -156,6 +225,62 @@ export function TablesPanel({ officeId, locale, canManage }: Props) {
 
   return (
     <div>
+      {/* Master toggle — flips org.settings.restaurant_tables_enabled
+          AND deactivates the dine-in service everywhere consumers read
+          is_active. Useful for ghost kitchens / cloud restaurants that
+          only do takeout + delivery. */}
+      <div style={{
+        marginBottom: 14,
+        padding: '12px 16px',
+        borderRadius: 10,
+        background: tablesEnabled ? 'rgba(34,197,94,0.08)' : 'rgba(148,163,184,0.10)',
+        border: `1px solid ${tablesEnabled ? 'rgba(34,197,94,0.35)' : 'rgba(148,163,184,0.30)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>
+            {tablesEnabled ? '🍽️ ' : '🚫 '}
+            {tablesEnabled ? t('Dine-in is enabled') : t('Dine-in is disabled')}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+            {tablesEnabled
+              ? t('Customers can dine in. Takeout and delivery work as usual.')
+              : t('Only takeout and delivery are accepted. The dine-in service is hidden from menus.')}
+          </div>
+        </div>
+        <button
+          onClick={() => toggleTables(!tablesEnabled)}
+          disabled={!canManage || toggleBusy}
+          title={canManage ? t('Toggle dine-in') : t('Admins only')}
+          style={{
+            position: 'relative',
+            width: 52, height: 28, borderRadius: 14,
+            background: tablesEnabled ? '#22c55e' : '#475569',
+            border: 'none',
+            cursor: canManage && !toggleBusy ? 'pointer' : 'not-allowed',
+            opacity: toggleBusy ? 0.6 : 1,
+            transition: 'background 120ms ease',
+            flexShrink: 0,
+          }}
+          aria-pressed={tablesEnabled}
+        >
+          <span style={{
+            position: 'absolute', top: 3, left: tablesEnabled ? 27 : 3,
+            width: 22, height: 22, borderRadius: '50%',
+            background: '#fff',
+            transition: 'left 120ms ease',
+          }} />
+        </button>
+      </div>
+
+      {error && (
+        <div style={{
+          marginBottom: 10, padding: '8px 12px', borderRadius: 8,
+          background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+          color: '#fca5a5', fontSize: 12,
+        }}>{error}</div>
+      )}
+
       {/* Live occupancy bar */}
       <OccupancyBar occupancy={occupancy} t={t} />
 
