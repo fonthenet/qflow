@@ -104,12 +104,6 @@ export const BARBERSHOP_SERVICES: ReadonlyArray<SalonSeedService> = [
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'color', code: 'HEN',
-    name: { en: 'Henna (beard/hair)', fr: 'Henné', ar: 'حناء' },
-    estimatedMinutes: 30,
-    controlledByExpertiseToggle: true,
-  },
-  {
     type: 'color', code: 'COL',
     name: { en: "Men's Color", fr: 'Coloration Homme', ar: 'صبغة شعر رجالية' },
     estimatedMinutes: 45,
