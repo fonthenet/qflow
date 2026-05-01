@@ -46,6 +46,12 @@ interface StaffRow {
   office_id: string | null;
   department_id: string | null;
   is_active: boolean | null;
+  // Operational on-floor status — distinct from is_active. Optional
+  // because non-salon orgs ignore the column; the "On floor" /
+  // "On break" / "Off" pill in the Team table only renders for
+  // salon-style categories.
+  availability_status?: 'available' | 'on_break' | 'off' | null;
+  availability_until?: string | null;
 }
 
 type Tab = 'departments' | 'services' | 'desks' | 'tables' | 'team' | 'riders';
@@ -179,7 +185,7 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
       // 4) Staff is directly scoped by organization_id
       const staffRes = await sb
         .from('staff')
-        .select('id, full_name, email, role, office_id, department_id, is_active')
+        .select('id, full_name, email, role, office_id, department_id, is_active, availability_status, availability_until')
         .eq('organization_id', organizationId).order('full_name');
       if (staffRes.error) throw staffRes.error;
       setStaff((staffRes.data ?? []) as StaffRow[]);
@@ -581,6 +587,31 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
     }
   }
 
+  // Quick on-floor toggle (salon flow). Cycles available → on_break →
+  // off → available. The endpoint accepts an optional `until` ISO
+  // timestamp for soft-expiry breaks; for V1 we don't ask the operator
+  // for a duration — the next time they tap the pill it cycles forward.
+  async function cycleAvailability(m: StaffRow) {
+    const current = (m.availability_status ?? 'available') as 'available' | 'on_break' | 'off';
+    const next: 'available' | 'on_break' | 'off' =
+      current === 'available' ? 'on_break'
+      : current === 'on_break' ? 'off'
+      : 'available';
+    setError(null);
+    try {
+      const r = await cloudFetch(`${CLOUD_URL}/api/admin/staff/${m.id}/availability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || `Request failed (${r.status})`);
+      await reload();
+    } catch (e: any) {
+      setError(e?.message ?? 'Update failed');
+    }
+  }
+
   async function deactivateStaff(m: StaffRow) {
     if (!confirm(t('Deactivate "{name}"? They will no longer be able to sign in.', { name: m.full_name }))) return;
     setError(null);
@@ -902,7 +933,49 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
                                 <td style={tdStyle}>{roleLabel(m.role, t)}</td>
                                 <td style={tdStyle}>{m.office_id ? officeName(m.office_id) : t('All locations')}</td>
                                 <td style={tdStyle}>{m.department_id ? deptName(m.department_id) : '—'}</td>
-                                <td style={tdStyle}><span style={pill(m.is_active !== false)}>{m.is_active !== false ? t('Active') : t('Inactive')}</span></td>
+                                <td style={tdStyle}>
+                                  {/* Two-pill stack: HR-level Active / Inactive on top, then
+                                      the operational on-floor pill below for salon orgs.
+                                      Click the on-floor pill to cycle available → on break →
+                                      off → available. */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                                    <span style={pill(m.is_active !== false)}>
+                                      {m.is_active !== false ? t('Active') : t('Inactive')}
+                                    </span>
+                                    {isSalonOrgCategory && m.is_active !== false && (() => {
+                                      // Honour the soft expiry — a break that's past
+                                      // due treats them as available.
+                                      const stored = (m.availability_status ?? 'available') as
+                                        'available' | 'on_break' | 'off';
+                                      const expired = m.availability_until
+                                        && Date.parse(m.availability_until) < Date.now();
+                                      const effective: 'available' | 'on_break' | 'off' =
+                                        stored !== 'available' && expired ? 'available' : stored;
+                                      const label = effective === 'available' ? t('On floor')
+                                        : effective === 'on_break' ? t('On break')
+                                        : t('Off');
+                                      const tint = effective === 'available' ? '#22c55e'
+                                        : effective === 'on_break' ? '#f59e0b'
+                                        : '#94a3b8';
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => cycleAvailability(m)}
+                                          title={t('Click to cycle: On floor → On break → Off')}
+                                          style={{
+                                            padding: '2px 8px', borderRadius: 999,
+                                            fontSize: 10, fontWeight: 700, letterSpacing: 0.2,
+                                            background: `${tint}1f`, color: tint,
+                                            border: `1px solid ${tint}55`,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          {label}
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
+                                </td>
                                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                                   <button style={{ ...btnGhost, marginInlineEnd: 6 }} onClick={() => setStaffForm(m)}>{t('Edit')}</button>
                                   <button

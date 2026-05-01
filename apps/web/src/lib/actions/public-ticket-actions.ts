@@ -152,12 +152,25 @@ export async function getAvailableStaffForService(
   const supabase = createAdminClient() as any;
   const { data: staffRows, error: stErr } = await supabase
     .from('staff')
-    .select('id, full_name')
+    .select('id, full_name, availability_status, availability_until')
     .eq('office_id', officeId)
     .eq('is_active', true)
     .order('full_name');
   if (stErr) return { error: stErr.message };
-  const staffList = (staffRows ?? []) as Array<{ id: string; full_name: string }>;
+  // Filter out stylists who are on break / off — but respect the soft
+  // expiry: a stylist set to 'on_break until 2pm' is treated as
+  // available again at 2:01pm without anyone touching the toggle.
+  const nowMs = Date.now();
+  const onFloor = (staffRows ?? []).filter((s: any) => {
+    if (s.availability_status === 'available') return true;
+    if (s.availability_until) {
+      const t = Date.parse(s.availability_until);
+      if (Number.isFinite(t) && t < nowMs) return true; // expired → back on
+    }
+    return false;
+  });
+  const staffList: Array<{ id: string; full_name: string }> =
+    onFloor.map((s: any) => ({ id: s.id, full_name: s.full_name }));
   if (staffList.length === 0) return { data: [] };
 
   const ids = staffList.map((s) => s.id);
@@ -166,8 +179,8 @@ export async function getAvailableStaffForService(
     .select('staff_id, service_id, is_active')
     .in('staff_id', ids);
   const allRows = (matrixRows ?? []).filter((r: any) => r.is_active !== false);
-  const specialised = new Set(allRows.map((r: any) => r.staff_id));
-  const canDoThis = new Set(
+  const specialised = new Set<string>(allRows.map((r: any) => r.staff_id));
+  const canDoThis = new Set<string>(
     allRows.filter((r: any) => r.service_id === serviceId).map((r: any) => r.staff_id),
   );
   const filtered = staffList.filter((s) => !specialised.has(s.id) || canDoThis.has(s.id));
