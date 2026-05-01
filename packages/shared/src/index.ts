@@ -13,5 +13,6 @@ export * from './restaurant-services';
 export * from './setup-wizard';
 export * from './order-flow';
 export * from './delivery-eta';
+export * from './delivery';
 export * from './restaurant-template';
 export * from './salon-template';

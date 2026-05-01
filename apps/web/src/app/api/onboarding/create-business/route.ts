@@ -485,7 +485,17 @@ export async function POST(request: NextRequest) {
       timezone,
       locale_primary: locale,
     };
-    if (category) orgUpdate.vertical = category.vertical;
+    if (category) {
+      orgUpdate.vertical = category.vertical;
+      // Auto-flip delivery on for restaurant/cafe verticals so a fresh
+      // signup gets the rider features without an extra setup step.
+      // Other verticals start with delivery off; operator toggles it
+      // on via Admin → Settings if they need couriers later.
+      const { shouldDefaultDeliveryEnabled } = await import('@qflo/shared');
+      if (shouldDefaultDeliveryEnabled(category.vertical)) {
+        orgUpdate.delivery_enabled = true;
+      }
+    }
     // Surfaced errors only — previously the failure was swallowed which
     // produced "fax"-style orgs: auth + RPC succeeded, office/dept/service
     // got seeded, but business_category + channelDefaults never landed

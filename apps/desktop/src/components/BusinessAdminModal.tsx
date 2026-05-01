@@ -117,6 +117,7 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
   const [desks, setDesks] = useState<Desk[]>([]);
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [businessCategory, setBusinessCategory] = useState<string>('');
+  const [deliveryEnabled, setDeliveryEnabled] = useState<boolean>(false);
 
   const authBody = useMemo(
     () => ({ caller_user_id: callerUserId, organization_id: organizationId }),
@@ -139,14 +140,18 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
       // tabs when the cached token expired between sessions — the
       // exact bug reported on 2026-05-01.
 
-      // 0) Org-level business_category — drives the Tables tab visibility.
+      // 0) Org-level business_category + delivery_enabled — drives
+      //    the Tables and Riders tab visibility respectively. Delivery
+      //    is now a per-org flag (not a hardcoded vertical check) so
+      //    non-restaurants can opt in.
       const orgRes = await withAuthRetry(() => sb
         .from('organizations')
-        .select('settings')
+        .select('settings, delivery_enabled')
         .eq('id', organizationId)
         .single());
       const cat = ((orgRes.data?.settings as any)?.business_category ?? '') as string;
       setBusinessCategory(cat);
+      setDeliveryEnabled(Boolean((orgRes.data as any)?.delivery_enabled));
 
       // 1) Offices are directly scoped by organization_id
       const offRes = await withAuthRetry(() => sb
@@ -712,15 +717,15 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
               <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>
                 {t('Team')} <span style={{ opacity: 0.6 }}>({staff.length})</span>
               </button>
-              {/* Riders tab — only meaningful for businesses that
-                  deliver. We surface it for restaurant + cafe (the
-                  business types that have a delivery service today).
-                  Same gating logic as the Tables tab. */}
-              {(businessCategory === 'restaurant' || businessCategory === 'cafe') && (
-                <button style={tabBtn(tab === 'riders')} onClick={() => setTab('riders')}>
-                  🛵 {t('Drivers')}
-                </button>
-              )}
+              {/* Riders tab — always visible. When delivery_enabled
+                  is false (default for non-restaurant verticals), the
+                  panel shows an opt-in card; when true, the full
+                  drivers roster. Surfacing it everywhere keeps the
+                  feature discoverable for orgs that want to enable
+                  courier runs (catering, pharmacy, clinic transport). */}
+              <button style={tabBtn(tab === 'riders')} onClick={() => setTab('riders')}>
+                🛵 {t('Drivers')}
+              </button>
             </div>
 
             {/* Banner */}
@@ -1024,12 +1029,61 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
 
                   {/* ── Riders ─────────────────────────────── */}
                   {tab === 'riders' && (
-                    <RidersPanel
-                      organizationId={organizationId}
-                      tl={t}
-                      onError={setError}
-                      onSuccess={setSuccess}
-                    />
+                    deliveryEnabled ? (
+                      <>
+                        <RidersPanel
+                          organizationId={organizationId}
+                          tl={t}
+                          onError={setError}
+                          onSuccess={setSuccess}
+                        />
+                        {/* Footer: disable delivery shortcut. Confirms
+                            once because turning it off hides the rider
+                            tab + the takeout/delivery rail. */}
+                        <div style={{
+                          marginTop: 28, paddingTop: 16,
+                          borderTop: '1px solid var(--border, #334155)',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        }}>
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary, #94a3b8)' }}>
+                            {t('Delivery is enabled for this business.')}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm(t('Turn delivery off? You can re-enable any time.'))) return;
+                              try {
+                                await ensureAuth();
+                                const sb = await getSupabase();
+                                const { error } = await sb
+                                  .from('organizations')
+                                  .update({ delivery_enabled: false } as any)
+                                  .eq('id', organizationId);
+                                if (error) { setError(error.message); return; }
+                                setDeliveryEnabled(false);
+                                setSuccess(t('Delivery disabled.'));
+                              } catch (e: any) { setError(e?.message ?? 'Failed'); }
+                            }}
+                            style={{
+                              padding: '6px 14px', borderRadius: 6,
+                              background: 'transparent',
+                              color: 'var(--danger, #ef4444)',
+                              border: '1px solid var(--danger, #ef4444)',
+                              cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                            }}
+                          >
+                            {t('Disable delivery')}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <DeliveryEnableCard
+                        organizationId={organizationId}
+                        t={t}
+                        onEnabled={() => { setDeliveryEnabled(true); setSuccess(t('Delivery enabled.')); }}
+                        onError={setError}
+                      />
+                    )
                   )}
                 </>
               )}
@@ -1418,3 +1472,85 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
     </div>
   );
 }
+
+// ─── Opt-in card for delivery feature ──────────────────────────────
+// Shown inside the Drivers tab when organizations.delivery_enabled is
+// false. One click flips the column to true and the parent modal
+// re-renders the panel with the actual rider roster.
+
+function DeliveryEnableCard({
+  organizationId,
+  t,
+  onEnabled,
+  onError,
+}: {
+  organizationId: string;
+  t: (s: string) => string;
+  onEnabled: () => void;
+  onError: (s: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={{
+      maxWidth: 560, margin: '24px auto',
+      padding: 28,
+      background: 'var(--surface2, #0f172a)',
+      border: '1px solid var(--border, #334155)',
+      borderRadius: 14,
+      textAlign: 'center',
+    }}>
+      <div style={{ fontSize: 44, marginBottom: 12 }}>🛵</div>
+      <h3 style={{ margin: 0, fontSize: 19, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>
+        {t('Enable delivery for this business')}
+      </h3>
+      <p style={{
+        margin: '10px auto 22px', maxWidth: 440,
+        fontSize: 14, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.55,
+      }}>
+        {t('Add in-house riders, assign orders for delivery, and track them live on a map. Riders sign in to a free mobile app with their WhatsApp number.')}
+      </p>
+      <ul style={{
+        textAlign: 'left', maxWidth: 380, margin: '0 auto 22px',
+        padding: 0, listStyle: 'none',
+        fontSize: 13, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.9,
+      }}>
+        <li>✓ {t('In-house rider roster + WhatsApp dispatch')}</li>
+        <li>✓ {t('Live GPS tracking shared with the customer')}</li>
+        <li>✓ {t('Native rider app with delivery history')}</li>
+      </ul>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await ensureAuth();
+            const sb = await getSupabase();
+            const { error } = await sb
+              .from('organizations')
+              .update({ delivery_enabled: true } as any)
+              .eq('id', organizationId);
+            if (error) { onError(error.message); return; }
+            onEnabled();
+          } catch (e: any) {
+            onError(e?.message ?? 'Failed');
+          } finally {
+            setBusy(false);
+          }
+        }}
+        style={{
+          padding: '12px 28px', borderRadius: 8,
+          background: 'var(--primary, #3b82f6)',
+          color: '#fff', border: 'none',
+          cursor: busy ? 'not-allowed' : 'pointer',
+          fontSize: 14, fontWeight: 700,
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        {busy ? t('Enabling…') : t('Enable delivery')}
+      </button>
+    </div>
+  );
+}
+
+
