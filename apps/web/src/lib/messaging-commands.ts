@@ -4475,11 +4475,54 @@ async function handleBookingState(
         return true;
       }
       const canonical = formatWilayaLocale(resolved, locale);
+      // Honour intake_fields — skip the reason prompt if the org
+      // turned it off in Settings → Intake Fields.
+      const { data: orgIF } = await supabase
+        .from('organizations').select('settings').eq('id', session.organization_id).maybeSingle();
+      const ifs: Array<{ key: string; enabled?: boolean }> =
+        Array.isArray((orgIF?.settings as any)?.intake_fields)
+          ? (orgIF!.settings as any).intake_fields : [];
+      const reasonRow = ifs.find((f) => f?.key === 'reason');
+      const askReason = reasonRow ? reasonRow.enabled !== false : true;
+      const customFields: any[] = (orgIF?.settings as any)?.custom_intake_fields ?? [];
+
+      if (askReason) {
+        await supabase.from('whatsapp_sessions').update({
+          booking_customer_wilaya: canonical,
+          state: 'booking_enter_reason',
+        }).eq('id', session.id);
+        await sendMessage({ to: identifier, body: t('booking_enter_reason', locale) });
+        return true;
+      }
+      // Reason disabled — fall through to custom intake or confirm.
+      if (customFields.length > 0) {
+        await supabase.from('whatsapp_sessions').update({
+          booking_customer_wilaya: canonical,
+          state: 'pending_custom_intake',
+          custom_intake_data: { index: 0, answers: {} },
+        }).eq('id', session.id);
+        const f0 = customFields[0];
+        const fieldLabel = locale === 'ar' ? (f0.label_ar || f0.label)
+          : locale === 'fr' ? (f0.label_fr || f0.label)
+          : f0.label;
+        await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
+        return true;
+      }
       await supabase.from('whatsapp_sessions').update({
         booking_customer_wilaya: canonical,
-        state: 'booking_enter_reason',
+        state: 'booking_confirm',
       }).eq('id', session.id);
-      await sendMessage({ to: identifier, body: t('booking_enter_reason', locale) });
+      const orgName = await getOrgName(session.organization_id);
+      const dateFormatted = formatDateForLocale(session.booking_date, locale);
+      await sendMessage({
+        to: identifier,
+        body: t('booking_confirm', locale, {
+          name: orgName,
+          date: dateFormatted,
+          time: session.booking_time,
+          customer: session.booking_customer_name ?? '',
+        }),
+      });
       return true;
     }
 
@@ -4807,12 +4850,85 @@ async function handleBookingNameInput(
   }
 
   const supabase = createAdminClient() as any;
-  await supabase.from('whatsapp_sessions').update({
-    state: 'booking_enter_wilaya',
-    booking_customer_name: cleaned,
-  }).eq('id', session.id);
+  // Honour the org's intake_fields configuration — that's the
+  // single source of truth (Settings → Booking & Queue → Intake
+  // Fields edits this list). Each preset field has `enabled` and
+  // `required` flags; the WA booking flow skips any prompt whose
+  // field is disabled. No hardcoded category gates — operators
+  // tune the form themselves.
+  //
+  // Defaults (when settings.intake_fields is missing entirely) come
+  // from @qflo/shared/intake-fields.ts via getEnabledIntakeFields.
+  const { data: org } = await supabase
+    .from('organizations').select('settings').eq('id', session.organization_id).maybeSingle();
+  const intakeFields: Array<{ key: string; enabled?: boolean }> =
+    Array.isArray((org?.settings as any)?.intake_fields)
+      ? (org!.settings as any).intake_fields
+      : [];
+  const isFieldEnabled = (key: string): boolean => {
+    const row = intakeFields.find((f) => f?.key === key);
+    // When the org explicitly toggled the field, honour that.
+    // When the field isn't in the list at all, fall back to ON
+    // (preserves the legacy behaviour for orgs that haven't visited
+    // the intake settings yet — except the new salon template which
+    // explicitly seeds wilaya + reason as disabled).
+    if (row && typeof row.enabled === 'boolean') return row.enabled;
+    return true;
+  };
+  const askWilaya = isFieldEnabled('wilaya');
+  const askReason = isFieldEnabled('reason');
 
-  await sendMessage({ to: identifier, body: t('booking_enter_wilaya', locale) });
+  const customFields: any[] = (org?.settings as any)?.custom_intake_fields ?? [];
+
+  if (askWilaya) {
+    await supabase.from('whatsapp_sessions').update({
+      state: 'booking_enter_wilaya',
+      booking_customer_name: cleaned,
+    }).eq('id', session.id);
+    await sendMessage({ to: identifier, body: t('booking_enter_wilaya', locale) });
+    return true;
+  }
+
+  if (askReason) {
+    await supabase.from('whatsapp_sessions').update({
+      state: 'booking_enter_reason',
+      booking_customer_name: cleaned,
+    }).eq('id', session.id);
+    await sendMessage({ to: identifier, body: t('booking_enter_reason', locale) });
+    return true;
+  }
+
+  // Both wilaya and reason disabled — fall through to custom intake or
+  // straight to confirm.
+  if (customFields.length > 0) {
+    await supabase.from('whatsapp_sessions').update({
+      booking_customer_name: cleaned,
+      state: 'pending_custom_intake',
+      custom_intake_data: { index: 0, answers: {} },
+    }).eq('id', session.id);
+    const f0 = customFields[0];
+    const fieldLabel = locale === 'ar' ? (f0.label_ar || f0.label)
+      : locale === 'fr' ? (f0.label_fr || f0.label)
+      : f0.label;
+    await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
+    return true;
+  }
+
+  await supabase.from('whatsapp_sessions').update({
+    booking_customer_name: cleaned,
+    state: 'booking_confirm',
+  }).eq('id', session.id);
+  const orgName = await getOrgName(session.organization_id);
+  const dateFormatted = formatDateForLocale(session.booking_date, locale);
+  await sendMessage({
+    to: identifier,
+    body: t('booking_confirm', locale, {
+      name: orgName,
+      date: dateFormatted,
+      time: session.booking_time,
+      customer: cleaned,
+    }),
+  });
   return true;
 }
 

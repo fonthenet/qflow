@@ -20,7 +20,7 @@ export interface IntakeField {
   label_ar?: string;
 }
 
-export type PresetKey = 'name' | 'phone' | 'email' | 'age' | 'wilaya' | 'reason' | 'party_size';
+export type PresetKey = 'name' | 'phone' | 'email' | 'age' | 'wilaya' | 'reason' | 'party_size' | 'stylist';
 
 /** Built-in preset definitions with trilingual labels */
 export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string; label_ar: string; placeholder?: string; placeholder_fr?: string; placeholder_ar?: string }> = {
@@ -80,9 +80,22 @@ export const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string
     placeholder_fr: 'ex. 4',
     placeholder_ar: 'مثال: 4',
   },
+  // Salon / barber preset — when enabled, the booking + kiosk flow
+  // adds a "Pick your stylist" step and writes the choice into
+  // appointments.staff_id / tickets.customer_data.preferred_staff_id.
+  // Operators can disable it from Business info → Intake Fields if
+  // they don't want to expose stylist choice.
+  stylist: {
+    label: 'Stylist',
+    label_fr: 'Coiffeur·euse',
+    label_ar: 'المصفف',
+    placeholder: 'Pick your stylist',
+    placeholder_fr: 'Choisissez votre coiffeur·euse',
+    placeholder_ar: 'اختر المصفف',
+  },
 };
 
-export const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'email', 'age', 'wilaya', 'reason', 'party_size'];
+export const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'email', 'age', 'wilaya', 'reason', 'party_size', 'stylist'];
 
 /** Get the display label for a field in the given locale */
 export function getFieldLabel(field: IntakeField, locale: 'en' | 'fr' | 'ar'): string {
@@ -134,6 +147,12 @@ export function getDefaultIntakeFields(): IntakeField[] {
     { key: 'age', type: 'preset', enabled: false, required: false },
     { key: 'wilaya', type: 'preset', enabled: false, required: false },
     { key: 'reason', type: 'preset', enabled: false, required: false },
+    // Stylist defaults to ON for any new business — has no effect on
+    // verticals that don't have the staff_services matrix populated
+    // (the resolver returns an empty list and the picker step is
+    // skipped). Salons + barbers benefit immediately; clinics/gov
+    // never see it because their staff has no service rows.
+    { key: 'stylist', type: 'preset', enabled: true, required: false, scope: 'booking' },
   ];
 }
 
