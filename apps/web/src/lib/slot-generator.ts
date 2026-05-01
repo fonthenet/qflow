@@ -398,18 +398,23 @@ export async function getAvailableSlots(
 
   // ── Salon: count of qualified stylists for this service ──
   // When no specific stylist was picked AND we're a salon-style org,
-  // capacity per slot = number of stylists who can do this service
-  // and haven't been booked at that time. We pull the qualified set
-  // once and use it below to override slotsPerInterval per slot.
+  // capacity per slot = number of stylists who can do this service,
+  // are on the floor, work that day at that hour, AND haven't been
+  // booked at that time. We pull the qualified set once with their
+  // work_schedules so the slot loop below can filter per-slot in O(1).
   let qualifiedStylistIds: string[] = [];
+  // Map<staffId, work_schedule jsonb> — schedules for the qualified
+  // set. Stylists missing from the map (or with no schedule for the
+  // day) inherit the office's operating hours.
+  const stylistSchedules: Map<string, Record<string, { open: string; close: string } | null> | null> = new Map();
   if (isSalonOrg && !staffId && !isRestaurantOrg) {
     // 1. Active staff at this office (potential stylists)
     const { data: allStaff } = await supabase
       .from('staff')
-      .select('id, availability_status, availability_until')
+      .select('id, availability_status, availability_until, work_schedule')
       .eq('office_id', officeId)
       .eq('is_active', true);
-    const onFloor = (allStaff ?? []).filter((s: any) => {
+    const onFloorRows = (allStaff ?? []).filter((s: any) => {
       // Honour soft-expiry: a break that's past due treats the
       // stylist as available again automatically.
       if (s.availability_status === 'available') return true;
@@ -418,7 +423,8 @@ export async function getAvailableSlots(
         if (Number.isFinite(t) && t < Date.now()) return true;
       }
       return false;
-    }).map((s: any) => s.id) as string[];
+    }) as Array<{ id: string; work_schedule: any }>;
+    const onFloor = onFloorRows.map((s) => s.id);
 
     if (onFloor.length > 0) {
       // 2. Filter by staff_services matrix. Empty-set fallback —
@@ -435,6 +441,12 @@ export async function getAvailableSlots(
           .map((r: any) => r.staff_id),
       );
       qualifiedStylistIds = onFloor.filter((id) => !specialised.has(id) || canDoThis.has(id));
+      // Index the schedules so the slot loop reads them in O(1).
+      for (const r of onFloorRows) {
+        if (qualifiedStylistIds.includes(r.id)) {
+          stylistSchedules.set(r.id, r.work_schedule ?? null);
+        }
+      }
     }
   }
 
@@ -546,12 +558,28 @@ export async function getAvailableSlots(
       capacity = 1;
     } else if (isSalonOrg && qualifiedStylistIds.length > 0) {
       // "Any available" — count free stylists at this slot.
+      // A stylist counts toward capacity ONLY when they actually
+      // work at this hour on this day (per their work_schedule).
+      // Marie's Tuesday-only schedule means she contributes 0 to
+      // Wednesday's 3pm capacity but 1 to Tuesday's 3pm capacity.
+      let workingCount = 0;
       let freeCount = 0;
       for (const sid of qualifiedStylistIds) {
+        const sched = stylistSchedules.get(sid) ?? null;
+        const day = sched ? sched[dayOfWeek] : undefined;
+        // Schedule semantics:
+        //   null      → explicitly off this day (excluded)
+        //   undefined → no per-stylist override → inherit office hours
+        //               → working during the slot since the slot was
+        //                 already filtered to the office's day hours
+        //   {open,close} → working only during that window
+        if (day === null) continue;
+        if (day && (slot < day.open || slot >= day.close)) continue;
+        workingCount++;
         const taken = slotsTakenByStylist.get(sid);
         if (!taken || !taken.has(slot)) freeCount++;
       }
-      capacity = qualifiedStylistIds.length;
+      capacity = workingCount;
       booked = capacity - freeCount;
     } else {
       booked = slotBookingCounts.get(slot) ?? 0;
