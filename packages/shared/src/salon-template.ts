@@ -48,18 +48,35 @@ export interface SalonSeedService {
  * getSalonTemplateForCategory().
  */
 
-/** Barbershop — men's cuts + beard work. */
+/**
+ * Barbershop services — calibrated for Algerian shop menus. The order
+ * mirrors how a wall menu is typically arranged (simple cuts first,
+ * specialty services lower) so the kiosk reads naturally. Operators
+ * delete what they don't offer.
+ */
 export const BARBERSHOP_SERVICES: ReadonlyArray<SalonSeedService> = [
   {
     type: 'haircut', code: 'CUT',
-    name: { en: 'Haircut', fr: 'Coupe', ar: 'قص الشعر' },
-    estimatedMinutes: 30,
+    name: { en: 'Simple Haircut', fr: 'Coupe Simple', ar: 'حلاقة عادية' },
+    estimatedMinutes: 25,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'haircut', code: 'FAD',
+    name: { en: 'Fade', fr: 'Dégradé', ar: 'تدريج' },
+    estimatedMinutes: 35,
     controlledByExpertiseToggle: false,
   },
   {
     type: 'beard', code: 'BRD',
-    name: { en: 'Beard / Shave', fr: 'Barbe / Rasage', ar: 'حلاقة اللحية' },
-    estimatedMinutes: 20,
+    name: { en: 'Beard Trim', fr: 'Taille de Barbe', ar: 'تشذيب اللحية' },
+    estimatedMinutes: 15,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'beard', code: 'SHV',
+    name: { en: 'Razor Shave', fr: 'Rasage Traditionnel', ar: 'حلاقة بالموس' },
+    estimatedMinutes: 25,
     controlledByExpertiseToggle: false,
   },
   {
@@ -69,20 +86,42 @@ export const BARBERSHOP_SERVICES: ReadonlyArray<SalonSeedService> = [
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'styling', code: 'RAZ',
-    name: { en: 'Razor Shave', fr: 'Rasage Traditionnel', ar: 'حلاقة بالموس' },
-    estimatedMinutes: 30,
-    controlledByExpertiseToggle: false,
-  },
-  {
     type: 'haircut', code: 'KID',
     name: { en: 'Kids Cut', fr: 'Coupe Enfant', ar: 'قص للأطفال' },
     estimatedMinutes: 20,
     controlledByExpertiseToggle: false,
   },
+  {
+    type: 'other', code: 'EYE',
+    name: { en: 'Eyebrows', fr: 'Sourcils', ar: 'الحواجب' },
+    estimatedMinutes: 10,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'styling', code: 'WSH',
+    name: { en: 'Hair Wash', fr: 'Lavage Cheveux', ar: 'غسيل الشعر' },
+    estimatedMinutes: 15,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'color', code: 'HEN',
+    name: { en: 'Henna (beard/hair)', fr: 'Henné', ar: 'حناء' },
+    estimatedMinutes: 30,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'color', code: 'COL',
+    name: { en: "Men's Color", fr: 'Coloration Homme', ar: 'صبغة شعر رجالية' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: true,
+  },
 ];
 
-/** Hair Salon — women's cuts, color, styling. */
+/**
+ * Hair Salon (women's) — comprehensive Algerian shop menu. Includes
+ * lissage brésilien, mise en plis, coiffure mariée — the staples
+ * every neighborhood salon advertises.
+ */
 export const HAIR_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
   {
     type: 'haircut', code: 'CUT',
@@ -97,6 +136,12 @@ export const HAIR_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
     controlledByExpertiseToggle: false,
   },
   {
+    type: 'styling', code: 'MEP',
+    name: { en: 'Set & Style', fr: 'Mise en Plis', ar: 'تصفيف' },
+    estimatedMinutes: 50,
+    controlledByExpertiseToggle: false,
+  },
+  {
     type: 'color', code: 'COL',
     name: { en: 'Color', fr: 'Coloration', ar: 'صبغ الشعر' },
     estimatedMinutes: 120,
@@ -104,24 +149,63 @@ export const HAIR_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
   },
   {
     type: 'color', code: 'HLT',
-    name: { en: 'Highlights', fr: 'Mèches', ar: 'هاي لايت' },
+    name: { en: 'Highlights / Balayage', fr: 'Mèches / Balayage', ar: 'هاي لايت / باليياج' },
     estimatedMinutes: 150,
     controlledByExpertiseToggle: true,
   },
   {
+    type: 'color', code: 'DEC',
+    name: { en: 'Bleach', fr: 'Décoloration', ar: 'صبغة فاتحة' },
+    estimatedMinutes: 120,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'styling', code: 'LIS',
+    name: { en: 'Brazilian Smoothing', fr: 'Lissage Brésilien', ar: 'فرد برازيلي' },
+    estimatedMinutes: 180,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'styling', code: 'PER',
+    name: { en: 'Perm', fr: 'Permanente', ar: 'تجعيد دائم' },
+    estimatedMinutes: 150,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'other', code: 'BRD',
+    name: { en: 'Bridal Hairstyle', fr: 'Coiffure Mariée', ar: 'تسريحة عروس' },
+    estimatedMinutes: 90,
+    controlledByExpertiseToggle: true,
+  },
+  {
     type: 'styling', code: 'TRT',
-    name: { en: 'Hair Treatment', fr: 'Soin Capillaire', ar: 'علاج الشعر' },
+    name: { en: 'Deep Treatment', fr: 'Soin Capillaire', ar: 'علاج الشعر' },
     estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'color', code: 'HEN',
+    name: { en: 'Henna', fr: 'Henné Cheveux', ar: 'حناء الشعر' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'styling', code: 'WSH',
+    name: { en: 'Wash & Brushing', fr: 'Shampoing + Brushing', ar: 'غسيل وسيشوار' },
+    estimatedMinutes: 35,
     controlledByExpertiseToggle: false,
   },
 ];
 
-/** Nail Salon — manicure / pedicure / nail art. */
+/**
+ * Nail Salon — Algerian shop menu. Vernis semi-permanent + pose de
+ * gel are dominant; nail art and French manucure are upsells.
+ */
 export const NAIL_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
   {
     type: 'other', code: 'MAN',
-    name: { en: 'Manicure', fr: 'Manucure', ar: 'مانيكير' },
-    estimatedMinutes: 35,
+    name: { en: 'Manicure', fr: 'Manucure Simple', ar: 'مانيكير' },
+    estimatedMinutes: 30,
     controlledByExpertiseToggle: false,
   },
   {
@@ -137,10 +221,28 @@ export const NAIL_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
     controlledByExpertiseToggle: false,
   },
   {
+    type: 'other', code: 'VSP',
+    name: { en: 'Semi-Permanent Polish', fr: 'Vernis Semi-Permanent', ar: 'طلاء شبه دائم' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
+  },
+  {
     type: 'other', code: 'GEL',
-    name: { en: 'Gel / Acrylic', fr: 'Gel / Acrylique', ar: 'جل / أكريليك' },
-    estimatedMinutes: 60,
+    name: { en: 'Gel Extensions', fr: 'Pose de Gel', ar: 'تركيب جل' },
+    estimatedMinutes: 75,
     controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'other', code: 'ACR',
+    name: { en: 'Acrylic Extensions', fr: 'Pose Acrylique', ar: 'تركيب أكريليك' },
+    estimatedMinutes: 90,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'other', code: 'FRC',
+    name: { en: 'French Manicure', fr: 'French Manucure', ar: 'مانيكير فرنسي' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
   },
   {
     type: 'other', code: 'ART',
@@ -148,28 +250,26 @@ export const NAIL_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
     estimatedMinutes: 45,
     controlledByExpertiseToggle: true,
   },
+  {
+    type: 'other', code: 'REM',
+    name: { en: 'Removal / Soak Off', fr: 'Dépose', ar: 'إزالة الجل' },
+    estimatedMinutes: 25,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'RPR',
+    name: { en: 'Repair / Fill', fr: 'Renforcement / Remplissage', ar: 'إصلاح / تعبئة' },
+    estimatedMinutes: 30,
+    controlledByExpertiseToggle: false,
+  },
 ];
 
-/** Spa & Wellness — massage / facial / body treatments. */
+/**
+ * Spa & Wellness — Algerian shop menu. Hammam is the anchor service;
+ * gommage and épilation are universally offered. Henné corps shows
+ * up on most spa menus too.
+ */
 export const SPA_SERVICES: ReadonlyArray<SalonSeedService> = [
-  {
-    type: 'other', code: 'MSG',
-    name: { en: 'Massage', fr: 'Massage', ar: 'مساج' },
-    estimatedMinutes: 60,
-    controlledByExpertiseToggle: false,
-  },
-  {
-    type: 'other', code: 'FCL',
-    name: { en: 'Facial', fr: 'Soin du Visage', ar: 'تنظيف بشرة' },
-    estimatedMinutes: 60,
-    controlledByExpertiseToggle: false,
-  },
-  {
-    type: 'other', code: 'BDY',
-    name: { en: 'Body Scrub', fr: 'Gommage Corps', ar: 'تقشير الجسم' },
-    estimatedMinutes: 45,
-    controlledByExpertiseToggle: false,
-  },
   {
     type: 'other', code: 'HMM',
     name: { en: 'Hammam', fr: 'Hammam', ar: 'حمام' },
@@ -177,9 +277,57 @@ export const SPA_SERVICES: ReadonlyArray<SalonSeedService> = [
     controlledByExpertiseToggle: false,
   },
   {
+    type: 'other', code: 'GOM',
+    name: { en: 'Body Scrub', fr: 'Gommage Corps', ar: 'تقشير الجسم' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'MSG',
+    name: { en: 'Relaxing Massage', fr: 'Massage Relaxant', ar: 'مساج للاسترخاء' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'MTH',
+    name: { en: 'Therapeutic Massage', fr: 'Massage Thérapeutique', ar: 'مساج علاجي' },
+    estimatedMinutes: 75,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'other', code: 'FCL',
+    name: { en: 'Facial Treatment', fr: 'Soin du Visage', ar: 'تنظيف بشرة' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'EPL',
+    name: { en: 'Waxing / Hair Removal', fr: 'Épilation', ar: 'إزالة الشعر' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'SUR',
+    name: { en: 'Eyebrow Shaping', fr: 'Sourcils', ar: 'تنظيف الحواجب' },
+    estimatedMinutes: 15,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'HEN',
+    name: { en: 'Body Henna', fr: 'Henné Corps', ar: 'حناء الجسم' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'other', code: 'ARO',
+    name: { en: 'Aromatherapy', fr: 'Aromathérapie', ar: 'علاج بالروائح' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: true,
+  },
+  {
     type: 'combo', code: 'PKG',
     name: { en: 'Wellness Package', fr: 'Forfait Bien-être', ar: 'باقة العافية' },
-    estimatedMinutes: 120,
+    estimatedMinutes: 150,
     controlledByExpertiseToggle: true,
   },
 ];
