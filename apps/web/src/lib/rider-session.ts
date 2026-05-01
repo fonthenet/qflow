@@ -30,6 +30,7 @@ export interface RiderSession {
   organizationId: string;
   riderName: string;
   riderPhone: string;
+  riderAvatarUrl: string | null;
 }
 
 export async function mintRiderSession(riderId: string, deviceLabel?: string | null): Promise<{ token: string; sessionId: string } | null> {
@@ -68,7 +69,7 @@ export async function verifyRiderSession(authHeader: string | null | undefined):
   const supabase = createAdminClient() as any;
   const { data: session } = await supabase
     .from('rider_sessions')
-    .select('id, rider_id, riders(id, organization_id, name, phone, is_active)')
+    .select('id, rider_id, riders(id, organization_id, name, phone, avatar_url, is_active)')
     .eq('token_hash', tokenHash)
     .is('revoked_at', null)
     .maybeSingle();
@@ -87,6 +88,7 @@ export async function verifyRiderSession(authHeader: string | null | undefined):
     organizationId: session.riders.organization_id,
     riderName: session.riders.name,
     riderPhone: session.riders.phone,
+    riderAvatarUrl: session.riders.avatar_url ?? null,
   };
 }
 

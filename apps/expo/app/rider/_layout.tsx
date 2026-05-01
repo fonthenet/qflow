@@ -21,6 +21,7 @@ export default function RiderLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="verify" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="edit-profile" />
         <Stack.Screen name="change-phone" />
         <Stack.Screen name="history" />
         {/* Per-ticket deeplink screen — auth via HMAC token in URL,

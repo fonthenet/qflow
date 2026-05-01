@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
       id: session.riderId,
       name: session.riderName,
       phone: session.riderPhone,
+      avatar_url: session.riderAvatarUrl,
       organization_id: session.organizationId,
     },
   });

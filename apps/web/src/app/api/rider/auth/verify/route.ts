@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminClient() as any;
   const { data: rider } = await supabase
     .from('riders')
-    .select('id, name, phone, organization_id, is_active')
+    .select('id, name, phone, avatar_url, organization_id, is_active')
     .eq('phone', phone)
     .eq('is_active', true)
     .maybeSingle();
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       id: rider.id,
       name: rider.name,
       phone: rider.phone,
+      avatar_url: rider.avatar_url ?? null,
       organization_id: rider.organization_id,
     },
   });

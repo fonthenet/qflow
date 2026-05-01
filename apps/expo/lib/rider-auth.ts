@@ -23,6 +23,7 @@ export interface RiderProfile {
   id: string;
   name: string;
   phone: string;
+  avatar_url: string | null;
   organization_id: string;
 }
 

@@ -3,12 +3,13 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollVie
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useRiderAuth } from '@/lib/rider-auth';
+import { C, F, R, SP } from '@/lib/rider-theme';
 
 /**
  * Rider login — phone entry. Server quietly succeeds for unknown
  * phones (anti-enumeration), so we always advance to the verify
- * screen on submit. The verify step gives the real "wrong code" /
- * "no account" feedback.
+ * screen on submit. The verify step gives the real "wrong code"
+ * feedback.
  */
 export default function RiderLoginScreen() {
   const router = useRouter();
@@ -34,56 +35,60 @@ export default function RiderLoginScreen() {
 
   return (
     <View style={s.root}>
-      <Stack.Screen options={{ title: 'Rider sign in' }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <View style={s.iconBubble}>
-            <Ionicons name="bicycle" size={36} color="#fff" />
+          <View style={s.brand}>
+            <View style={s.logoMark}>
+              <Ionicons name="bicycle" size={36} color="#fff" />
+            </View>
+            <Text style={s.brandName}>Qflo Rider</Text>
+            <Text style={s.brandTag}>Deliver smarter</Text>
           </View>
-          <Text style={s.title}>Rider sign in</Text>
-          <Text style={s.subtitle}>
-            Enter your WhatsApp number. We'll send you a 6-digit code.
-          </Text>
 
-          <Text style={s.label}>WhatsApp number</Text>
-          <TextInput
-            value={phone}
-            onChangeText={(v) => { setPhone(v); setError(null); }}
-            placeholder="+213 …"
-            placeholderTextColor="#94a3b8"
-            keyboardType="phone-pad"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="tel"
-            style={s.input}
-            editable={!busy}
-            onSubmitEditing={onSubmit}
-          />
-          {error ? <Text style={s.error}>{error}</Text> : null}
+          <View style={s.card}>
+            <Text style={s.title}>Sign in</Text>
+            <Text style={s.subtitle}>
+              Enter the WhatsApp number registered with your business. We'll
+              send a 6-digit code.
+            </Text>
 
-          <Pressable
-            onPress={onSubmit}
-            disabled={!valid || busy}
-            style={({ pressed }) => [
-              s.btn,
-              (!valid || busy) && s.btnDisabled,
-              pressed && valid && !busy && s.btnPressed,
-            ]}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={s.btnText}>Send code</Text>
-            )}
-          </Pressable>
+            <Text style={s.label}>WhatsApp number</Text>
+            <TextInput
+              value={phone}
+              onChangeText={(v) => { setPhone(v); setError(null); }}
+              placeholder="+213 …"
+              placeholderTextColor={C.textFaint}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="tel"
+              style={s.input}
+              editable={!busy}
+              onSubmitEditing={onSubmit}
+            />
+            {error ? <Text style={s.error}>{error}</Text> : null}
 
-          <Text style={s.hint}>
-            Your number must already be registered with the business that
-            assigns your deliveries.
-          </Text>
+            <Pressable
+              onPress={onSubmit}
+              disabled={!valid || busy}
+              style={({ pressed }) => [
+                s.btn,
+                (!valid || busy) && s.btnDisabled,
+                pressed && valid && !busy && { opacity: 0.85 },
+              ]}
+            >
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Send code</Text>}
+            </Pressable>
+          </View>
+
+          <View style={s.footer}>
+            <Ionicons name="logo-whatsapp" size={16} color={C.success} />
+            <Text style={s.footerText}>The code arrives on WhatsApp.</Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -91,31 +96,45 @@ export default function RiderLoginScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f8fafc' },
-  scroll: { flexGrow: 1, padding: 24, paddingTop: 60, alignItems: 'center' },
-  iconBubble: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: '#1d4ed8',
+  root: { flex: 1, backgroundColor: C.bg },
+  scroll: { flexGrow: 1, padding: SP.lg, paddingTop: SP.xxl + SP.lg },
+
+  brand: { alignItems: 'center', marginBottom: SP.xxl },
+  logoMark: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: C.primary,
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: SP.md,
   },
-  title: { fontSize: 24, fontWeight: '800', color: '#0f172a', marginBottom: 8 },
-  subtitle: { fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 32, lineHeight: 22 },
-  label: { alignSelf: 'flex-start', fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6 },
+  brandName: { fontSize: F.hero, fontWeight: '800', color: C.text },
+  brandTag: { fontSize: F.md, color: C.textMuted, marginTop: 4 },
+
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: R.xl,
+    padding: SP.xl,
+    borderWidth: 1, borderColor: C.border,
+  },
+  title: { fontSize: F.xxl, fontWeight: '800', color: C.text, marginBottom: SP.xs },
+  subtitle: { fontSize: F.md, color: C.textMuted, marginBottom: SP.lg, lineHeight: 21 },
+  label: { fontSize: F.sm, fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: SP.sm },
   input: {
-    width: '100%', backgroundColor: '#fff',
-    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 17, color: '#0f172a',
+    backgroundColor: C.bg,
+    borderWidth: 1, borderColor: C.border, borderRadius: R.lg,
+    paddingHorizontal: SP.lg, paddingVertical: SP.md,
+    fontSize: F.xl, color: C.text,
   },
-  error: { alignSelf: 'flex-start', color: '#dc2626', fontSize: 13, marginTop: 8 },
+  error: { color: C.danger, fontSize: F.base, marginTop: SP.sm },
   btn: {
-    width: '100%', backgroundColor: '#1d4ed8',
-    paddingVertical: 16, borderRadius: 12, alignItems: 'center',
-    marginTop: 24,
+    backgroundColor: C.primary,
+    paddingVertical: SP.lg,
+    borderRadius: R.lg,
+    alignItems: 'center',
+    marginTop: SP.lg,
   },
   btnDisabled: { opacity: 0.5 },
-  btnPressed: { opacity: 0.85 },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  hint: { fontSize: 12, color: '#94a3b8', textAlign: 'center', marginTop: 24, lineHeight: 18 },
+  btnText: { color: '#fff', fontSize: F.lg, fontWeight: '700' },
+
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: SP.xl },
+  footerText: { fontSize: F.sm, color: C.textMuted },
 });
