@@ -248,7 +248,7 @@ export default function OrderStatus(props: OrderStatusProps) {
         : tr(locale, 'A driver is heading to your address.', 'Un livreur se dirige vers vous.', 'السائق في الطريق إليك.'),
     };
     if (phase === 'preparing') return {
-      tint: '#8b5cf6',
+      tint: '#64748b',
       title: tr(locale, 'Order being prepared', 'Commande en préparation', 'الطلب قيد التحضير'),
       body: serviceMode === 'delivery'
         ? tr(locale,
@@ -301,7 +301,12 @@ export default function OrderStatus(props: OrderStatusProps) {
   // On the Delivered / Pickup-Ready screens the items list becomes the
   // receipt — show it expanded by default. On every other phase the
   // summary line saves space; the customer can still tap to expand.
-  const itemsExpandedDefault = phase === 'delivered' || phase === 'pickup_ready';
+  // Always keep the items list open — at every phase the customer wants
+  // to see what they ordered without having to tap. The "receipt" treatment
+  // (totals + line items styled as a printed receipt) is reserved for the
+  // terminal phases where the list IS the receipt.
+  const itemsExpandedDefault = true;
+  const itemsAsReceipt = phase === 'delivered' || phase === 'pickup_ready';
 
   return (
     <main style={pageWrap}>
@@ -410,22 +415,6 @@ export default function OrderStatus(props: OrderStatusProps) {
           padding: '14px 16px',
         }}>
           <div style={{
-            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-            marginBottom: 10,
-          }}>
-            <span style={{
-              fontSize: 11, fontWeight: 600, color: '#94a3b8',
-              letterSpacing: 0.5, textTransform: 'uppercase',
-            }}>
-              {tr(locale, 'In the kitchen', 'En cuisine', 'في المطبخ')}
-            </span>
-            <span style={{
-              fontSize: 11, color: '#64748b', fontWeight: 500,
-            }}>
-              {tr(locale, 'We will notify you', 'Nous vous préviendrons', 'سنُعلمك')}
-            </span>
-          </div>
-          <div style={{
             position: 'relative',
             height: 4, borderRadius: 999,
             background: '#f1f5f9',
@@ -433,9 +422,21 @@ export default function OrderStatus(props: OrderStatusProps) {
           }}>
             <span style={{
               position: 'absolute', insetBlockStart: 0, insetInlineStart: 0,
-              width: '40%', height: '100%', borderRadius: 999,
-              background: `linear-gradient(90deg, transparent, ${banner.tint}, transparent)`,
-              animation: 'qfo-shimmer 2.2s ease-in-out infinite',
+              width: '50%', height: '100%', borderRadius: 999,
+              // Smooth grey shimmer — gradient stops include faint
+              // intermediate alphas so the leading/trailing edges fade
+              // instead of hard-cutting against the track. Linear timing
+              // keeps motion uniform across the loop (ease in/out makes
+              // the bar visibly slow at the edges, which read as judder).
+              background:
+                'linear-gradient(90deg, ' +
+                'rgba(100,116,139,0) 0%, ' +
+                'rgba(100,116,139,0.18) 30%, ' +
+                'rgba(100,116,139,0.55) 50%, ' +
+                'rgba(100,116,139,0.18) 70%, ' +
+                'rgba(100,116,139,0) 100%)',
+              animation: 'qfo-shimmer 1.8s linear infinite',
+              willChange: 'transform',
             }} />
           </div>
         </section>
@@ -562,9 +563,9 @@ export default function OrderStatus(props: OrderStatusProps) {
         </section>
       )}
 
-      {/* Items: collapsed-by-default summary line during the journey,
-          auto-expanded once the order is delivered / ready (the customer
-          uses this page as a receipt at that point). */}
+      {/* Items: always expanded so the customer can see what they ordered
+          at every phase. On terminal phases (delivered / pickup_ready) the
+          list takes on receipt styling — totals row, line items, etc. */}
       {items.length > 0 && (
         <ItemsSummary
           items={items}
@@ -572,7 +573,7 @@ export default function OrderStatus(props: OrderStatusProps) {
           totalDisplay={totalDisplay}
           locale={locale}
           defaultOpen={itemsExpandedDefault}
-          isReceipt={itemsExpandedDefault}
+          isReceipt={itemsAsReceipt}
         />
       )}
 
