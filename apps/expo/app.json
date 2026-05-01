@@ -20,8 +20,12 @@
         "NSCameraUsageDescription": "Qflo uses the camera to scan QR codes at service locations.",
         "NSUserNotificationsUsageDescription": "Qflo sends notifications to alert you when your turn is approaching so you can return to the desk in time.",
         "NSLocalNetworkUsageDescription": "Qflo scans your local Wi-Fi to discover a nearby Qflo Station for offline ticket join and check-in.",
+        "NSLocationWhenInUseUsageDescription": "Qflo shares your location with the customer in real time so they can see your delivery progress.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Qflo keeps sharing your location with the customer while the app is in the background, so deliveries don't go silent when your phone locks.",
+        "NSLocationAlwaysUsageDescription": "Qflo keeps sharing your location with the customer while the app is in the background.",
+        "NSPhotoLibraryAddUsageDescription": "Qflo saves delivery proof photos to your library so you keep a record of completed orders.",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": ["remote-notification", "location", "fetch", "processing"]
       },
       "associatedDomains": [
         "applinks:qflo.net",
@@ -42,7 +46,13 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "android.permission.ACCESS_WIFI_STATE",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.WAKE_LOCK"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
@@ -52,11 +62,10 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            {
-              "scheme": "https",
-              "host": "qflo.net",
-              "pathPrefix": "/q/"
-            }
+            { "scheme": "https", "host": "qflo.net", "pathPrefix": "/q/" },
+            { "scheme": "https", "host": "qflo.net", "pathPrefix": "/rider/" },
+            { "scheme": "https", "host": "qflo.net", "pathPrefix": "/book/" },
+            { "scheme": "https", "host": "qflo.net", "pathPrefix": "/kiosk/" }
           ],
           "category": [
             "BROWSABLE",
@@ -124,7 +133,18 @@
       ],
       "expo-font",
       "./plugins/with-app-clip",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Qflo shares your location with the customer in real time during deliveries — even when the app is in the background or your phone is locked.",
+          "locationAlwaysPermission": "Qflo keeps sharing your location with the customer while the app is in the background.",
+          "locationWhenInUsePermission": "Qflo shares your location with the customer so they can see your delivery progress.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

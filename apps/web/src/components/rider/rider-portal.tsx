@@ -381,6 +381,16 @@ export function RiderPortal(props: RiderPortalProps) {
   // ── UI ────────────────────────────────────────────────────────────
   return (
     <main style={pageWrap}>
+      {/* "Open in app" prompt — only renders on iOS / Android devices.
+          The Qflo app is associated with qflo.net via Universal Links
+          (iOS) and App Links (Android) so when installed THIS PAGE
+          NEVER LOADS — the OS routes the URL straight to the native
+          rider screen with background-location streaming. The banner
+          below is the fallback UX for users who haven't installed
+          yet: one tap takes them to the App / Play Store, after
+          which the same link in WhatsApp opens the app on a second
+          tap. Hidden on desktop (no app to switch to). */}
+      <OpenInAppBanner ticketId={props.ticketId} />
       {/* Compact hero — ticket number on the same row as a tracking
           status dot so the driver sees both at a glance. */}
       {/* Header — quiet by default. Restaurant name + ticket as a pill,
@@ -758,3 +768,92 @@ const primaryBtn: React.CSSProperties = {
 };
 // Silence unused warnings for the kept-for-compat exports above.
 void greenBtn; void primaryBtn;
+
+/**
+ * "Open in Qflo app" banner. Shown only on iOS/Android browsers.
+ * The native app intercepts qflo.net/rider/* URLs via Universal /
+ * App Links once installed, so seeing this banner means the user
+ * is on a phone but doesn't have the app yet. One tap takes them
+ * to the right store; from then on the same delivery link opens
+ * the app directly with background-location streaming. Hidden on
+ * desktop and dismissible per-session (sessionStorage).
+ */
+function OpenInAppBanner({ ticketId }: { ticketId: string }) {
+  const [platform, setPlatform] = useState<'ios' | 'android' | 'desktop'>('desktop');
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+    const isAndroid = /Android/i.test(ua);
+    if (isIOS) setPlatform('ios');
+    else if (isAndroid) setPlatform('android');
+    else setPlatform('desktop');
+    try {
+      if (sessionStorage.getItem(`qflo:hide-app-banner:${ticketId}`) === '1') {
+        setDismissed(true);
+      } else {
+        setDismissed(false);
+      }
+    } catch { setDismissed(false); }
+  }, [ticketId]);
+
+  if (platform === 'desktop' || dismissed) return null;
+
+  // Store URLs come from EAS / app.json. The iOS app uses the
+  // bundleIdentifier 'com.qflo.app'; the Android package matches.
+  // Once you've published, replace these with the live store URLs;
+  // until then the banner copy works as a heads-up.
+  const storeUrl = platform === 'ios'
+    ? 'https://apps.apple.com/app/id000000000' // TODO: replace with App Store id post-publish
+    : 'https://play.google.com/store/apps/details?id=com.qflo.app';
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '10px 12px', marginBottom: 10,
+      borderRadius: 12,
+      background: '#0f172a', color: '#fff',
+      boxShadow: '0 6px 16px rgba(15,23,42,0.18)',
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 10,
+        background: '#1d4ed8',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 18, fontWeight: 800, flexShrink: 0,
+      }}>Q</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>Open in Qflo</div>
+        <div style={{ fontSize: 11, color: '#cbd5e1', lineHeight: 1.35 }}>
+          Live tracking keeps running when your phone locks.
+        </div>
+      </div>
+      <a
+        href={storeUrl}
+        target="_blank" rel="noreferrer"
+        style={{
+          padding: '8px 14px', borderRadius: 999,
+          background: '#fff', color: '#0f172a',
+          fontWeight: 700, fontSize: 12, textDecoration: 'none',
+          flexShrink: 0,
+        }}
+      >
+        Get the app
+      </a>
+      <button
+        onClick={() => {
+          try { sessionStorage.setItem(`qflo:hide-app-banner:${ticketId}`, '1'); } catch {}
+          setDismissed(true);
+        }}
+        aria-label="Dismiss"
+        style={{
+          background: 'transparent', border: 'none', color: '#94a3b8',
+          padding: 6, cursor: 'pointer', flexShrink: 0,
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}

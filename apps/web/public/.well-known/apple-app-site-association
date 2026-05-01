@@ -8,6 +8,15 @@
       {
         "appID": "W69MRY2826.com.queueflow.app.QueueFlowClip",
         "paths": ["/q/*"]
+      },
+      {
+        "appID": "W69MRY2826.com.qflo.app",
+        "paths": [
+          "/rider/*",
+          "/q/*",
+          "/book/*",
+          "/kiosk/*"
+        ]
       }
     ]
   }

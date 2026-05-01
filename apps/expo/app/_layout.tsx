@@ -7,6 +7,11 @@ import * as Notifications from 'expo-notifications';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n'; // initialise i18n
 import { backIconName, isRTL } from '@/lib/i18n';
+// Register the background-location task at module load — TaskManager
+// resolves task names at fire time, so the defineTask call must run
+// every time the JS engine boots (cold launch, OS-resumed task, etc.).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import '@/lib/rider-location-task';
 
 // ── Global RTL text defaults ────────────────────────────────────────
 // Sets writingDirection on ALL Text & TextInput so Arabic renders
@@ -230,6 +235,11 @@ function RootNavigator() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(operator)" options={{ headerShown: false }} />
         <Stack.Screen name="(admin)" options={{ headerShown: false }} />
+        {/* Rider deeplink — qflo.net/rider/<ticketId>/<token> opens
+            this screen when the app is installed (universal link on
+            iOS, app link on Android). Headerless: the screen renders
+            its own header with order context + GPS status pill. */}
+        <Stack.Screen name="rider/[id]/[token]" options={{ headerShown: false }} />
         <Stack.Screen
           name="admin/bookings"
           options={{
