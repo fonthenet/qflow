@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { MapboxLiveMap, MAPBOX_TOKEN_CONFIGURED } from '@/components/maps/mapbox-live-map';
 
@@ -50,6 +50,21 @@ interface RiderPin {
 
 function tr(locale: 'ar' | 'fr' | 'en', en: string, fr: string, ar: string) {
   return locale === 'ar' ? ar : locale === 'fr' ? fr : en;
+}
+
+/**
+ * "23s" / "2 min" / "5 min" — short relative-time string used in the
+ * stale-heartbeat banner. Locale-aware unit ('s' / 'min'), no fancy
+ * pluralisation since this is a glance-able badge, not prose.
+ */
+function formatStale(sec: number, loc: 'en' | 'fr' | 'ar'): string {
+  if (sec < 60) {
+    if (loc === 'ar') return `${sec} ث`;
+    return `${sec}s`;
+  }
+  const m = Math.floor(sec / 60);
+  if (loc === 'ar') return `${m} د`;
+  return `${m} min`;
 }
 
 function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -106,14 +121,36 @@ function gmapsStaticUrl(
 
 
 export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supabaseAnonKey, locale }: OrderMapProps) {
+  // `rider`        — most recent server-confirmed position
+  // `displayRider` — what we actually render; lerps toward `rider` over
+  //                  ~700ms so the marker glides instead of teleporting
   const [rider, setRider] = useState<RiderPin | null>(null);
+  const [displayRider, setDisplayRider] = useState<RiderPin | null>(null);
+  // `lastEventAt` — wall-clock of the most recent realtime push OR
+  // poll fetch. Drives the staleness banner + the polling fallback.
+  const [lastEventAt, setLastEventAt] = useState<number>(() => Date.now());
+  const [now, setNow] = useState<number>(() => Date.now());
 
   const dest = useMemo(() => ({ lat: destLat, lng: destLng }), [destLat, destLng]);
 
   // ── Initial fetch + Realtime: rider_locations for this ticket ────
   useEffect(() => {
-    let unsub: (() => void) | null = null;
     const sb = createBrowserClient(supabaseUrl, supabaseAnonKey);
+    let cancelled = false;
+
+    const ingest = (data: any, source: 'fetch' | 'realtime' | 'poll') => {
+      if (cancelled) return;
+      if (typeof data?.lat !== 'number' || typeof data?.lng !== 'number') return;
+      setRider({
+        lat: data.lat, lng: data.lng,
+        speedMps: typeof (data.speed_mps ?? data.speedMps) === 'number'
+          ? (data.speed_mps ?? data.speedMps) : null,
+        recordedAt: data.recorded_at ?? data.recordedAt,
+      });
+      setLastEventAt(Date.now());
+      // Suppress unused warning; useful for log forensics.
+      void source;
+    };
 
     sb.from('rider_locations')
       .select('lat, lng, speed_mps, recorded_at')
@@ -121,37 +158,89 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-      .then(({ data }: { data: any }) => {
-        if (data) {
-          setRider({
-            lat: data.lat, lng: data.lng,
-            speedMps: typeof data.speed_mps === 'number' ? data.speed_mps : null,
-            recordedAt: data.recorded_at,
-          });
-        }
-      });
+      .then(({ data }: { data: any }) => { if (data) ingest(data, 'fetch'); });
 
     const channel = sb
       .channel(`rider-track-${ticketId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'rider_locations', filter: `ticket_id=eq.${ticketId}` },
-        (payload) => {
-          const r = payload.new as any;
-          if (typeof r?.lat === 'number' && typeof r?.lng === 'number') {
-            setRider({
-              lat: r.lat, lng: r.lng,
-              speedMps: typeof r.speed_mps === 'number' ? r.speed_mps : null,
-              recordedAt: r.recorded_at,
-            });
-          }
-        },
+        (payload) => ingest(payload.new, 'realtime'),
       )
       .subscribe();
-    unsub = () => { try { sb.removeChannel(channel); } catch {} };
 
-    return () => unsub?.();
+    // ── Polling fallback ─────────────────────────────────────────────
+    // Realtime websockets drop silently on flaky carrier networks. If
+    // we haven't seen any event in ~25 s we kick on a 5 s polling loop
+    // until realtime resumes (each successful realtime event resets
+    // lastEventAt and the poll naturally idles). Cheap insurance —
+    // worst case 12 reqs/min on a stuck connection vs. a dead map.
+    const pollTimer = setInterval(async () => {
+      if (cancelled) return;
+      if (Date.now() - lastEventAtRef.current < 25_000) return;
+      const { data } = await sb.from('rider_locations')
+        .select('lat, lng, speed_mps, recorded_at')
+        .eq('ticket_id', ticketId)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) ingest(data, 'poll');
+    }, 5_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollTimer);
+      try { sb.removeChannel(channel); } catch {}
+    };
   }, [ticketId, supabaseUrl, supabaseAnonKey]);
+
+  // Mirror lastEventAt into a ref so the poll closure sees fresh values.
+  const lastEventAtRef = useRef(lastEventAt);
+  useEffect(() => { lastEventAtRef.current = lastEventAt; }, [lastEventAt]);
+
+  // ── Marker interpolation — lerp displayRider toward rider over 700ms ──
+  // Smooth glide between fixes (matches the UberEats / DoorDash feel).
+  // requestAnimationFrame loop runs at the browser's native ~60 fps and
+  // shuts off automatically when the tab is hidden.
+  useEffect(() => {
+    if (!rider) { setDisplayRider(null); return; }
+    const start = performance.now();
+    const from = displayRider ?? rider;
+    const duration = 700;
+    let raf = 0;
+
+    const tick = (t: number) => {
+      const elapsed = t - start;
+      const k = Math.min(1, elapsed / duration);
+      // ease-out cubic — feels organic without overshoot
+      const e = 1 - Math.pow(1 - k, 3);
+      setDisplayRider({
+        lat: from.lat + (rider.lat - from.lat) * e,
+        lng: from.lng + (rider.lng - from.lng) * e,
+        speedMps: rider.speedMps,
+        recordedAt: rider.recordedAt,
+      });
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // Intentionally only depending on `rider` — we want a fresh
+    // animation per server fix, not on every interpolation tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rider]);
+
+  // ── Staleness clock — re-renders the banner once a second ─────────
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Stale = no server update in > 45 s. We're conservative — at the
+  // 4 s heartbeat cadence, missing ~10 in a row is a real problem
+  // (phone locked, signal lost, browser tab killed).
+  const recordedAtMs = rider?.recordedAt ? new Date(rider.recordedAt).getTime() : null;
+  const staleSec = recordedAtMs ? Math.max(0, Math.floor((now - recordedAtMs) / 1000)) : null;
+  const isStale = staleSec != null && staleSec > 45;
 
   // Build the Google Static Maps URL when the key is available; that's
   // the only reliable provider for in-app WebViews. OSM static was
@@ -160,26 +249,33 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
   // primary fail. When the key is missing, render a placeholder card
   // with an "Open in Maps" button instead.
   const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? '';
+  // Static-image src is rebuilt on every interpolated frame — that
+  // would hammer Google's Static API. Anchor it on the actual server
+  // rider position (changes only on each heartbeat), not the lerped
+  // displayRider. Vector map uses displayRider for smooth motion;
+  // static fallback stays at heartbeat resolution.
   const imgSrc = gmapsKey
     ? gmapsStaticUrl(gmapsKey, rider ? { lat: rider.lat, lng: rider.lng } : null, dest)
     : null;
 
   // External "open in maps" link — universal q= URL works on Google
   // Maps web, Apple Maps (iOS), and falls back gracefully elsewhere.
-  const focus = rider ?? dest;
+  const focus = displayRider ?? rider ?? dest;
   const fullMapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${focus.lat},${focus.lng}`)}`;
 
   // ── Straight-line ETA ─────────────────────────────────────────────
+  // Uses the lerped position so the distance counts down smoothly
+  // alongside the moving pin. Server position would tick in 4s jumps.
   const eta = useMemo(() => {
-    if (!rider) return null;
-    const distM = haversineM({ lat: rider.lat, lng: rider.lng }, dest);
-    const speedMps = rider.speedMps && rider.speedMps > 1 && rider.speedMps < 30
-      ? rider.speedMps
+    if (!displayRider) return null;
+    const distM = haversineM({ lat: displayRider.lat, lng: displayRider.lng }, dest);
+    const speedMps = displayRider.speedMps && displayRider.speedMps > 1 && displayRider.speedMps < 30
+      ? displayRider.speedMps
       : 8.3;
     const seconds = distM / speedMps;
     const minutes = Math.max(1, Math.round(seconds / 60));
     return { distKm: distM / 1000, minutes };
-  }, [rider, dest]);
+  }, [displayRider, dest]);
 
   return (
     <section style={{
@@ -237,13 +333,48 @@ export default function OrderMap({ ticketId, destLat, destLng, supabaseUrl, supa
           Falls back to Google Static when no Mapbox token, then to
           a tappable placeholder when no Google key either. */}
       {MAPBOX_TOKEN_CONFIGURED ? (
-        <MapboxLiveMap
-          destLat={dest.lat}
-          destLng={dest.lng}
-          riderLat={rider?.lat ?? null}
-          riderLng={rider?.lng ?? null}
-          height={360}
-        />
+        <div style={{ position: 'relative' }}>
+          <MapboxLiveMap
+            destLat={dest.lat}
+            destLng={dest.lng}
+            riderLat={displayRider?.lat ?? null}
+            riderLng={displayRider?.lng ?? null}
+            height={360}
+          />
+          {/* Stale-heartbeat banner — appears in the top-left corner of
+              the map when the last server update is older than 45 s.
+              Pulses subtly to draw the eye without being alarming.
+              Honest UX: customer sees we know we don't have fresh data
+              instead of being misled by a stale-but-confidently-rendered
+              pin. */}
+          {isStale && rider && (
+            <div style={{
+              position: 'absolute', top: 12, insetInlineStart: 12,
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '6px 10px', borderRadius: 999,
+              background: 'rgba(15,23,42,0.78)',
+              color: '#fff',
+              fontSize: 11, fontWeight: 600,
+              letterSpacing: 0.2,
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              boxShadow: '0 4px 14px rgba(15,23,42,0.18)',
+            }}>
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: '#f59e0b',
+                boxShadow: '0 0 0 3px rgba(245,158,11,0.28)',
+                animation: 'qfo-pulse-soft 1.4s ease-in-out infinite',
+              }} />
+              {tr(
+                locale,
+                `Reconnecting · last seen ${formatStale(staleSec ?? 0, 'en')} ago`,
+                `Reconnexion · vu il y a ${formatStale(staleSec ?? 0, 'fr')}`,
+                `إعادة الاتصال · آخر ظهور قبل ${formatStale(staleSec ?? 0, 'ar')}`,
+              )}
+            </div>
+          )}
+        </div>
       ) : (
         <a href={fullMapHref} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
           {imgSrc ? (

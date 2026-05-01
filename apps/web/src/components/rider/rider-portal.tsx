@@ -74,7 +74,12 @@ function gmapsStaticUrl(
  *     permanently for this load.
  */
 
-const HEARTBEAT_MIN_MS = 12_000;
+// 4s heartbeat — close to UberEats / DoorDash cadence (~3-5s). At
+// 22 km/h urban moped speed the rider moves ~25 m between fixes,
+// which interpolates smoothly on the customer map. The OS coalesces
+// watchPosition callbacks; we additionally throttle the network POST
+// so a phone delivering 1 Hz updates still only sends ~1 row / 4s.
+const HEARTBEAT_MIN_MS = 4_000;
 
 export interface RiderPortalProps {
   ticketId: string;
@@ -219,16 +224,46 @@ export function RiderPortal(props: RiderPortalProps) {
 
     startWatch();
 
+    // ── Wake Lock — keep the screen on while tracking ───────────────
+    // The browser kills GPS the moment the tab is hidden (iOS) or the
+    // device locks (both). Wake Lock asks the OS to keep the screen
+    // awake while this page is the active tab. Works on iOS 16.4+
+    // and Android Chrome. When unsupported (older iOS, secondary tab),
+    // we silently fall back — no error to the rider, just less
+    // resilience to auto-lock.
+    let wakeLock: any = null;
+    const requestLock = async () => {
+      try {
+        const wl = (navigator as any).wakeLock;
+        if (wl?.request) {
+          wakeLock = await wl.request('screen');
+          // The OS may release on its own (call, low battery). Try
+          // to re-acquire when visibility returns — handled below.
+        }
+      } catch { /* unsupported / blocked — silent */ }
+    };
+    const releaseLock = async () => {
+      try { await wakeLock?.release?.(); } catch { /* ignore */ }
+      wakeLock = null;
+    };
+    void requestLock();
+
     // Pause when the tab is hidden, resume when it returns. Saves the
     // rider's battery during stop lights / phone in pocket.
     const onVisibility = () => {
-      if (document.hidden) stopWatch();
-      else if (!isDelivered) startWatch();
+      if (document.hidden) {
+        stopWatch();
+        void releaseLock();
+      } else if (!isDelivered) {
+        startWatch();
+        void requestLock();
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       stopWatch();
+      void releaseLock();
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [ticketId, token, isDelivered]);
@@ -676,7 +711,8 @@ export function RiderPortal(props: RiderPortalProps) {
         </div>
       )}
 
-      <p style={{ marginTop: 18, fontSize: 11, color: '#94a3b8', textAlign: 'center', letterSpacing: 0.1 }}>
+      <p style={{ marginTop: 18, fontSize: 11, color: '#94a3b8', textAlign: 'center', letterSpacing: 0.1, lineHeight: 1.5 }}>
+        Keep the screen on for live tracking — we pause when the phone locks.<br />
         Live location stops automatically once the order is delivered.
       </p>
     </main>
