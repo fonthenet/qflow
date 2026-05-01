@@ -12,7 +12,7 @@
  *   const { confirm, alert } = useConfirmDialog();
  *   const yes = await confirm('Delete?', { confirmLabel: 'Delete', variant: 'danger' });
  */
-import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 
 interface ConfirmOptions {
   title?: string;

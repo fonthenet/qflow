@@ -126,6 +126,49 @@ export async function updateOrganizationProfile(data: {
   const context = await getStaffContext();
   await requireOrganizationAdmin(context);
 
+  const MAX_FIELD_LENGTH = 64;
+
+  if (data.timezone != null && data.timezone !== '') {
+    if (data.timezone.length > MAX_FIELD_LENGTH) {
+      return { error: 'Timezone values must not exceed maximum length of 64 characters' };
+    }
+    const validTimezones = Intl.supportedValuesOf('timeZone');
+    if (!validTimezones.includes(data.timezone)) {
+      return { error: 'Invalid timezone — must be a valid IANA timezone identifier' };
+    }
+  }
+
+  if (data.locale_primary != null && data.locale_primary !== '') {
+    if (data.locale_primary.length > MAX_FIELD_LENGTH) {
+      return { error: 'Locale values must not exceed maximum length of 64 characters' };
+    }
+    const country = data.country ?? (
+      await context.supabase
+        .from('organizations')
+        .select('country')
+        .eq('id', context.staff.organization_id)
+        .single()
+    ).data?.country;
+
+    if (country) {
+      const { data: countryConfig } = await context.supabase
+        .from('country_config')
+        .select('locale_default, locale_fallbacks')
+        .eq('code', country)
+        .maybeSingle();
+
+      if (countryConfig) {
+        const allowed = [
+          countryConfig.locale_default,
+          ...(countryConfig.locale_fallbacks ?? []),
+        ];
+        if (!allowed.includes(data.locale_primary)) {
+          return { error: `Locale '${data.locale_primary}' is not allowed for country ${country}` };
+        }
+      }
+    }
+  }
+
   const { error } = await context.supabase
     .from('organizations')
     .update({
