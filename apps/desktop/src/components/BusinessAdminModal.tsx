@@ -193,7 +193,16 @@ export function BusinessAdminModal({ organizationId, activeOfficeId, callerUserI
       if (staffRes.error) throw staffRes.error;
       setStaff((staffRes.data ?? []) as StaffRow[]);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load');
+      // Make failures visible — previously a silent JWT expiry would
+      // leave the panel showing 0 across all tabs with no error UI.
+      // Now the operator sees the message and a "sign out and back in"
+      // hint when the failure is auth-shaped.
+      const msg = e?.message ?? 'Failed to load';
+      const looksLikeAuth = /jwt|auth|expired|unauth|forbidden/i.test(msg);
+      setError(looksLikeAuth
+        ? `${msg} — your session may have expired. Sign out and back in to refresh.`
+        : msg);
+      console.warn('[business-admin] reload failed', { msg, raw: e });
     } finally {
       setLoading(false);
     }
