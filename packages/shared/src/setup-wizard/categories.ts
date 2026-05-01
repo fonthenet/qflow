@@ -16,7 +16,15 @@ export type BusinessCategory =
   | 'services'
   | 'restaurant'
   | 'education'
+  // Beauty / personal-care family. We keep 'beauty' as the legacy
+  // catch-all (existing orgs were stamped with it) and add four
+  // specific sub-types so the seeded service list matches the actual
+  // business — a nail salon getting "Haircut" pre-filled is wrong.
   | 'beauty'
+  | 'barbershop'
+  | 'hair_salon'
+  | 'nail_salon'
+  | 'spa'
   | 'telecom'
   | 'insurance'
   | 'automotive'
@@ -53,6 +61,8 @@ export interface CategoryDefinition {
     | 'public-service'
     | 'restaurant'
     | 'barber'
+    | 'salon'
+    | 'spa'
     | 'education'
     | 'telecom'
     | 'insurance'
@@ -184,10 +194,81 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     defaultDesk: { name: { en: 'Counter 1', fr: 'Guichet 1', ar: 'شباك 1' } },
   },
   {
+    value: 'barbershop',
+    emoji: '💈',
+    label: { en: 'Barbershop', fr: 'Salon de barbier', ar: 'صالون حلاقة' },
+    vertical: 'barber',
+    defaultOfficeName: { en: 'Main Barbershop', fr: 'Salon de Barbier', ar: 'صالون الحلاقة' },
+    defaultDepartment: {
+      name: { en: 'Services', fr: 'Prestations', ar: 'الخدمات' },
+      code: 'BRB',
+    },
+    defaultService: {
+      name: { en: 'Haircut', fr: 'Coupe', ar: 'قص الشعر' },
+      code: 'CUT',
+      estimatedMinutes: 30,
+    },
+    defaultDesk: { name: { en: 'Chair 1', fr: 'Chaise 1', ar: 'كرسي 1' } },
+  },
+  {
+    value: 'hair_salon',
+    emoji: '💇',
+    label: { en: 'Hair Salon', fr: 'Salon de coiffure', ar: 'صالون شعر' },
+    vertical: 'salon',
+    defaultOfficeName: { en: 'Main Salon', fr: 'Salon Principal', ar: 'الصالون الرئيسي' },
+    defaultDepartment: {
+      name: { en: 'Services', fr: 'Prestations', ar: 'الخدمات' },
+      code: 'SLN',
+    },
+    defaultService: {
+      name: { en: 'Cut & Style', fr: 'Coupe & Coiffage', ar: 'قص وتصفيف' },
+      code: 'CUT',
+      estimatedMinutes: 45,
+    },
+    defaultDesk: { name: { en: 'Chair 1', fr: 'Chaise 1', ar: 'كرسي 1' } },
+  },
+  {
+    value: 'nail_salon',
+    emoji: '💅',
+    label: { en: 'Nail Salon', fr: 'Salon de manucure', ar: 'صالون أظافر' },
+    vertical: 'salon',
+    defaultOfficeName: { en: 'Main Studio', fr: 'Studio Principal', ar: 'الاستوديو الرئيسي' },
+    defaultDepartment: {
+      name: { en: 'Services', fr: 'Prestations', ar: 'الخدمات' },
+      code: 'NAL',
+    },
+    defaultService: {
+      name: { en: 'Manicure', fr: 'Manucure', ar: 'مانيكير' },
+      code: 'MAN',
+      estimatedMinutes: 35,
+    },
+    defaultDesk: { name: { en: 'Station 1', fr: 'Poste 1', ar: 'محطة 1' } },
+  },
+  {
+    value: 'spa',
+    emoji: '🧖',
+    label: { en: 'Spa & Wellness', fr: 'Spa & Bien-être', ar: 'سبا وعافية' },
+    vertical: 'spa',
+    defaultOfficeName: { en: 'Main Spa', fr: 'Spa Principal', ar: 'السبا الرئيسي' },
+    defaultDepartment: {
+      name: { en: 'Treatments', fr: 'Soins', ar: 'العلاجات' },
+      code: 'SPA',
+    },
+    defaultService: {
+      name: { en: 'Massage', fr: 'Massage', ar: 'مساج' },
+      code: 'MSG',
+      estimatedMinutes: 60,
+    },
+    defaultDesk: { name: { en: 'Room 1', fr: 'Cabine 1', ar: 'غرفة 1' } },
+  },
+  // Legacy catch-all — kept selectable so existing 'beauty' orgs stay
+  // routable, but new operators see the more specific options above
+  // first. Maps to the same vertical pool.
+  {
     value: 'beauty',
     emoji: '✂️',
-    label: { en: 'Beauty & Spa', fr: 'Beauté & Spa', ar: 'التجميل والعناية' },
-    vertical: 'barber',
+    label: { en: 'Beauty & Spa (mixed)', fr: 'Beauté & Spa (mixte)', ar: 'تجميل وسبا (مختلط)' },
+    vertical: 'salon',
     defaultOfficeName: { en: 'Main Salon', fr: 'Salon Principal', ar: 'الصالون الرئيسي' },
     defaultDepartment: {
       name: { en: 'Services', fr: 'Prestations', ar: 'الخدمات' },
@@ -336,9 +417,12 @@ export function getBusinessCategoryByVertical(
   // production so we don't silently mis-categorize.
   const aliases: Record<string, BusinessCategory> = {
     gov: 'government',
-    barber: 'beauty',
-    salon: 'beauty',
-    spa: 'beauty',
+    // Personal-care DB slugs map to the SPECIFIC sub-categories now —
+    // legacy 'beauty' stays selectable but new lookups go to the
+    // matching sub-type so the seeded service set is right.
+    barber: 'barbershop',
+    salon: 'hair_salon',
+    spa: 'spa',
     dental: 'healthcare',
     veterinary: 'healthcare',
     pharmacy: 'healthcare',
@@ -364,6 +448,8 @@ export function getCategoryTemplateId(category: CategoryDefinition): string {
     case 'public-service': return 'public-service';
     case 'restaurant': return 'restaurant-waitlist';
     case 'barber': return 'barbershop';
+    case 'salon': return 'salon';
+    case 'spa': return 'spa';
     case 'education': return 'education';
     case 'telecom': return 'telecom';
     case 'insurance': return 'insurance';

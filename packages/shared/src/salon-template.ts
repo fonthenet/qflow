@@ -41,48 +41,177 @@ export interface SalonSeedService {
 }
 
 /**
- * Five default services every new salon / barber gets seeded with.
- * Order is the kiosk display order — the most common walk-in service
- * (Haircut) appears first; Color last because it's the biggest time
- * sink and you want the kiosk biased toward fast services.
+ * Sub-type-specific service templates. Earlier we shipped one
+ * universal SALON_DEFAULT_SERVICES that was barber-leaning — wrong
+ * for nail salons (no nail services) and spas (no massage). Now each
+ * personal-care category gets its own set, picked at onboarding via
+ * getSalonTemplateForCategory().
  */
-export const SALON_DEFAULT_SERVICES: ReadonlyArray<SalonSeedService> = [
+
+/** Barbershop — men's cuts + beard work. */
+export const BARBERSHOP_SERVICES: ReadonlyArray<SalonSeedService> = [
   {
-    type: 'haircut',
-    code: 'CUT',
+    type: 'haircut', code: 'CUT',
     name: { en: 'Haircut', fr: 'Coupe', ar: 'قص الشعر' },
     estimatedMinutes: 30,
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'beard',
-    code: 'BRD',
+    type: 'beard', code: 'BRD',
     name: { en: 'Beard / Shave', fr: 'Barbe / Rasage', ar: 'حلاقة اللحية' },
     estimatedMinutes: 20,
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'combo',
-    code: 'CMB',
+    type: 'combo', code: 'CMB',
     name: { en: 'Cut + Beard', fr: 'Coupe + Barbe', ar: 'قص + حلاقة' },
     estimatedMinutes: 45,
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'styling',
-    code: 'STY',
-    name: { en: 'Styling / Blowout', fr: 'Coiffage / Brushing', ar: 'تصفيف الشعر' },
+    type: 'styling', code: 'RAZ',
+    name: { en: 'Razor Shave', fr: 'Rasage Traditionnel', ar: 'حلاقة بالموس' },
+    estimatedMinutes: 30,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'haircut', code: 'KID',
+    name: { en: 'Kids Cut', fr: 'Coupe Enfant', ar: 'قص للأطفال' },
+    estimatedMinutes: 20,
+    controlledByExpertiseToggle: false,
+  },
+];
+
+/** Hair Salon — women's cuts, color, styling. */
+export const HAIR_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
+  {
+    type: 'haircut', code: 'CUT',
+    name: { en: 'Cut & Style', fr: 'Coupe & Coiffage', ar: 'قص وتصفيف' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'styling', code: 'BLW',
+    name: { en: 'Blowout', fr: 'Brushing', ar: 'سيشوار' },
     estimatedMinutes: 40,
     controlledByExpertiseToggle: false,
   },
   {
-    type: 'color',
-    code: 'COL',
-    name: { en: 'Color / Treatment', fr: 'Coloration / Soin', ar: 'صبغ / علاج' },
-    estimatedMinutes: 90,
+    type: 'color', code: 'COL',
+    name: { en: 'Color', fr: 'Coloration', ar: 'صبغ الشعر' },
+    estimatedMinutes: 120,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'color', code: 'HLT',
+    name: { en: 'Highlights', fr: 'Mèches', ar: 'هاي لايت' },
+    estimatedMinutes: 150,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'styling', code: 'TRT',
+    name: { en: 'Hair Treatment', fr: 'Soin Capillaire', ar: 'علاج الشعر' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+];
+
+/** Nail Salon — manicure / pedicure / nail art. */
+export const NAIL_SALON_SERVICES: ReadonlyArray<SalonSeedService> = [
+  {
+    type: 'other', code: 'MAN',
+    name: { en: 'Manicure', fr: 'Manucure', ar: 'مانيكير' },
+    estimatedMinutes: 35,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'PED',
+    name: { en: 'Pedicure', fr: 'Pédicure', ar: 'باديكير' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'combo', code: 'MPC',
+    name: { en: 'Mani + Pedi', fr: 'Mani + Pédi', ar: 'مانيكير + باديكير' },
+    estimatedMinutes: 75,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'GEL',
+    name: { en: 'Gel / Acrylic', fr: 'Gel / Acrylique', ar: 'جل / أكريليك' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: true,
+  },
+  {
+    type: 'other', code: 'ART',
+    name: { en: 'Nail Art', fr: 'Nail Art', ar: 'فن الأظافر' },
+    estimatedMinutes: 45,
     controlledByExpertiseToggle: true,
   },
 ];
+
+/** Spa & Wellness — massage / facial / body treatments. */
+export const SPA_SERVICES: ReadonlyArray<SalonSeedService> = [
+  {
+    type: 'other', code: 'MSG',
+    name: { en: 'Massage', fr: 'Massage', ar: 'مساج' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'FCL',
+    name: { en: 'Facial', fr: 'Soin du Visage', ar: 'تنظيف بشرة' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'BDY',
+    name: { en: 'Body Scrub', fr: 'Gommage Corps', ar: 'تقشير الجسم' },
+    estimatedMinutes: 45,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'other', code: 'HMM',
+    name: { en: 'Hammam', fr: 'Hammam', ar: 'حمام' },
+    estimatedMinutes: 60,
+    controlledByExpertiseToggle: false,
+  },
+  {
+    type: 'combo', code: 'PKG',
+    name: { en: 'Wellness Package', fr: 'Forfait Bien-être', ar: 'باقة العافية' },
+    estimatedMinutes: 120,
+    controlledByExpertiseToggle: true,
+  },
+];
+
+/**
+ * Mixed beauty — when the operator picks the legacy 'beauty' catch-all
+ * we seed a representative slice from each sub-type so they have
+ * options to start with. They'll prune what doesn't apply.
+ */
+export const SALON_DEFAULT_SERVICES: ReadonlyArray<SalonSeedService> = [
+  BARBERSHOP_SERVICES[0],   // Haircut
+  HAIR_SALON_SERVICES[2],   // Color
+  NAIL_SALON_SERVICES[2],   // Mani + Pedi
+  SPA_SERVICES[0],          // Massage
+  SPA_SERVICES[1],          // Facial
+];
+
+/**
+ * Pick the right service template for an onboarding category. Returns
+ * the mixed default when the category isn't a personal-care one (so
+ * non-salon callers get the safe fallback, not undefined).
+ */
+export function getSalonTemplateForCategory(
+  category: string | null | undefined,
+): ReadonlyArray<SalonSeedService> {
+  const c = (category ?? '').toLowerCase().trim();
+  if (c === 'barbershop' || c === 'barber') return BARBERSHOP_SERVICES;
+  if (c === 'hair_salon' || c === 'salon') return HAIR_SALON_SERVICES;
+  if (c === 'nail_salon' || c === 'nails') return NAIL_SALON_SERVICES;
+  if (c === 'spa') return SPA_SERVICES;
+  return SALON_DEFAULT_SERVICES;
+}
 
 /**
  * Salon-specific keys we stamp onto organizations.settings during
@@ -136,9 +265,12 @@ export const SALON_DEFAULT_SETTINGS: SalonSettings = {
 export function isSalonCategory(category: string | null | undefined): boolean {
   if (!category) return false;
   const c = category.toLowerCase().trim();
-  return c === 'beauty'
-    || c === 'salon'
-    || c === 'barber'
-    || c === 'barbershop'
-    || c === 'spa';
+  return c === 'beauty'        // legacy catch-all
+    || c === 'salon'           // legacy / DB slug
+    || c === 'barber'          // DB slug
+    || c === 'barbershop'      // V2 specific
+    || c === 'hair_salon'      // V2 specific
+    || c === 'nail_salon'      // V2 specific
+    || c === 'nails'           // alias
+    || c === 'spa';            // legacy + V2 specific
 }

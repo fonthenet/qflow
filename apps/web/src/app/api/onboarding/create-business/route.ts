@@ -10,7 +10,7 @@ import {
   RESTAURANT_DEFAULT_SERVICES,
   RESTAURANT_DEFAULT_SETTINGS,
   isRestaurantCategory,
-  SALON_DEFAULT_SERVICES,
+  getSalonTemplateForCategory,
   SALON_DEFAULT_SETTINGS,
   isSalonCategory,
   type BusinessCategory,
@@ -274,7 +274,11 @@ export async function POST(request: NextRequest) {
           serviceType: s.type,
         }))
       : useSalonTemplate
-      ? SALON_DEFAULT_SERVICES.map((s) => ({
+      ? getSalonTemplateForCategory(category.value).map((s) => ({
+          // Pick the sub-type-appropriate trio: barbershop gets cut /
+          // beard / razor; nail_salon gets mani / pedi / gel; spa gets
+          // massage / facial / hammam; the legacy 'beauty' catch-all
+          // gets a representative mix.
           name: resolveLocalized(s.name, locale),
           estimatedMinutes: s.estimatedMinutes,
           code: s.code,
