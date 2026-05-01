@@ -14,7 +14,7 @@ import { useI18n } from '@/components/providers/locale-provider';
 import { LanguageSwitcher } from '@/components/shared/language-switcher';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
 import { checkInAppointment, findAppointment } from '@/lib/actions/appointment-actions';
-import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
+import { createPublicTicket, getAvailableStaffForService } from '@/lib/actions/public-ticket-actions';
 import { buildBookingPath } from '@/lib/office-links';
 import { getEnabledIntakeFields, getFieldLabel, getFieldPlaceholder, type IntakeField, type PresetKey } from '@qflo/shared';
 import { WILAYAS, formatWilaya } from '@/lib/wilayas';
@@ -67,7 +67,7 @@ interface KioskViewProps {
   };
 }
 
-type KioskStep = 'home' | 'department' | 'service' | 'priority' | 'appointment' | 'ticket';
+type KioskStep = 'home' | 'department' | 'service' | 'provider' | 'priority' | 'appointment' | 'ticket';
 
 export function KioskView({
   office,
@@ -117,6 +117,19 @@ export function KioskView({
   const [selectedDept, setSelectedDept] = useState<any>(defaultDept);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
+  // Stylist preference (salon-only) — captured during the 'provider'
+  // step and stuffed into ticket.customer_data.preferred_staff_id so
+  // the operator's Station can show "wait for X" on the card. We
+  // skip this step entirely for non-salon orgs OR shops with ≤1
+  // active staff (no choice to make).
+  const [stylists, setStylists] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [selectedStylistId, setSelectedStylistId] = useState<string | null>(null);
+  const [loadingStylists, setLoadingStylists] = useState(false);
+  const orgCategoryRaw = String(organization?.settings?.business_category ?? '').toLowerCase();
+  const isSalonKiosk = orgCategoryRaw === 'beauty'
+    || orgCategoryRaw === 'salon'
+    || orgCategoryRaw === 'barbershop'
+    || orgCategoryRaw === 'spa';
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerReason, setCustomerReason] = useState('');
@@ -350,6 +363,35 @@ export function KioskView({
     }
     setCustomerInfoError(null);
     setSelectedService(service);
+    setSelectedStylistId(null);
+
+    // Salon flow: between Service and Priority, ask "any stylist or
+    // someone specific?". Only fires when the kiosk is a salon AND
+    // the office has ≥2 stylists who can do this service. Stylist
+    // pref ends up on ticket.customer_data.preferred_staff_id.
+    if (isSalonKiosk) {
+      setLoadingStylists(true);
+      getAvailableStaffForService(office.id, service.id).then((res) => {
+        const list = res?.data ?? [];
+        setStylists(list);
+        setLoadingStylists(false);
+        if (list.length >= 2) {
+          setStep('provider');
+        } else {
+          // ≤1 stylist eligible — skip the picker, let priority/ticket
+          // flow take over. Lone stylist becomes implicit pref.
+          if (list.length === 1) setSelectedStylistId(list[0].id);
+          if (priorityCategories.length > 0) setStep('priority');
+          else handleCreateTicket(service, null);
+        }
+      }).catch(() => {
+        // Server-action failed — fall through to the normal flow.
+        setLoadingStylists(false);
+        if (priorityCategories.length > 0) setStep('priority');
+        else handleCreateTicket(service, null);
+      });
+      return;
+    }
 
     if (priorityCategories.length > 0) {
       setStep('priority');
@@ -357,6 +399,15 @@ export function KioskView({
     }
 
     handleCreateTicket(service, null);
+  }
+
+  function handleStylistSelected(stylistId: string | null) {
+    setSelectedStylistId(stylistId);
+    if (priorityCategories.length > 0) {
+      setStep('priority');
+      return;
+    }
+    handleCreateTicket(selectedService, null);
   }
 
   function handlePrioritySelected(priority: PriorityCategory | null) {
@@ -394,6 +445,15 @@ export function KioskView({
       setCustomerInfoError(t('Please enter your name and phone number.'));
       setLoading(false);
       return;
+    }
+    // Salon: if the customer picked a stylist, persist that in
+    // customer_data. The Station reads customer_data.preferred_staff_id
+    // and customer_data.preferred_staff_name to render a "wait for X"
+    // badge on the queue card. Promoted to a real column in V2.
+    if (selectedStylistId) {
+      customerData.preferred_staff_id = selectedStylistId;
+      const match = stylists.find((s) => s.id === selectedStylistId);
+      if (match?.full_name) customerData.preferred_staff_name = match.full_name;
     }
 
     if (sandboxMode) {
@@ -1028,6 +1088,70 @@ export function KioskView({
                   </div>
                 </>
               )}
+            </>
+          )}
+
+          {/* ── PROVIDER step (salons / barbers) ── */}
+          {!intakePaused && step === 'provider' && selectedService && (
+            <>
+              <div className="mb-6 text-center">
+                <h2 className="text-3xl font-bold text-foreground">
+                  {t('Choose your stylist')}
+                </h2>
+                <p className="mt-2 text-base text-muted-foreground">
+                  {t('Pick someone specific or take the first available')}
+                </p>
+              </div>
+              {loadingStylists ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {/* Any-available card — biased first because most
+                      walk-ins genuinely don't care, and "first available"
+                      is the fastest path. */}
+                  <button
+                    onClick={() => handleStylistSelected(null)}
+                    className="flex items-center gap-4 rounded-xl border border-border bg-card p-5 text-start shadow-sm transition-all hover:border-primary hover:shadow-md"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-2xl font-bold text-primary">
+                      {/* Asterisk-as-glyph for "anyone" — locale-independent */}
+                      <span aria-hidden="true">∗</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xl font-semibold text-foreground">
+                        {t('Any available')}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-0.5">
+                        {t('Fastest — first stylist who finishes')}
+                      </div>
+                    </div>
+                  </button>
+                  {stylists.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleStylistSelected(s.id)}
+                      className="flex items-center gap-4 rounded-xl border border-border bg-card p-5 text-start shadow-sm transition-all hover:border-primary hover:shadow-md"
+                    >
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-lg font-bold text-foreground">
+                        {(s.full_name || '?').slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xl font-semibold text-foreground truncate">
+                          {s.full_name}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => setStep('service')}
+                className="mt-4 w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                {t('Back')}
+              </button>
             </>
           )}
 

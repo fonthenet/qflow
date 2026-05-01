@@ -127,6 +127,53 @@ interface CreatePublicTicketInput {
   locale?: string | null;
 }
 
+/**
+ * List active staff at an office who can perform a given service.
+ *
+ * Used by the kiosk + booking page to render a "pick your stylist"
+ * step. Honours the staff_services matrix:
+ *   - Stylists with NO rows at all → "can do everything" fallback,
+ *     always included
+ *   - Stylists who HAVE specialised → included only when there's a
+ *     matching row for the chosen service
+ *
+ * Returns a flat array; the caller decides how to render. Empty
+ * array means no staff at the office (rare) or DB error — caller
+ * falls through with no provider step.
+ */
+export async function getAvailableStaffForService(
+  officeId: string,
+  serviceId: string,
+): Promise<{ data?: Array<{ id: string; full_name: string }>; error?: string }> {
+  if (!officeId || !serviceId) return { error: 'officeId and serviceId required' };
+  // Cast: the generated database.types.ts doesn't yet include the
+  // staff_services table (added in 20260501120000). Same `as any`
+  // workaround the rest of the codebase uses for fresh tables.
+  const supabase = createAdminClient() as any;
+  const { data: staffRows, error: stErr } = await supabase
+    .from('staff')
+    .select('id, full_name')
+    .eq('office_id', officeId)
+    .eq('is_active', true)
+    .order('full_name');
+  if (stErr) return { error: stErr.message };
+  const staffList = (staffRows ?? []) as Array<{ id: string; full_name: string }>;
+  if (staffList.length === 0) return { data: [] };
+
+  const ids = staffList.map((s) => s.id);
+  const { data: matrixRows } = await supabase
+    .from('staff_services')
+    .select('staff_id, service_id, is_active')
+    .in('staff_id', ids);
+  const allRows = (matrixRows ?? []).filter((r: any) => r.is_active !== false);
+  const specialised = new Set(allRows.map((r: any) => r.staff_id));
+  const canDoThis = new Set(
+    allRows.filter((r: any) => r.service_id === serviceId).map((r: any) => r.staff_id),
+  );
+  const filtered = staffList.filter((s) => !specialised.has(s.id) || canDoThis.has(s.id));
+  return { data: filtered };
+}
+
 export async function getPublicIntakeFields(serviceId: string) {
   const supabase = createAdminClient();
   const { data, error } = await supabase
