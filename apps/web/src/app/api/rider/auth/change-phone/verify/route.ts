@@ -29,11 +29,12 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 }); }
 
-  const newPhone = (body.newPhone ?? '').trim();
+  const rawNewPhone = (body.newPhone ?? '').trim();
   const code = (body.code ?? '').trim();
-  if (!newPhone || !code) {
+  if (!rawNewPhone || !code) {
     return NextResponse.json({ ok: false, error: 'newPhone + code required' }, { status: 400 });
   }
+  const newPhone = rawNewPhone.replace(/^\++/, '').replace(/^00/, '').replace(/\D/g, '');
 
   const v = await verifyRiderOtp({
     phone: newPhone,

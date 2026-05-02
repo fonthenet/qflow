@@ -20,10 +20,14 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 }); }
 
-  const phone = (body.phone ?? '').trim();
-  if (!phone || !/^\+?\d{6,20}$/.test(phone)) {
+  const rawPhone = (body.phone ?? '').trim();
+  if (!rawPhone || !/^\+?\d{6,20}$/.test(rawPhone)) {
     return NextResponse.json({ ok: false, error: 'Valid phone required' }, { status: 400 });
   }
+  // Riders are stored in E.164 *without* the leading + (matches what
+  // Meta's WA webhook gives us as `from`). Users typing "+1 555…" or
+  // "1 555…" or "001 555…" should all hit the same row.
+  const phone = rawPhone.replace(/^\++/, '').replace(/^00/, '').replace(/\D/g, '');
 
   const supabase = createAdminClient() as any;
   const { data: rider } = await supabase
@@ -38,6 +42,7 @@ export async function POST(request: NextRequest) {
     // delay to roughly match the OTP-generation path so timing
     // doesn't reveal it either.
     await new Promise((r) => setTimeout(r, 200));
+    console.log('[rider/auth/start] no rider for phone (silent success)', phone);
     return NextResponse.json({ ok: true });
   }
 

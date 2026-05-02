@@ -29,10 +29,12 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 }); }
 
-  const newPhone = (body.newPhone ?? '').trim();
-  if (!newPhone || !/^\+?\d{6,20}$/.test(newPhone)) {
+  const rawNewPhone = (body.newPhone ?? '').trim();
+  if (!rawNewPhone || !/^\+?\d{6,20}$/.test(rawNewPhone)) {
     return NextResponse.json({ ok: false, error: 'Valid phone required' }, { status: 400 });
   }
+  // Normalise to the no-leading-+ form the riders table uses.
+  const newPhone = rawNewPhone.replace(/^\++/, '').replace(/^00/, '').replace(/\D/g, '');
   if (newPhone === session.riderPhone) {
     return NextResponse.json({ ok: false, error: 'New phone must differ from current.' }, { status: 400 });
   }

@@ -19,11 +19,14 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 }); }
 
-  const phone = (body.phone ?? '').trim();
+  const rawPhone = (body.phone ?? '').trim();
   const code = (body.code ?? '').trim();
-  if (!phone || !code) {
+  if (!rawPhone || !code) {
     return NextResponse.json({ ok: false, error: 'phone + code required' }, { status: 400 });
   }
+  // Match the normalization in auth/start so the OTP row's `phone`
+  // and the lookup here both use the no-leading-+ form.
+  const phone = rawPhone.replace(/^\++/, '').replace(/^00/, '').replace(/\D/g, '');
 
   // Look up the rider so verify can bind to a real account. We do
   // this BEFORE verifying the code so an attacker probing OTPs
