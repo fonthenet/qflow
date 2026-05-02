@@ -146,6 +146,12 @@ export async function tryHandleRiderInbound(ctx: RiderInboundContext): Promise<R
     case 'where':
       await handleWhere(supabase, ctx, riders, orgs, intent.index ?? null);
       return { handled: true };
+    case 'leave':
+      await handleLeaveIntro(ctx, riders, orgs);
+      return { handled: true };
+    case 'leaveConfirm':
+      await handleLeaveConfirm(supabase, ctx, riders, orgs, intent.leaveTarget ?? '');
+      return { handled: true };
     case 'check':
     default:
       // Default-on-anything-else: list orders. Friendly fallback so
@@ -158,12 +164,14 @@ export async function tryHandleRiderInbound(ctx: RiderInboundContext): Promise<R
 // ── Intent parser ────────────────────────────────────────────────────
 
 interface ParsedIntent {
-  kind: 'check' | 'accept' | 'pickup' | 'done' | 'arrived' | 'cancel' | 'where' | 'help';
+  kind: 'check' | 'accept' | 'pickup' | 'done' | 'arrived' | 'cancel' | 'where' | 'help' | 'leave' | 'leaveConfirm';
   /** 1-based index in the most recent CHECK list — for ACCEPT/DONE/etc. */
   index?: number | null;
   /** Token after CHECK — used to filter by org name when the rider
    *  works for multiple restaurants. */
   bizFilter?: string | null;
+  /** For 'leaveConfirm' — name or 1-based index of the org to leave. */
+  leaveTarget?: string | null;
 }
 
 const ACCEPT_RE = /^(accept|take|claim|prendre|قبول|اقبل|moi)\b/i;
@@ -174,12 +182,27 @@ const CANCEL_RE  = /^(cancel|reject|refuse|annul(?:er)?|abandon|abandonner|إل�
 const WHERE_RE   = /^(where|status|info|details?|d[ée]tails?|info(rmation)?s?|أين|معلومات)\b/i;
 const HELP_RE    = /^(help|aide|m[ée]nu|menu|مساعدة|مساعده)\b/i;
 const CHECK_RE   = /^(check|update|hi|hello|bonjour|salut|salam|سلام|مرحب|hey|merhba)\b/i;
+// Two-step "stop being a driver" command. First message ("STOP
+// DRIVING" or just "LEAVE") lists the rider's businesses; second
+// message ("STOP DRIVING <BIZ>" or "STOP DRIVING 1") confirms.
+// Distinct prefix from CANCEL so a rider mid-delivery doesn't
+// accidentally drop off the platform when they meant to cancel
+// the assignment.
+const LEAVE_INTRO_RE = /^(stop[\s_]?driving|leave[\s_]?driver|quit[\s_]?driving|remove[\s_]?me|d[ée]missionner|quitter[\s_]?livreur|توقف[\s_]?عن[\s_]?التوصيل|اترك[\s_]?التوصيل)\s*$/i;
+const LEAVE_CONFIRM_RE = /^(stop[\s_]?driving|leave[\s_]?driver|quit[\s_]?driving|remove[\s_]?me|d[ée]missionner|quitter[\s_]?livreur|توقف[\s_]?عن[\s_]?التوصيل|اترك[\s_]?التوصيل)\s+(.+)$/i;
 
 function parseIntent(body: string): ParsedIntent {
   const trimmed = body.trim();
   const lc = trimmed.toLowerCase();
 
   if (HELP_RE.test(lc)) return { kind: 'help' };
+  // LEAVE confirmation FIRST — needs to match before plain LEAVE so
+  // "STOP DRIVING Fix" doesn't fall into the bare-intro branch.
+  const leaveMatch = trimmed.match(LEAVE_CONFIRM_RE);
+  if (leaveMatch) {
+    return { kind: 'leaveConfirm', leaveTarget: (leaveMatch[2] ?? '').trim() };
+  }
+  if (LEAVE_INTRO_RE.test(trimmed)) return { kind: 'leave' };
   if (ACCEPT_RE.test(lc))  return { kind: 'accept', index: extractIndex(trimmed) };
   if (PICKUP_RE.test(lc)) return { kind: 'pickup', index: extractIndex(trimmed) };
   if (DONE_RE.test(lc))   return { kind: 'done', index: extractIndex(trimmed) };
@@ -655,6 +678,155 @@ async function handleCancel(
   });
 }
 
+// ── Leave (self-serve "stop being a driver") ────────────────────
+// Two-step flow so a rider doesn't accidentally drop themselves
+// off the platform mid-shift. Step 1: "STOP DRIVING" lists their
+// businesses. Step 2: "STOP DRIVING <BIZ>" or "STOP DRIVING 1"
+// commits the deactivation for that single business. Riders with
+// just one business get a single-step path with a clear confirm
+// instruction.
+
+async function handleLeaveIntro(
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+): Promise<void> {
+  // Sort by org name so the numbered list is stable across requests.
+  const sorted = [...riders].sort((a, b) => {
+    const an = orgs[a.organization_id]?.name ?? '';
+    const bn = orgs[b.organization_id]?.name ?? '';
+    return an.localeCompare(bn);
+  });
+
+  if (sorted.length === 1) {
+    const orgName = orgs[sorted[0].organization_id]?.name ?? 'this business';
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: [
+        `⚠ Stop being a driver for *${orgName}*?`,
+        '',
+        `Reply *STOP DRIVING ${orgName}* to confirm.`,
+        'Operators will need to re-add your number if you want to come back.',
+      ].join('\n'),
+    });
+    return;
+  }
+
+  const lines = sorted.map(
+    (r, i) => `${i + 1}. *${orgs[r.organization_id]?.name ?? 'Unknown'}*`,
+  );
+  await ctx.sendMessage({
+    to: ctx.fromPhone,
+    body: [
+      `⚠ You're a driver for *${sorted.length}* businesses:`,
+      '',
+      ...lines,
+      '',
+      'To leave one, reply with the number or name. Examples:',
+      '  • *STOP DRIVING 1*',
+      `  • *STOP DRIVING ${orgs[sorted[0].organization_id]?.name ?? '<biz>'}*`,
+    ].join('\n'),
+  });
+}
+
+async function handleLeaveConfirm(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  rawTarget: string,
+): Promise<void> {
+  const target = rawTarget.trim();
+  if (!target) {
+    await handleLeaveIntro(ctx, riders, orgs);
+    return;
+  }
+
+  const sorted = [...riders].sort((a, b) => {
+    const an = orgs[a.organization_id]?.name ?? '';
+    const bn = orgs[b.organization_id]?.name ?? '';
+    return an.localeCompare(bn);
+  });
+
+  // Resolve target — first try as a 1-based index (matches the
+  // numbering we showed in handleLeaveIntro), then by name (case-
+  // insensitive substring match — most operator-set names are
+  // distinctive enough that a partial match works without ambiguity).
+  let chosen: RiderRow | null = null;
+  const idx = Number(target);
+  if (Number.isInteger(idx) && idx >= 1 && idx <= sorted.length) {
+    chosen = sorted[idx - 1];
+  } else {
+    const lc = target.toLowerCase();
+    const candidates = sorted.filter((r) =>
+      (orgs[r.organization_id]?.name ?? '').toLowerCase().includes(lc),
+    );
+    if (candidates.length === 1) chosen = candidates[0];
+    else if (candidates.length > 1) {
+      const names = candidates.map((r) => orgs[r.organization_id]?.name).filter(Boolean).join(', ');
+      await ctx.sendMessage({
+        to: ctx.fromPhone,
+        body: `❓ "${target}" matches more than one business (${names}). Use the number from the list (e.g. *STOP DRIVING 1*).`,
+      });
+      return;
+    }
+  }
+
+  if (!chosen) {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `❓ "${target}" doesn't match a business you drive for. Reply *STOP DRIVING* to see your list.`,
+    });
+    return;
+  }
+
+  const orgName = orgs[chosen.organization_id]?.name ?? 'the business';
+
+  // Deactivate the rider row. We DON'T delete it — historical
+  // assignments still need the row to resolve the rider's name on
+  // operator reports.
+  const { error: updErr } = await supabase
+    .from('riders')
+    .update({ is_active: false })
+    .eq('id', chosen.id);
+  if (updErr) {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `⚠ Could not stop your driver registration for *${orgName}* — please try again or contact the operator.`,
+    });
+    return;
+  }
+
+  // Revoke active mobile-app sessions + drop device push tokens.
+  // The session table is keyed on rider_id so this only kicks the
+  // single-org session, not any other businesses they still drive
+  // for. Same for rider_devices.
+  await supabase.from('rider_sessions').update({
+    revoked_at: new Date().toISOString(),
+  }).eq('rider_id', chosen.id).is('revoked_at', null);
+  await supabase.from('rider_devices').delete().eq('rider_id', chosen.id);
+
+  // Audit row.
+  await supabase.from('ticket_events').insert({
+    ticket_id: null,
+    event_type: 'rider_left_business',
+    metadata: {
+      rider_id: chosen.id,
+      organization_id: chosen.organization_id,
+      source: 'wa_command',
+    },
+  }).then(() => {}, () => {});
+
+  await ctx.sendMessage({
+    to: ctx.fromPhone,
+    body: [
+      `✅ You've stopped being a driver for *${orgName}*.`,
+      '',
+      'Operators will need to re-add your number if you want to come back.',
+    ].join('\n'),
+  });
+}
+
 async function handleWhere(
   supabase: any,
   ctx: RiderInboundContext,
@@ -691,6 +863,7 @@ function tplHelp(name: string): string {
     '• *DONE N* — mark delivered',
     '• *CANCEL N* — drop the assignment back to the restaurant',
     '• *WHERE N* — see the address + tracking link again',
+    '• *STOP DRIVING* — stop being a driver for a business',
     '• *HELP* — this list',
   ].join('\n');
 }

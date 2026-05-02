@@ -7,7 +7,7 @@ import { C, F, R, SP } from '@/lib/rider-theme';
 
 export default function RiderSettingsScreen() {
   const router = useRouter();
-  const { rider, signOut } = useRiderAuth();
+  const { rider, signOut, authedFetch } = useRiderAuth();
   if (!rider) return null;
 
   function confirmSignOut() {
@@ -20,6 +20,40 @@ export default function RiderSettingsScreen() {
           text: 'Sign out',
           style: 'destructive',
           onPress: async () => {
+            await signOut();
+            router.replace('/rider/login' as any);
+          },
+        },
+      ],
+    );
+  }
+
+  // Self-serve "stop being a driver" — flips the rider record
+  // inactive on the server, revokes every session, drops device
+  // push tokens, then bounces back to the login screen. The
+  // operator has to re-add the phone if the user ever wants back.
+  function confirmLeaveDriver() {
+    Alert.alert(
+      'Stop being a driver?',
+      'You\'ll be removed as a driver and signed out. The business will need to re-add your number to bring you back.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Stop driving',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const r = await authedFetch('/api/rider/leave', { method: 'POST' });
+              if (!r.ok) {
+                Alert.alert('Could not leave', 'Try again or contact the business.');
+                return;
+              }
+            } catch {
+              Alert.alert('Network error', 'Try again when you have connection.');
+              return;
+            }
+            // Local sign-out — drops the cached session token
+            // immediately so the next render boots login.
             await signOut();
             router.replace('/rider/login' as any);
           },
@@ -100,6 +134,21 @@ export default function RiderSettingsScreen() {
         >
           <Ionicons name="log-out-outline" size={20} color={C.danger} />
           <Text style={s.signOutText}>Sign out</Text>
+        </Pressable>
+
+        {/* Stop being a driver — destructive, distinct from sign-out
+            (sign-out leaves the rider record active). Spaced down a
+            bit so it doesn't look like a peer of sign-out. */}
+        <Pressable
+          onPress={confirmLeaveDriver}
+          style={({ pressed }) => [
+            s.signOut,
+            { marginTop: SP.md, borderColor: C.danger },
+            pressed && { backgroundColor: C.dangerTint },
+          ]}
+        >
+          <Ionicons name="close-circle-outline" size={20} color={C.danger} />
+          <Text style={s.signOutText}>Stop being a driver</Text>
         </Pressable>
 
         <Text style={s.version}>Qflo Rider</Text>
