@@ -184,6 +184,65 @@ function tplAskAddressFallback(locale: Locale): string {
   return "📍 *Envoyez l'adresse de livraison*\n\nTapez l'adresse (rue, détails, instructions livreur) ou partagez votre position.";
 }
 
+/**
+ * Messenger-specific address prompt. Meta deprecated the location
+ * Quick Replies API in 2019, so there's no programmatic equivalent
+ * to WhatsApp's one-tap interactive bubble. The customer can still
+ * share GPS via the conversation's + (More) menu → Location → Send
+ * — that delivers a location-typed attachment to the webhook, which
+ * we forward back into this same flow as `locationData`. Bake the
+ * "+ → Location" hint into the prompt so customers don't have to
+ * guess.
+ */
+function tplAskAddressMessenger(locale: Locale): string {
+  if (locale === 'ar') {
+    return [
+      '📍 *أرسل عنوان التوصيل*',
+      '',
+      'اكتب العنوان كرسالة، أو شارك موقعك بسرعة:',
+      '👉 اضغط على *+* في المحادثة → *الموقع* → *إرسال*',
+    ].join('\n');
+  }
+  if (locale === 'en') {
+    return [
+      '📍 *Send the delivery address*',
+      '',
+      'Type the address as a message, or share your live GPS:',
+      '👉 Tap *+* in the chat → *Location* → *Send*',
+    ].join('\n');
+  }
+  return [
+    "📍 *Envoyez l'adresse de livraison*",
+    '',
+    "Tapez l'adresse, ou partagez votre position GPS rapidement :",
+    '👉 Touchez *+* dans la conversation → *Position* → *Envoyer*',
+  ].join('\n');
+}
+
+/**
+ * Channel-aware address prompt. WhatsApp gets the one-tap location
+ * interactive bubble; Messenger gets a text prompt that walks the
+ * customer through the + → Location flow. Both end up writing into
+ * the same `pending_order_address` state — the answer parser is
+ * channel-agnostic.
+ */
+async function askForAddress(
+  channel: 'whatsapp' | 'messenger',
+  identifier: string,
+  locale: Locale,
+  sendMessage: SendFn,
+): Promise<void> {
+  if (channel === 'whatsapp') {
+    await sendWhatsAppLocationRequest({
+      to: identifier,
+      bodyText: tplAskAddressInteractive(locale),
+      fallbackText: tplAskAddressFallback(locale),
+    });
+    return;
+  }
+  await sendMessage({ to: identifier, body: tplAskAddressMessenger(locale) });
+}
+
 function tplAskConfirm(payload: OrderSessionPayload, locale: Locale, currency: string, orgName: string): string {
   // Sectioned summary with proper breathing room. Earlier we crammed
   // header + items + total + customer + address + note + CTA together
@@ -698,6 +757,7 @@ export async function handleOrderBrowseInput(
 
 export async function handleOrderReviewInput(
   session: any, input: string, identifier: string, sendMessage: SendFn,
+  channel: 'whatsapp' | 'messenger' = 'whatsapp',
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const locale: Locale = (session.locale as Locale) || 'fr';
@@ -749,15 +809,10 @@ export async function handleOrderReviewInput(
       await supabase.from('whatsapp_sessions')
         .update({ custom_intake_data: payload, state: 'pending_order_address' })
         .eq('id', session.id);
-      // One-tap "Send Location" interactive bubble on Meta. Falls back
-      // to plain text on Twilio / Meta failure. This is the same call
-      // pattern the feature shipped with originally — putting it back
-      // exactly as it was.
-      await sendWhatsAppLocationRequest({
-        to: identifier,
-        bodyText: tplAskAddressInteractive(locale),
-        fallbackText: tplAskAddressFallback(locale),
-      });
+      // Channel-aware: WA gets the one-tap interactive bubble,
+      // Messenger gets a text prompt with + → Location instructions
+      // (Meta deprecated the location quick-reply on Messenger).
+      await askForAddress(channel, identifier, locale, sendMessage);
       return;
     }
     // Takeout: skip the address step entirely and go straight to the
@@ -791,6 +846,7 @@ export async function handleOrderReviewInput(
 export async function handleOrderAddressInput(
   session: any, input: string, identifier: string, sendMessage: SendFn,
   locationData?: InboundLocationData,
+  channel: 'whatsapp' | 'messenger' = 'whatsapp',
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const locale: Locale = (session.locale as Locale) || 'fr';
@@ -900,13 +956,9 @@ export async function handleOrderAddressInput(
   }
 
   if (trimmed.length < 5) {
-    // Re-prompt with the same one-tap interactive button so customers
-    // who fat-fingered a 1-char address aren't stuck typing a long form.
-    await sendWhatsAppLocationRequest({
-      to: identifier,
-      bodyText: tplAskAddressInteractive(locale),
-      fallbackText: tplAskAddressFallback(locale),
-    });
+    // Re-prompt — channel-aware so Messenger doesn't get a no-op
+    // location request that fails silently.
+    await askForAddress(channel, identifier, locale, sendMessage);
     return;
   }
   payload.delivery_address = { street: trimmed };
@@ -1244,10 +1296,10 @@ export async function tryHandleWhatsappOrderState(
       await handleOrderBrowseInput(session, rawInput, identifier, send);
       return true;
     case 'pending_order_review':
-      await handleOrderReviewInput(session, rawInput, identifier, send);
+      await handleOrderReviewInput(session, rawInput, identifier, send, channel);
       return true;
     case 'pending_order_address':
-      await handleOrderAddressInput(session, rawInput, identifier, send, locationData);
+      await handleOrderAddressInput(session, rawInput, identifier, send, locationData, channel);
       return true;
     case 'pending_order_notes':
       await handleOrderNotesInput(session, rawInput, identifier, send);

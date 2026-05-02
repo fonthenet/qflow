@@ -277,6 +277,10 @@ function RootNavigator() {
             presentation: 'modal',
           }}
         />
+        {/* Customer tracking deeplink — qflo.net/q/<token>. Thin
+            redirect that forwards to ticket/[token] so we don't
+            maintain two copies of the customer-tracking flow. */}
+        <Stack.Screen name="q/[token]" options={{ headerShown: false }} />
         <Stack.Screen name="scan" options={{ headerShown: false }} />
         <Stack.Screen name="kiosk/[slug]" options={{ title: 'Kiosk', headerShown: false }} />
         <Stack.Screen name="queue-peek/[slug]" options={{ headerShown: false }} />

@@ -1431,7 +1431,11 @@ export async function handleInboundMessage(
   // commands or queue intake. tryHandleWhatsappOrderState looks up an
   // active pending_order_* session for this identifier and dispatches
   // to the appropriate state handler. Returns true when handled.
-  if (channel === 'whatsapp') {
+  // Both channels go through the chat-ordering state machine. The
+  // file is named `whatsapp-ordering` for legacy reasons but it now
+  // handles any chat channel; per-channel branches (e.g. one-tap
+  // location bubble vs plain prompt) live inside it.
+  {
     const handledByOrder = await tryHandleWhatsappOrderState(
       identifier, channel, messageBody, sendMessage, locationData,
     );

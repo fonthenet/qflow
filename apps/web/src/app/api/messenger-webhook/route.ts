@@ -128,6 +128,40 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // ── Location attachment (tap-to-share via + → Location) ──
+        // Meta delivers GPS coordinates as a location-typed attachment.
+        // Same shape WhatsApp's location messages use, so we can reuse
+        // the existing `locationData` plumbing in messaging-commands.
+        // Pre-flight before the text branch because Messenger sends
+        // attachments WITH text=null when the user only taps location.
+        const locAttachment = (event.message?.attachments ?? []).find(
+          (a: any) => a?.type === 'location',
+        );
+        if (locAttachment) {
+          const coords = locAttachment.payload?.coordinates;
+          const lat = typeof coords?.lat === 'number' ? coords.lat : null;
+          const lng = typeof coords?.long === 'number' ? coords.long : null;
+          if (lat != null && lng != null) {
+            console.log(`[messenger-webhook] Location from ${redactedSender}: ${lat.toFixed(4)},${lng.toFixed(4)}`);
+            const sendFn = async ({ to, body }: { to: string; body: string }) => {
+              const result = await sendMessengerMessage({ recipientId: to, text: body });
+              return { ok: result.ok };
+            };
+            // Forward as locationData — handleInboundMessage already
+            // accepts this shape and routes it to the address step.
+            await handleInboundMessage(
+              'messenger',
+              senderId,
+              event.message?.text ?? '',
+              sendFn,
+              undefined,
+              undefined,
+              { latitude: lat, longitude: lng, name: locAttachment.title ?? undefined, address: locAttachment.url ?? undefined },
+            );
+            continue;
+          }
+        }
+
         // ── Text message ──
         if (event.message?.text) {
           const text = event.message.text;
