@@ -126,6 +126,38 @@ export async function updateOrganizationProfile(data: {
   const context = await getStaffContext();
   await requireOrganizationAdmin(context);
 
+  if (data.timezone != null) {
+    if (data.timezone.length > 64) {
+      return { error: 'Timezone values exceed maximum length (64 characters)' };
+    }
+    const validTimezones = Intl.supportedValuesOf('timeZone');
+    if (!validTimezones.includes(data.timezone)) {
+      return { error: 'Invalid timezone — not a recognised IANA time zone' };
+    }
+  }
+
+  if (data.locale_primary != null && data.locale_primary !== '') {
+    if (data.locale_primary.length > 64) {
+      return { error: 'Locale values exceed maximum length (64 characters)' };
+    }
+    const country = data.country ?? (
+      await context.supabase.from('organizations').select('country').eq('id', context.staff.organization_id).single()
+    ).data?.country;
+    if (country) {
+      const { data: config } = await context.supabase
+        .from('country_config')
+        .select('locale_default, locale_fallbacks')
+        .eq('country', country)
+        .maybeSingle();
+      if (config) {
+        const allowed = [config.locale_default, ...(config.locale_fallbacks ?? [])];
+        if (!allowed.includes(data.locale_primary)) {
+          return { error: `Locale '${data.locale_primary}' is not allowed for country '${country}'` };
+        }
+      }
+    }
+  }
+
   const { error } = await context.supabase
     .from('organizations')
     .update({
