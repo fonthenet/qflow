@@ -255,20 +255,41 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <TouchableOpacity
-          style={[ds.section, styles.staffLoginBanner]}
-          onPress={() => router.push('/(auth)/login')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.staffLoginIcon, { backgroundColor: colors.primary + '15' }]}>
-            <Ionicons name="briefcase" size={24} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>{t('auth.staffPortal')}</Text>
-            <Text style={ds.rowSubtitle}>{t('settings.adminDashboardSub')}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[ds.section, styles.staffLoginBanner]}
+            onPress={() => router.push('/(auth)/login')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.staffLoginIcon, { backgroundColor: colors.primary + '15' }]}>
+              <Ionicons name="briefcase" size={24} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>{t('auth.staffPortal')}</Text>
+              <Text style={ds.rowSubtitle}>{t('settings.adminDashboardSub')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+
+          {/* Driver portal — phone-OTP login (no Supabase auth). The
+              rider section has its own RiderAuthProvider, so even if
+              the customer is signed out at the app level the rider
+              session is independent. */}
+          <TouchableOpacity
+            style={[ds.section, styles.staffLoginBanner]}
+            onPress={() => router.push('/rider/login' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.staffLoginIcon, { backgroundColor: '#1d4ed815' }]}>
+              <Ionicons name="bicycle" size={24} color="#1d4ed8" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>{t('auth.driverPortal', { defaultValue: 'Driver portal' })}</Text>
+              <Text style={ds.rowSubtitle}>{t('auth.driverPortalSub', { defaultValue: 'Sign in with your WhatsApp number to manage deliveries' })}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#1d4ed8" />
+          </TouchableOpacity>
+        </>
       )}
 
       {/* ── Personal Information ─────────────────────────────── */}
