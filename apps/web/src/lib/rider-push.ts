@@ -127,3 +127,57 @@ export async function clearRiderPushToken(ticketId: string): Promise<void> {
     .update({ rider_push_token: null, rider_push_platform: null })
     .eq('id', ticketId);
 }
+
+/**
+ * Push to every device the rider has registered under their account.
+ * Called by /api/orders/assign on initial assignment so the rider
+ * sees the new run instantly even if the app is closed.
+ *
+ * Stale tokens (410 / UNREGISTERED) get dropped from rider_devices
+ * so we stop sending to dead handles.
+ */
+export async function pushToRider(riderId: string, payload: RiderPushPayload): Promise<{ delivered: number; failed: number }> {
+  const supabase = createAdminClient() as any;
+  const { data: devices } = await supabase
+    .from('rider_devices')
+    .select('id, device_token, platform')
+    .eq('rider_id', riderId);
+  if (!devices || devices.length === 0) return { delivered: 0, failed: 0 };
+
+  let delivered = 0;
+  let failed = 0;
+
+  await Promise.all(
+    devices.map(async (d: any) => {
+      try {
+        let result: { success: boolean; gone: boolean };
+        if (d.platform === 'ios') {
+          const r = await sendApnsAlertToToken({
+            deviceToken: d.device_token,
+            title: payload.title,
+            body: payload.body,
+            url: payload.url,
+          });
+          result = {
+            success: r.success,
+            gone: r.status === 410 || r.reason === 'Unregistered' || r.reason === 'BadDeviceToken',
+          };
+        } else if (d.platform === 'android') {
+          result = await sendFcmToRider(d.device_token, payload);
+        } else {
+          result = { success: false, gone: false };
+        }
+
+        if (result.success) delivered++; else failed++;
+        if (result.gone) {
+          await supabase.from('rider_devices').delete().eq('id', d.id);
+        }
+      } catch (e: any) {
+        console.warn('[rider-push] device push threw', e?.message);
+        failed++;
+      }
+    }),
+  );
+
+  return { delivered, failed };
+}

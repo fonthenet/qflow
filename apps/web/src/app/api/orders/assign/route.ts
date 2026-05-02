@@ -313,6 +313,25 @@ export async function POST(request: NextRequest) {
         lastError: r.lastError,
       });
     }
+    // Native push to the rider's app — instant alert on the device
+    // even if the app is closed and the phone is locked. WhatsApp
+    // above is the durable fallback. Fire-and-forget.
+    void (async () => {
+      try {
+        const [{ pushToRider }, { generateRiderToken }] = await Promise.all([
+          import('@/lib/rider-push'),
+          import('@/lib/rider-token'),
+        ]);
+        await pushToRider(rider.id, {
+          title: `New delivery — ${orgName}`,
+          body: `Order ${ticket.ticket_number} is yours. Tap to accept.`,
+          url: `/rider/${ticket.id}/${generateRiderToken(ticket.id)}`,
+          data: { ticketId: ticket.id, kind: 'rider_assignment' },
+        });
+      } catch (e: any) {
+        console.warn('[orders/assign] rider push threw', e?.message);
+      }
+    })();
   } catch (e: any) {
     // Was previously swallowed silently — explicit log so Vercel runtime
     // logs surface env / supabase issues that prevent the outbox row.

@@ -13,6 +13,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { API_BASE_URL } from './config';
 
@@ -53,6 +54,50 @@ export function useRiderAuth(): RiderAuthContextValue {
   const ctx = useContext(RiderAuthContext);
   if (!ctx) throw new Error('useRiderAuth must be used inside <RiderAuthProvider>');
   return ctx;
+}
+
+/**
+ * Register the device's APNs/FCM token under the calling rider so
+ * /api/orders/assign can push instantly when a new ticket lands.
+ * Idempotent server-side via UNIQUE (rider_id, device_token).
+ */
+async function registerDeviceForPush(sessionToken: string): Promise<void> {
+  try {
+    const existing = await Notifications.getPermissionsAsync();
+    let granted = existing.status === 'granted';
+    if (!granted) {
+      const req = await Notifications.requestPermissionsAsync({
+        ios: { allowAlert: true, allowBadge: false, allowSound: true },
+      });
+      granted = req.status === 'granted';
+    }
+    if (!granted) return;
+    const dev = await Notifications.getDevicePushTokenAsync();
+    if (!dev?.data) return;
+    await fetch(`${API_BASE_URL}/api/rider/devices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+      body: JSON.stringify({
+        deviceToken: String(dev.data),
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
+        deviceLabel: `${Platform.OS === 'ios' ? 'iPhone' : 'Android'} • Qflo Rider`,
+      }),
+    });
+  } catch (e: any) {
+    console.warn('[rider-auth] device registration failed', e?.message);
+  }
+}
+
+async function unregisterDeviceForPush(sessionToken: string): Promise<void> {
+  try {
+    const dev = await Notifications.getDevicePushTokenAsync();
+    if (!dev?.data) return;
+    await fetch(`${API_BASE_URL}/api/rider/devices`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+      body: JSON.stringify({ deviceToken: String(dev.data) }),
+    });
+  } catch { /* best effort */ }
 }
 
 async function postJson(path: string, body: unknown, token?: string | null): Promise<{ ok: boolean; status: number; data: any }> {
@@ -120,6 +165,10 @@ export function RiderAuthProvider({ children }: { children: ReactNode }) {
             if (data?.rider) {
               await persist(token, data.rider);
               setState({ ready: true, rider: data.rider, token });
+              // Refresh the device-token registration on every cold
+              // start in case the OS rotated the APNs/FCM token while
+              // the app was closed.
+              void registerDeviceForPush(token).catch(() => {});
               return;
             }
           }
@@ -157,12 +206,19 @@ export function RiderAuthProvider({ children }: { children: ReactNode }) {
     }
     await persist(r.data.token, r.data.rider);
     setState({ ready: true, rider: r.data.rider, token: r.data.token });
+    // Best-effort: register the device's push token so a future
+    // assignment hits this device instantly even when the app is
+    // closed. Failure is non-fatal — login still succeeds.
+    void registerDeviceForPush(r.data.token).catch(() => {});
     return { ok: true };
   }, [persist]);
 
   const signOut = useCallback(async () => {
     const token = state.token;
     if (token) {
+      // Drop the device registration first so a shared phone doesn't
+      // keep getting pushes after sign-out.
+      void unregisterDeviceForPush(token).catch(() => {});
       // Best-effort revoke — even if the network call fails, the
       // local cache is gone, so the device can't use the token.
       void fetch(`${API_BASE_URL}/api/rider/auth/signout`, {

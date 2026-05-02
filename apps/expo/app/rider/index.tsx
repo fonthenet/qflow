@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter, Stack } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRiderAuth } from '@/lib/rider-auth';
@@ -47,9 +47,11 @@ export default function RiderHomeScreen() {
     }
   }, [ready, rider, router]);
 
-  const load = useCallback(async (mode: 'initial' | 'refresh') => {
+  const load = useCallback(async (mode: 'initial' | 'refresh' | 'silent') => {
     if (!rider) return;
-    if (mode === 'initial') setLoading(true); else setRefreshing(true);
+    if (mode === 'initial') setLoading(true);
+    else if (mode === 'refresh') setRefreshing(true);
+    // 'silent' (background poll, AppState foregrounding) — no spinner
     try {
       const [activeRes, historyRes] = await Promise.all([
         authedFetch('/api/rider/active'),
@@ -76,7 +78,24 @@ export default function RiderHomeScreen() {
   // Refresh whenever the screen comes into focus — covers returning
   // from a delivery or from settings.
   useFocusEffect(useCallback(() => {
-    if (rider) void load('initial');
+    if (!rider) return;
+    void load('initial');
+
+    // Lightweight 5s poll while the home screen is focused so a fresh
+    // assignment from Station / WhatsApp shows up without the rider
+    // having to swipe down. Stops on blur (return from useFocusEffect)
+    // so we don't keep hitting the API while the rider's deep in a
+    // delivery screen.
+    const i = setInterval(() => { void load('silent'); }, 5_000);
+
+    // Foreground re-fetch — when the app comes back from background
+    // we want the very next render to show whatever happened while
+    // the device was locked.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void load('silent');
+    });
+
+    return () => { clearInterval(i); sub.remove(); };
   }, [rider, load]));
 
   if (!ready || !rider) {
