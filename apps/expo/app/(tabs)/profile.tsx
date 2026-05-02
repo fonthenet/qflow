@@ -277,7 +277,10 @@ export default function ProfileScreen() {
               session is independent. */}
           <TouchableOpacity
             style={[ds.section, styles.staffLoginBanner]}
-            onPress={() => router.push('/rider/login' as any)}
+            // Push to /rider — the home screen redirects to /rider/login
+            // when there's no session, but a returning signed-in driver
+            // lands straight on home (no login flash).
+            onPress={() => router.push('/rider' as any)}
             activeOpacity={0.8}
           >
             <View style={[styles.staffLoginIcon, { backgroundColor: '#1d4ed815' }]}>

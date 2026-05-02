@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation, Stack } from 'expo-router';
+import { CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRiderAuth } from '@/lib/rider-auth';
 
@@ -12,9 +13,21 @@ import { useRiderAuth } from '@/lib/rider-auth';
  */
 export default function RiderVerifyScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { phone } = useLocalSearchParams<{ phone: string }>();
   const phoneStr = String(phone ?? '');
   const { verifyLogin, startLogin } = useRiderAuth();
+
+  // Reset the rider stack to just [home] on successful login. Without
+  // this the stack stays [login, verify, home] and the iOS swipe-back
+  // gesture (or Android back) takes the rider back to login. Use
+  // CommonActions.reset because router.replace only swaps the *current*
+  // screen — it doesn't drop earlier entries from the stack.
+  function landOnHome() {
+    navigation.dispatch(
+      CommonActions.reset({ index: 0, routes: [{ name: 'index' }] }),
+    );
+  }
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +57,7 @@ export default function RiderVerifyScreen() {
       setError(r.error ?? 'Invalid code.');
       return;
     }
-    router.replace('/rider' as any);
+    landOnHome();
   }
 
   async function onResend() {
@@ -140,7 +153,7 @@ export default function RiderVerifyScreen() {
       inputRef.current?.focus();
       return;
     }
-    router.replace('/rider' as any);
+    landOnHome();
   }
 }
 
