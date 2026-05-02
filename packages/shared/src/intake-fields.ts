@@ -259,20 +259,33 @@ const ARABIC_COUNTRY_CODES = new Set([
  */
 export function ensureAllPresets(
   fields: IntakeField[],
-  opts: { country?: string | null } = {},
+  opts: { country?: string | null; category?: string | null } = {},
 ): IntakeField[] {
   const country = (opts.country ?? '').toUpperCase();
   const isWilayaMarket = country === 'DZ';
+  // Stylist is salon-vertical only (beauty / barber / hair / nail / spa).
+  // Inlining the category check here instead of importing isSalonCategory
+  // to keep this file dep-free; keep the two lists in sync.
+  const cat = (opts.category ?? '').toLowerCase().trim();
+  const isStylistVertical = !cat
+    ? false // unknown category → don't volunteer the stylist field
+    : (cat === 'beauty' || cat === 'salon' || cat === 'barber'
+      || cat === 'barbershop' || cat === 'hair_salon' || cat === 'nail_salon'
+      || cat === 'nails' || cat === 'spa');
 
-  // Drop stale wilaya rows if org is outside Algeria — avoids a dead toggle
-  // in US/FR/IN settings when data was seeded under the legacy defaults.
+  // Drop stale rows: wilaya for non-DZ orgs, stylist for non-salon orgs.
+  // Without the stylist filter, a restaurant that was seeded before the
+  // category gate gets a dead "Stylist" toggle in Settings (the bug
+  // reported on the "fix" restaurant org).
   const cleaned = fields.filter((f) => {
     if (f.key === 'wilaya' && country && !isWilayaMarket) return false;
+    if (f.key === 'stylist' && cat && !isStylistVertical) return false;
     return true;
   });
 
   const existing = new Set(cleaned.map((f) => f.key));
-  const applicable: PresetKey[] = ['name', 'phone', 'email', 'party_size', 'age', 'reason', 'stylist'];
+  const applicable: PresetKey[] = ['name', 'phone', 'email', 'party_size', 'age', 'reason'];
+  if (isStylistVertical) applicable.push('stylist');
   if (isWilayaMarket || !country) applicable.push('wilaya');
 
   // Per-preset defaults when appending. Most presets default OFF (the

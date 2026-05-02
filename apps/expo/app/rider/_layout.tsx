@@ -1,33 +1,26 @@
 /**
- * Rider section layout — wraps every /rider/* route in the auth
- * provider. Login/verify screens render on top of a logged-out state;
- * home + history + settings render only when authenticated.
+ * Rider section layout — Stack only. RiderAuthProvider is now at the
+ * app root (apps/expo/app/_layout.tsx) so customer-facing tabs can
+ * read the rider session too (e.g. for the "signed in as driver"
+ * indicator on the Profile tab).
  *
- * The per-ticket deeplink screen ([id]/[token]) is the one exception:
- * it works WITHOUT login because the HMAC token is its own auth
- * (legacy WhatsApp-handoff flow). That screen falls inside this
- * layout but renders unconditionally — see how RiderAuthGate handles
- * the deeplink path.
+ * The per-ticket deeplink screen ([id]/[token]) renders without a
+ * session — its HMAC token in the URL is its own auth.
  */
 
 import { Stack } from 'expo-router';
-import { RiderAuthProvider } from '@/lib/rider-auth';
 
 export default function RiderLayout() {
   return (
-    <RiderAuthProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="verify" />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="edit-profile" />
-        <Stack.Screen name="change-phone" />
-        <Stack.Screen name="history" />
-        {/* Per-ticket deeplink screen — auth via HMAC token in URL,
-            not session. Stays outside the gate. */}
-        <Stack.Screen name="[id]/[token]" />
-      </Stack>
-    </RiderAuthProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="verify" />
+      <Stack.Screen name="settings" />
+      <Stack.Screen name="edit-profile" />
+      <Stack.Screen name="change-phone" />
+      <Stack.Screen name="history" />
+      <Stack.Screen name="[id]/[token]" />
+    </Stack>
   );
 }

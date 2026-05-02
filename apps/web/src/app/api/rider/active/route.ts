@@ -32,14 +32,17 @@ export async function GET(request: NextRequest) {
     .select(`
       id, ticket_number, status, dispatched_at, arrived_at,
       delivery_address, customer_data, notes,
-      created_at, updated_at,
+      created_at,
       offices ( name, address, latitude, longitude )
     `)
     .eq('assigned_rider_id', session.riderId)
     .is('delivered_at', null)
     .in('status', ['serving'])
+    // Sort: accepted runs first (dispatched_at not null, oldest dispatch
+    // first), then awaiting-accept by recency. tickets has no updated_at
+    // — fall back to created_at as the recency tiebreaker.
     .order('dispatched_at', { ascending: true, nullsFirst: false })
-    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(20);
 
   if (error) {

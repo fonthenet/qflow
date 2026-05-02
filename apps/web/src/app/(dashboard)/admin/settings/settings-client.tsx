@@ -336,7 +336,10 @@ const [emailOtpEnabled, setEmailOtpEnabled] = useState<boolean>(
     // Backfill every applicable preset so toggles for Email, Party size,
     // etc. are always visible. Wilaya is DZ-only; non-DZ orgs get it
     // stripped. See packages/shared/src/intake-fields.ts#ensureAllPresets.
-    ensureAllPresets(migrateToIntakeFields(settings), { country: organization.country })
+    ensureAllPresets(migrateToIntakeFields(settings), {
+      country: organization.country,
+      category: (settings as any)?.business_category ?? null,
+    })
   );
   const [bookingSettingsTab, setBookingSettingsTab] = useState<'intake' | 'queue' | 'appointments' | 'channels'>('intake');
 

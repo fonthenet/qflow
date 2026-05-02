@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRiderAuth } from '@/lib/rider-auth';
 import { RiderAvatar } from '@/components/RiderAvatar';
 import { C, F, R, SP, timeAgo } from '@/lib/rider-theme';
@@ -248,7 +248,7 @@ function EmptyState() {
   return (
     <View style={s.empty}>
       <View style={s.emptyIcon}>
-        <Ionicons name="bicycle" size={40} color={C.primary} />
+        <MaterialCommunityIcons name="moped" size={48} color={C.primary} />
       </View>
       <Text style={s.emptyTitle}>You're all caught up</Text>
       <Text style={s.emptyBody}>

@@ -2414,7 +2414,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // Party size, etc. regardless of what the org was seeded with.
       // Wilaya is DZ-only; non-DZ orgs get it stripped.
       const savedIntake: IntakeField[] = values.intake_fields ?? [];
-      const intakeFields: IntakeField[] = ensureAllPresets(savedIntake, { country: orgCountry });
+      const intakeFields: IntakeField[] = ensureAllPresets(savedIntake, { country: orgCountry, category: businessCategory });
       // If backfill changed the array length (new presets injected or stale
       // wilaya stripped), sync back into values so save persists the new
       // shape. Effect guards against render loop.
@@ -2422,7 +2422,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         queueMicrotask(() => {
           setValues(prev => {
             const current = prev.intake_fields ?? [];
-            const reconciled = ensureAllPresets(current, { country: orgCountry });
+            const reconciled = ensureAllPresets(current, { country: orgCountry, category: businessCategory });
             if (reconciled.length === current.length) return prev;
             return { ...prev, intake_fields: reconciled };
           });

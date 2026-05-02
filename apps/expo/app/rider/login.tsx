@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRiderAuth } from '@/lib/rider-auth';
 import { C, F, R, SP } from '@/lib/rider-theme';
 
@@ -43,7 +43,7 @@ export default function RiderLoginScreen() {
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <View style={s.brand}>
             <View style={s.logoMark}>
-              <Ionicons name="bicycle" size={36} color="#fff" />
+              <MaterialCommunityIcons name="moped" size={44} color="#fff" />
             </View>
             <Text style={s.brandName}>Qflo Rider</Text>
             <Text style={s.brandTag}>Deliver smarter</Text>

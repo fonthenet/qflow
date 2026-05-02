@@ -30,7 +30,29 @@ const MAPLIBRE_VERSION = '4.7.1';
 const MAPLIBRE_JS = `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js`;
 const MAPLIBRE_CSS = `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`;
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
-const MOPED_ICON = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f6f5.png';
+// Rider map marker — same shape as MaterialCommunityIcons `moped`
+// (the icon shipping in the Expo app's rider screens) so the brand
+// mark is consistent across the rider portal, the customer tracking
+// page, and the app. Inline SVG embedded as a data URI — no CDN at
+// runtime, no extra HTTP request.
+//
+// Path data is the official MDI "moped" glyph (Apache-2.0). Wrapped
+// in a white disc with a soft drop-shadow so the marker reads on
+// any base-map style (light streets, dark streets, satellite).
+const MOPED_ICON = (() => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="56" height="56">
+    <defs>
+      <filter id="ms" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.35"/>
+      </filter>
+    </defs>
+    <circle cx="16" cy="16" r="14" fill="#ffffff" filter="url(#ms)"/>
+    <g transform="translate(4 4)" fill="#1d4ed8">
+      <path d="M19 7C18.71 7 18.42 7.05 18.13 7.14L17.66 7L17 5H14L12.61 7H10.13C9.65 7 9.18 7.18 8.83 7.54L7 9.36L7.71 8.66C8.54 7.83 9.66 7.36 10.83 7.36H17.66L18.13 7.14C18.4 7.05 18.7 7 19 7M5 8C5.55 8 6 7.55 6 7S5.55 6 5 6 4 6.45 4 7 4.45 8 5 8M14 12L18 12V13L14 13C14 16.31 11.31 19 8 19V20H7V19C3.69 19 1 16.31 1 13H6V11H10V8H4L4 7C4 5.34 5.34 4 7 4H14L14 12M5 15A2 2 0 0 1 3 13H7A2 2 0 0 1 5 15M19 9C20.66 9 22 10.34 22 12C22 13.66 20.66 15 19 15H17V13H19A1 1 0 0 0 20 12C20 11.45 19.55 11 19 11H15V9L19 9Z"/>
+    </g>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+})();
 const GMAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? '';
 
 declare global {

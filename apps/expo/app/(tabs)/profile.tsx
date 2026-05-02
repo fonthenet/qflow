@@ -15,10 +15,11 @@ import {
 import { useTranslation } from 'react-i18next';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAppStore, type ThemeMode } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
+import { useRiderAuth } from '@/lib/rider-auth';
 import { useOperatorStore } from '@/lib/operator-store';
 import { requestPermissions } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
@@ -37,6 +38,8 @@ export default function ProfileScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const { user, isStaff, staffRole, signOut } = useAuth();
+  const { rider: riderSession, signOut: riderSignOut } = useRiderAuth();
+  const driverSignedIn = Boolean(riderSession);
   const { clearSession } = useOperatorStore();
   const { customerName, customerPhone, setCustomerInfo, themeMode, setThemeMode } = useAppStore();
   const { colors, isDark } = useTheme();
@@ -254,6 +257,45 @@ export default function ProfileScreen() {
             </View>
           </TouchableOpacity>
         </View>
+      ) : driverSignedIn ? (
+        // Signed in as driver — show an active-mode banner, hide the
+        // Staff portal and customer-edit entries entirely. A driver
+        // session is its own identity; mixing in customer/staff entry
+        // points would imply they apply to the same account.
+        <TouchableOpacity
+          style={[ds.section, styles.staffLoginBanner, {
+            borderWidth: 1, borderColor: '#1d4ed8',
+            backgroundColor: isDark ? '#1d4ed820' : '#1d4ed810',
+          }]}
+          onPress={() => router.push('/rider' as any)}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.staffLoginIcon, { backgroundColor: '#1d4ed825' }]}>
+            <MaterialCommunityIcons name="moped" size={28} color="#1d4ed8" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>
+                {riderSession!.name}
+              </Text>
+              <View style={{
+                paddingHorizontal: 8, paddingVertical: 2,
+                borderRadius: 999,
+                backgroundColor: '#16a34a',
+              }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.4 }}>
+                  {t('auth.driverActive', { defaultValue: 'DRIVER' })}
+                </Text>
+              </View>
+            </View>
+            <Text style={ds.rowSubtitle}>
+              {t('auth.driverSignedInSub', {
+                defaultValue: 'Signed in as driver — tap to open',
+              })}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#1d4ed8" />
+        </TouchableOpacity>
       ) : (
         <>
           <TouchableOpacity
@@ -271,20 +313,14 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.primary} />
           </TouchableOpacity>
 
-          {/* Driver portal — phone-OTP login (no Supabase auth). The
-              rider section has its own RiderAuthProvider, so even if
-              the customer is signed out at the app level the rider
-              session is independent. */}
+          {/* Driver portal — phone-OTP login (no Supabase auth). */}
           <TouchableOpacity
             style={[ds.section, styles.staffLoginBanner]}
-            // Push to /rider — the home screen redirects to /rider/login
-            // when there's no session, but a returning signed-in driver
-            // lands straight on home (no login flash).
             onPress={() => router.push('/rider' as any)}
             activeOpacity={0.8}
           >
             <View style={[styles.staffLoginIcon, { backgroundColor: '#1d4ed815' }]}>
-              <Ionicons name="bicycle" size={24} color="#1d4ed8" />
+              <MaterialCommunityIcons name="moped" size={28} color="#1d4ed8" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>{t('auth.driverPortal', { defaultValue: 'Driver portal' })}</Text>

@@ -43,6 +43,7 @@ if (origInputRender) {
   };
 }
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { RiderAuthProvider } from '@/lib/rider-auth';
 import { useTheme } from '@/lib/theme';
 import { useAppStore } from '@/lib/store';
 import { useLocalConnectionStore } from '@/lib/local-connection-store';
@@ -288,7 +289,13 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootNavigator />
+      {/* RiderAuthProvider lifted to the root so any tab (e.g.
+          customer Profile) can read the rider session and show
+          a "signed in as driver" indicator. The /rider section's
+          own layout no longer wraps a provider — there's only one. */}
+      <RiderAuthProvider>
+        <RootNavigator />
+      </RiderAuthProvider>
     </AuthProvider>
   );
 }
