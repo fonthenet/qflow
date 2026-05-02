@@ -18,6 +18,12 @@ export const runtime = 'nodejs';
  * props so the native screen can drop straight in. Static fields
  * (no realtime subscription) — the screen polls or relies on push
  * for live updates.
+ *
+ * v2 additions:
+ *   - picked_up_at
+ *   - pickup: { name, address, lat, lng, phone } from offices join
+ *   - items: [{ id, name, qty, price, note }] from ticket_items
+ *   - order_total: sum of price * qty
  */
 export async function POST(request: NextRequest) {
   let body: { ticketId?: string; token?: string };
@@ -32,26 +38,54 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createAdminClient() as any;
+
   const { data: ticket, error } = await supabase
     .from('tickets')
     .select(`
       id, ticket_number, status, customer_data, delivery_address,
-      notes, arrived_at, delivered_at, dispatched_at,
+      notes, arrived_at, delivered_at, dispatched_at, picked_up_at,
       assigned_rider_id, office_id,
-      offices ( name, organization_id, organizations ( name ) )
+      offices ( name, address, latitude, longitude, phone, organization_id, organizations ( name ) )
     `)
     .eq('id', ticketId)
     .maybeSingle();
+
   if (error || !ticket) {
     return NextResponse.json({ ok: false, error: 'Ticket not found' }, { status: 404 });
   }
 
+  // Fetch order items for this ticket.
+  const { data: rawItems } = await supabase
+    .from('ticket_items')
+    .select('id, name, qty, price, note')
+    .eq('ticket_id', ticketId)
+    .order('added_at', { ascending: true });
+
+  const items: { id: string; name: string; qty: number; price: number; note: string | null }[] =
+    (rawItems ?? []).map((i: any) => ({
+      id: i.id,
+      name: i.name,
+      qty: i.qty,
+      price: i.price,
+      note: i.note ?? null,
+    }));
+
+  const order_total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+
   // Flatten the org name out of the nested join so the native client
-  // doesn't have to traverse two levels of joins. The web portal
-  // already does this.
+  // doesn't have to traverse two levels of joins.
   const orgName = (ticket.offices as any)?.organizations?.name
     ?? (ticket.offices as any)?.name
     ?? null;
+
+  const officeRaw = ticket.offices as any;
+  const pickup = officeRaw ? {
+    name: officeRaw.name ?? null,
+    address: officeRaw.address ?? null,
+    lat: officeRaw.latitude ?? null,
+    lng: officeRaw.longitude ?? null,
+    phone: officeRaw.phone ?? null,
+  } : null;
 
   return NextResponse.json({
     ok: true,
@@ -65,8 +99,12 @@ export async function POST(request: NextRequest) {
       arrived_at: ticket.arrived_at ?? null,
       delivered_at: ticket.delivered_at ?? null,
       dispatched_at: ticket.dispatched_at ?? null,
+      picked_up_at: ticket.picked_up_at ?? null,
       assigned_rider_id: ticket.assigned_rider_id ?? null,
       organization_name: orgName,
+      pickup,
+      items,
+      order_total,
     },
   });
 }

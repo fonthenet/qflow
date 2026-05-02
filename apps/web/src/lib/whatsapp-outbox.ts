@@ -44,6 +44,7 @@ export type WaAction =
   | 'order_declined'       // approval_declined
   | 'order_dispatched'     // 🛵 out for delivery (rider portal link sent)
   | 'order_arrived'        // 🚪 driver at the door
+  | 'order_picked_up'      // 🛵 rider picked up the order from the vendor
   | 'order_delivered'      // ✅ receipt + thanks
   | 'order_cancelled'      // operator cancel
   | 'order_ready'          // takeout ready for pickup

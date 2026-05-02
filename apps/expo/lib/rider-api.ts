@@ -63,6 +63,10 @@ export async function postAccept(ticketId: string, token: string): Promise<{ ok:
   return postJson('/api/rider/accept', { ticketId, token });
 }
 
+export async function postPickup(ticketId: string, token: string): Promise<{ ok: boolean; picked_up_at?: string; noop?: boolean; error?: string }> {
+  return postJson('/api/rider/pickup', { ticketId, token });
+}
+
 export async function postDecline(ticketId: string, token: string): Promise<{ ok: boolean; noop?: boolean; error?: string }> {
   return postJson('/api/rider/decline', { ticketId, token });
 }

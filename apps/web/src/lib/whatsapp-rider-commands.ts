@@ -70,6 +70,7 @@ interface AssignedTicket {
   delivery_address: any;
   assigned_rider_id: string;
   dispatched_at: string | null;
+  picked_up_at: string | null;
   arrived_at: string | null;
   delivered_at: string | null;
   office_id: string;
@@ -133,6 +134,9 @@ export async function tryHandleRiderInbound(ctx: RiderInboundContext): Promise<R
     case 'done':
       await handleDone(supabase, ctx, riders, orgs, intent.index ?? null);
       return { handled: true };
+    case 'pickup':
+      await handlePickup(supabase, ctx, riders, orgs, intent.index ?? null);
+      return { handled: true };
     case 'arrived':
       await handleArrived(supabase, ctx, riders, orgs, intent.index ?? null);
       return { handled: true };
@@ -154,7 +158,7 @@ export async function tryHandleRiderInbound(ctx: RiderInboundContext): Promise<R
 // ── Intent parser ────────────────────────────────────────────────────
 
 interface ParsedIntent {
-  kind: 'check' | 'accept' | 'done' | 'arrived' | 'cancel' | 'where' | 'help';
+  kind: 'check' | 'accept' | 'pickup' | 'done' | 'arrived' | 'cancel' | 'where' | 'help';
   /** 1-based index in the most recent CHECK list — for ACCEPT/DONE/etc. */
   index?: number | null;
   /** Token after CHECK — used to filter by org name when the rider
@@ -163,6 +167,7 @@ interface ParsedIntent {
 }
 
 const ACCEPT_RE = /^(accept|take|claim|prendre|قبول|اقبل|moi)\b/i;
+const PICKUP_RE = /^(pickup|picked[\s_]?up|got[\s_]?it|i[\s_]have[\s_]it|i[\s_]have[\s_]the[\s_]order|taking[\s_]?it|ramass[ée]|r[ée]cup[ée]r[ée]|j['']?ai[\s_]pris|j['']?ai[\s_]la[\s_]commande|استلمت|أخذت|معي)\b/i;
 const DONE_RE   = /^(done|delivered|drop(ped)?|fini|tasl[ie]m|تم|سل[يّ]م|sa[lh]ema|livr[ée])\b/i;
 const ARRIVED_RE = /^(arrived|here|at[\s_]?door|wsa[ll]t|wasalt|وصلت|j[aA]rrive|arrive)\b/i;
 const CANCEL_RE  = /^(cancel|reject|refuse|annul(?:er)?|abandon|abandonner|إلغاء|الغاء|الغ)\b/i;
@@ -175,7 +180,8 @@ function parseIntent(body: string): ParsedIntent {
   const lc = trimmed.toLowerCase();
 
   if (HELP_RE.test(lc)) return { kind: 'help' };
-  if (ACCEPT_RE.test(lc)) return { kind: 'accept', index: extractIndex(trimmed) };
+  if (ACCEPT_RE.test(lc))  return { kind: 'accept', index: extractIndex(trimmed) };
+  if (PICKUP_RE.test(lc)) return { kind: 'pickup', index: extractIndex(trimmed) };
   if (DONE_RE.test(lc))   return { kind: 'done', index: extractIndex(trimmed) };
   if (ARRIVED_RE.test(lc)) return { kind: 'arrived', index: extractIndex(trimmed) };
   if (CANCEL_RE.test(lc)) return { kind: 'cancel', index: extractIndex(trimmed) };
@@ -252,7 +258,7 @@ async function fetchAssignedTickets(
     .select(`
       id, ticket_number, status, qr_token, notes,
       customer_data, delivery_address, assigned_rider_id,
-      dispatched_at, arrived_at, delivered_at, office_id,
+      dispatched_at, picked_up_at, arrived_at, delivered_at, office_id,
       offices!inner(organization_id)
     `)
     .in('assigned_rider_id', riderIds)
@@ -272,6 +278,7 @@ async function fetchAssignedTickets(
       delivery_address: t.delivery_address,
       assigned_rider_id: t.assigned_rider_id,
       dispatched_at: t.dispatched_at,
+      picked_up_at: t.picked_up_at,
       arrived_at: t.arrived_at,
       delivered_at: t.delivered_at,
       office_id: t.office_id,
@@ -450,6 +457,117 @@ async function handleDone(
   });
 }
 
+async function handlePickup(
+  supabase: any,
+  ctx: RiderInboundContext,
+  riders: RiderRow[],
+  orgs: Record<string, OrgRow>,
+  index: number | null,
+): Promise<void> {
+  // Tickets that are accepted (dispatched_at set) but not yet picked up.
+  // A rider who hasn't accepted yet will have dispatched_at = null and
+  // will fall into the "nothing to pick up" branch with a helpful hint.
+  const readyToPickUp = (await fetchAssignedTickets(supabase, riders, orgs, null))
+    .filter((t) => Boolean(t.dispatched_at) && !t.picked_up_at);
+
+  if (readyToPickUp.length === 0) {
+    // Distinguish between "you have no assignments at all" and "you
+    // haven't accepted yet" so the rider knows what to do next.
+    const allTickets = await fetchAssignedTickets(supabase, riders, orgs, null);
+    const notYetAccepted = allTickets.filter((t) => !t.dispatched_at);
+    if (notYetAccepted.length > 0) {
+      await ctx.sendMessage({
+        to: ctx.fromPhone,
+        body: `⚠ You haven't accepted any orders yet. Reply *ACCEPT* first, then *PICKUP* when you collect from the vendor.`,
+      });
+    } else {
+      await ctx.sendMessage({
+        to: ctx.fromPhone,
+        body: `⚠ No orders to mark picked up. Reply *CHECK* for your current status.`,
+      });
+    }
+    return;
+  }
+
+  let target: AssignedTicket | null = null;
+  if (readyToPickUp.length === 1 && (index === null || index === 1)) {
+    target = readyToPickUp[0];
+  } else if (index !== null && index >= 1 && index <= readyToPickUp.length) {
+    target = readyToPickUp[index - 1];
+  } else {
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `📋 You have *${readyToPickUp.length}* orders ready to pick up. Reply *PICKUP 1*, *PICKUP 2*, etc.\n\n${readyToPickUp.map((t, i) => `${i + 1}. *${t.ticket_number}* — ${t.organization_name}`).join('\n')}`,
+    });
+    return;
+  }
+
+  // Idempotent state-locked update — only the first PICKUP advances
+  // picked_up_at; duplicate Meta webhook replays (or the rider sending
+  // it twice) will find no matching row and fall into the re-send branch.
+  const nowIso = new Date().toISOString();
+  const { data: advanced } = await supabase
+    .from('tickets')
+    .update({ picked_up_at: nowIso })
+    .eq('id', target.id)
+    .is('picked_up_at', null)
+    .is('delivered_at', null)
+    .select('id, picked_up_at')
+    .maybeSingle();
+
+  if (!advanced) {
+    // Already picked up — surface the existing timestamp and carry on.
+    const { data: existing } = await supabase
+      .from('tickets')
+      .select('picked_up_at')
+      .eq('id', target.id)
+      .maybeSingle();
+    const when = existing?.picked_up_at
+      ? ` (recorded at ${new Date(existing.picked_up_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })})`
+      : '';
+    await ctx.sendMessage({
+      to: ctx.fromPhone,
+      body: `⚠ Order *${target.ticket_number}* was already marked picked up${when}. Here are the delivery details:\n\n${tplOrderDetails(target, riders[0])}`,
+    });
+    return;
+  }
+
+  await supabase.from('ticket_events').insert({
+    ticket_id: target.id,
+    event_type: 'rider_picked_up',
+    metadata: { rider_id: target.assigned_rider_id, source: 'wa_command' },
+  }).then(() => {}, () => {});
+
+  // Customer ping — locale-aware messages for EN/FR/AR.
+  const customerPhone = (target.customer_data as any)?.phone ?? null;
+  if (customerPhone) {
+    const cloudUrl = process.env.NEXT_PUBLIC_CLOUD_URL || 'https://qflo.net';
+    const trackUrl = `${cloudUrl}/q/${target.qr_token}`;
+    // Derive the ticket's locale from customer_data if stored, fallback to EN.
+    const locale: string = (target.customer_data as any)?.locale ?? 'en';
+    let customerMsg: string;
+    if (locale === 'fr') {
+      customerMsg = `🛵 Votre livreur a récupéré la commande *#${target.ticket_number}* et est en route.\nSuivi : ${trackUrl}`;
+    } else if (locale === 'ar') {
+      customerMsg = `🛵 السائق استلم طلبك *#${target.ticket_number}* وهو في الطريق إليك.\nتتبع: ${trackUrl}`;
+    } else {
+      customerMsg = `🛵 Your driver picked up order *#${target.ticket_number}* and is on the way.\nTrack: ${trackUrl}`;
+    }
+    void enqueueWaJob({
+      ticketId: target.id,
+      action: 'order_picked_up',
+      toPhone: customerPhone,
+      body: customerMsg,
+    }).catch(() => {});
+  }
+
+  // Reply to rider with full order details (drop-off address + portal link).
+  await ctx.sendMessage({
+    to: ctx.fromPhone,
+    body: tplOrderDetails(target, riders[0]),
+  });
+}
+
 async function handleArrived(
   supabase: any,
   ctx: RiderInboundContext,
@@ -568,6 +686,7 @@ function tplHelp(name: string): string {
     '',
     '• *CHECK* — list your assigned orders',
     '• *ACCEPT N* — accept order N (or *ACCEPT* if only one)',
+    '• *PICKUP N* — mark order N as picked up from the vendor',
     '• *ARRIVED N* — mark "at the door"',
     '• *DONE N* — mark delivered',
     '• *CANCEL N* — drop the assignment back to the restaurant',
@@ -579,8 +698,9 @@ function tplHelp(name: string): string {
 function tplOrderList(name: string, tickets: AssignedTicket[]): string {
   const lines: string[] = [`🛵 Hi *${name}*, you have *${tickets.length}* order${tickets.length > 1 ? 's' : ''}:`, '', DIV];
   tickets.forEach((t, i) => {
-    const stage = t.arrived_at ? '🚪 At door'
-      : t.dispatched_at ? '🛵 In flight'
+    const stage = t.arrived_at  ? '🚪 At door'
+      : t.picked_up_at          ? '🛵 Picked up'
+      : t.dispatched_at         ? '🛵 In flight'
       : '⏳ Pending';
     const street = (t.delivery_address as any)?.street ?? '';
     lines.push(`*${i + 1}.* *${t.ticket_number}* · ${stage}`);

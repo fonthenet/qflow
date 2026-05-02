@@ -11,11 +11,13 @@ interface ActiveDelivery {
   ticket_number: string;
   status: string;
   dispatched_at: string | null;
+  picked_up_at: string | null;
   arrived_at: string | null;
   delivery_address: { street?: string; city?: string } | null;
   customer_data: { name?: string; phone?: string } | null;
   notes: string | null;
   pickup: { name: string; address: string | null } | null;
+  items?: { id: string; name: string; qty: number }[];
   rider_token: string;
 }
 
@@ -193,9 +195,11 @@ function DeliveryCard({ item, onPress }: { item: ActiveDelivery; onPress: () => 
     : 'Awaiting your accept';
   const stage = item.arrived_at
     ? { label: 'AT DROP-OFF', tint: C.successTint, ink: C.success }
-    : item.dispatched_at
-      ? { label: 'EN ROUTE', tint: C.primaryTint, ink: C.primaryDark }
-      : { label: 'NEW', tint: C.warnTint, ink: C.warn };
+    : item.picked_up_at
+      ? { label: 'TO CUSTOMER', tint: C.primaryTint, ink: C.primaryDark }
+      : item.dispatched_at
+        ? { label: 'TO PICKUP', tint: '#ffedd5', ink: '#9a3412' }
+        : { label: 'NEW', tint: C.warnTint, ink: C.warn };
 
   return (
     <Pressable

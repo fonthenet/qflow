@@ -15,10 +15,16 @@ export const runtime = 'nodejs';
  * here too. Sorted by dispatched_at (accepted runs first), then by
  * assignment recency.
  *
- * Each entry includes a fresh per-ticket HMAC `riderToken` so the
+ * Each entry includes a fresh per-ticket HMAC `rider_token` so the
  * mobile UI can deeplink straight into the existing per-ticket
  * screen (the same one that handles ARRIVED / DELIVERED + GPS).
  * No DB write needed — the token is HMAC-derived from the ticket id.
+ *
+ * v2 additions per ticket:
+ *   - picked_up_at
+ *   - pickup: { name, address, lat, lng, phone } (phone added to offices join)
+ *   - items: [{ id, name, qty, price, note }] batched in one query
+ *   - order_total: sum of price * qty
  */
 export async function GET(request: NextRequest) {
   const session = await verifyRiderSession(request.headers.get('authorization'));
@@ -27,13 +33,14 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createAdminClient() as any;
+
   const { data: tickets, error } = await supabase
     .from('tickets')
     .select(`
-      id, ticket_number, status, dispatched_at, arrived_at,
+      id, ticket_number, status, dispatched_at, arrived_at, picked_up_at,
       delivery_address, customer_data, notes,
       created_at,
-      offices ( name, address, latitude, longitude )
+      offices ( name, address, latitude, longitude, phone )
     `)
     .eq('assigned_rider_id', session.riderId)
     .is('delivered_at', null)
@@ -49,23 +56,57 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  const items = (tickets ?? []).map((t: any) => ({
-    id: t.id,
-    ticket_number: t.ticket_number,
-    status: t.status,
-    dispatched_at: t.dispatched_at,
-    arrived_at: t.arrived_at,
-    delivery_address: t.delivery_address,
-    customer_data: t.customer_data,
-    notes: t.notes,
-    pickup: t.offices ? {
-      name: t.offices.name,
-      address: t.offices.address,
-      lat: t.offices.latitude,
-      lng: t.offices.longitude,
-    } : null,
-    rider_token: generateRiderToken(t.id),
-  }));
+  const ticketList = tickets ?? [];
+
+  // Batch-fetch all ticket_items for the returned tickets in one query.
+  // Group by ticket_id for O(1) lookup when building the response.
+  const ticketIds: string[] = ticketList.map((t: any) => t.id);
+  let itemsByTicket: Record<string, { id: string; name: string; qty: number; price: number; note: string | null }[]> = {};
+
+  if (ticketIds.length > 0) {
+    const { data: rawItems } = await supabase
+      .from('ticket_items')
+      .select('id, ticket_id, name, qty, price, note')
+      .in('ticket_id', ticketIds)
+      .order('added_at', { ascending: true });
+
+    for (const row of (rawItems ?? [])) {
+      if (!itemsByTicket[row.ticket_id]) itemsByTicket[row.ticket_id] = [];
+      itemsByTicket[row.ticket_id].push({
+        id: row.id,
+        name: row.name,
+        qty: row.qty,
+        price: row.price,
+        note: row.note ?? null,
+      });
+    }
+  }
+
+  const items = ticketList.map((t: any) => {
+    const ticketItems = itemsByTicket[t.id] ?? [];
+    const order_total = ticketItems.reduce((sum: number, i) => sum + i.price * i.qty, 0);
+    return {
+      id: t.id,
+      ticket_number: t.ticket_number,
+      status: t.status,
+      dispatched_at: t.dispatched_at,
+      arrived_at: t.arrived_at,
+      picked_up_at: t.picked_up_at,
+      delivery_address: t.delivery_address,
+      customer_data: t.customer_data,
+      notes: t.notes,
+      pickup: t.offices ? {
+        name: t.offices.name,
+        address: t.offices.address,
+        lat: t.offices.latitude,
+        lng: t.offices.longitude,
+        phone: t.offices.phone ?? null,
+      } : null,
+      rider_token: generateRiderToken(t.id),
+      items: ticketItems,
+      order_total,
+    };
+  });
 
   return NextResponse.json({ ok: true, items });
 }

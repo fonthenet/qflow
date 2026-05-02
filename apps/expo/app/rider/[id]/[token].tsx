@@ -36,11 +36,13 @@ import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import {
   postAccept,
   postArrived,
   postDecline,
   postDelivered,
+  postPickup,
   postRegisterPush,
 } from '@/lib/rider-api';
 import {
@@ -49,6 +51,24 @@ import {
   isRiderLocationStreaming,
 } from '@/lib/rider-location-task';
 import { API_BASE_URL } from '@/lib/config';
+import { RiderRouteMap } from '@/components/RiderRouteMap';
+import { haversineMeters, formatDistance, formatEta } from '@/lib/rider-eta';
+
+interface OrderItem {
+  id: string;
+  name: string;
+  qty: number;
+  price: number;
+  note?: string | null;
+}
+
+interface PickupInfo {
+  name: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  phone: string | null;
+}
 
 interface TicketDetails {
   id: string;
@@ -58,24 +78,41 @@ interface TicketDetails {
   delivery_address: { street?: string; city?: string; lat?: number; lng?: number; instructions?: string } | null;
   notes: string | null;
   dispatched_at?: string | null;
+  picked_up_at?: string | null;
   arrived_at: string | null;
   delivered_at: string | null;
   /** null when the operator has unassigned the rider (e.g. via Station). */
   assigned_rider_id?: string | null;
   organization_name?: string | null;
+  pickup?: PickupInfo | null;
+  items?: OrderItem[];
+  order_total?: number;
 }
 
 /**
- * Lifecycle stage derived from the timestamp triplet on the ticket.
- *   pending  → assigned but not yet accepted (dispatched_at NULL)
- *   enRoute  → accepted, on the way (dispatched_at, no arrived_at)
- *   atDoor   → at drop-off, waiting for handover (arrived_at, no delivered_at)
- *   delivered → terminal
- *   gone     → operator unassigned the rider mid-flow
+ * Lifecycle stage derived from the timestamp quad on the ticket.
+ *   pending          → assigned, not yet accepted (no dispatched_at)
+ *   goingToPickup    → accepted, no picked_up_at — drive to restaurant
+ *   goingToCustomer  → picked up, no arrived_at — drive to customer
+ *   atDoor           → at drop-off (arrived_at, no delivered_at)
+ *   delivered        → terminal
+ *   gone             → operator unassigned the rider OR ticket cancelled
  */
-type Stage = 'pending' | 'enRoute' | 'atDoor' | 'delivered' | 'gone';
+type Stage = 'pending' | 'goingToPickup' | 'goingToCustomer' | 'atDoor' | 'delivered' | 'gone';
 
 type GeoState = 'requesting' | 'live' | 'foreground' | 'denied' | 'off';
+
+/**
+ * Money formatter — keeps two decimals everywhere, including
+ * trailing zeros (memory: never strip trailing .00 for DA/DZD).
+ * No currency symbol — the rider screen is org-agnostic and we
+ * don't want to mismatch with the operator's settings. Operators
+ * can see the symbol on Station; the rider just needs the number.
+ */
+function formatMoney(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '';
+  return Number(n).toFixed(2);
+}
 
 export default function RiderScreen() {
   const params = useLocalSearchParams<{ id: string; token: string }>();
@@ -87,7 +124,11 @@ export default function RiderScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [geo, setGeo] = useState<GeoState>('requesting');
-  const [busy, setBusy] = useState<'accept' | 'decline' | 'arrived' | 'delivered' | null>(null);
+  const [busy, setBusy] = useState<'accept' | 'decline' | 'pickup' | 'arrived' | 'delivered' | null>(null);
+  // Rider's current location, polled locally for the embedded map +
+  // ETA computation. Independent of the bg-task heartbeat (which posts
+  // to the server but doesn't expose its readings to React state).
+  const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
 
   // ── Fetch the ticket details on mount ──
   // We hit the same /api/rider/details endpoint the web portal uses
@@ -148,8 +189,6 @@ export default function RiderScreen() {
   // Streams ONLY after the rider has accepted (dispatched_at set).
   // Pre-accept the customer hasn't been told the order is on its way
   // yet, so we don't waste battery + don't ping the customer's map.
-  // Streaming stops when delivered, cancelled, or the operator
-  // unassigns (server replies {stopped:true} on the next heartbeat).
   useEffect(() => {
     if (!ticketId || !token) return;
     if (ticket?.delivered_at || !ticket?.dispatched_at) {
@@ -168,6 +207,35 @@ export default function RiderScreen() {
     })();
     return () => { cancelled = true; };
   }, [ticketId, token, ticket?.dispatched_at, ticket?.delivered_at]);
+
+  // ── Local rider-position polling for the embedded map + ETA ──
+  // The bg-location task heartbeats to the server but doesn't surface
+  // its readings to React state. We poll the foreground location every
+  // 10s for the in-app map needle + ETA readout. Cheap (single fix per
+  // tick), and stops when the run ends. We DON'T await permission here
+  // — that already happened inside startRiderLocationStream.
+  useEffect(() => {
+    if (!ticket?.dispatched_at || ticket?.delivered_at) {
+      setRiderPos(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: any = null;
+    const tick = async () => {
+      try {
+        const fix = await Location.getLastKnownPositionAsync({ maxAge: 10_000 })
+          ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (cancelled || !fix?.coords) return;
+        const { latitude, longitude } = fix.coords;
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+          setRiderPos({ lat: latitude, lng: longitude });
+        }
+      } catch { /* permission revoked / timeout — leave previous pos */ }
+    };
+    void tick();
+    timer = setInterval(tick, 10_000);
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+  }, [ticket?.dispatched_at, ticket?.delivered_at]);
 
   // ── Register the device's push token so the assignment / unassign /
   //    cancel notifier can hit this rider instantly even when the app
@@ -219,6 +287,7 @@ export default function RiderScreen() {
 
   const isDelivered = Boolean(ticket?.delivered_at);
   const hasArrived = Boolean(ticket?.arrived_at);
+  const hasPickedUp = Boolean(ticket?.picked_up_at);
   const hasAccepted = Boolean(ticket?.dispatched_at);
   const wasUnassigned = ticket && !ticket.assigned_rider_id && !ticket.delivered_at;
   const wasCancelled = ticket?.status === 'cancelled';
@@ -227,8 +296,30 @@ export default function RiderScreen() {
     isDelivered ? 'delivered'
     : (wasUnassigned || wasCancelled) ? 'gone'
     : hasArrived ? 'atDoor'
-    : hasAccepted ? 'enRoute'
+    : hasPickedUp ? 'goingToCustomer'
+    : hasAccepted ? 'goingToPickup'
     : 'pending';
+
+  // Active destination: restaurant during pickup leg, customer
+  // address during dropoff leg. Drives the embedded map + ETA.
+  const pickupCoords = ticket?.pickup?.lat != null && ticket?.pickup?.lng != null
+    ? { lat: Number(ticket.pickup.lat), lng: Number(ticket.pickup.lng) } : null;
+  const dropCoords = ticket?.delivery_address?.lat != null && ticket?.delivery_address?.lng != null
+    ? { lat: Number(ticket.delivery_address.lat), lng: Number(ticket.delivery_address.lng) } : null;
+
+  const activeLeg: 'pickup' | 'dropoff' | null =
+    stage === 'goingToPickup' ? 'pickup'
+    : stage === 'goingToCustomer' ? 'dropoff'
+    : null;
+  const mapDestination = activeLeg === 'pickup' ? pickupCoords : (activeLeg === 'dropoff' ? dropCoords : null);
+  const legLabel = activeLeg === 'pickup' ? (ticket?.pickup?.name ?? 'Restaurant') : (ticket?.customer_data?.name ?? 'Customer');
+
+  // Live ETA + distance for the active leg.
+  const distMeters = (riderPos && mapDestination)
+    ? haversineMeters(riderPos, mapDestination)
+    : null;
+  const distLabel = distMeters != null ? formatDistance(distMeters) : null;
+  const etaLabel = distMeters != null ? formatEta(distMeters, 'scooter') : null;
 
   const customerName = ticket?.customer_data?.name ?? null;
   const customerPhone = ticket?.customer_data?.phone ?? null;
@@ -295,6 +386,22 @@ export default function RiderScreen() {
         },
       ],
     );
+  };
+
+  const onPickup = async () => {
+    if (busy) return;
+    setBusy('pickup');
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      const r = await postPickup(ticketId, token);
+      if (!r.ok) throw new Error(r.error ?? 'pickup failed');
+      setTicket((t) => t ? { ...t, picked_up_at: r.picked_up_at ?? new Date().toISOString() } : t);
+      void refreshTicket('silent');
+    } catch (e: any) {
+      Alert.alert('Could not confirm pickup', e?.message ?? 'Please try again.');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const onArrived = async () => {
@@ -369,7 +476,7 @@ export default function RiderScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Header — order number + GPS pill */}
+        {/* Header — branding + ticket number + GPS pill */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerEyebrow}>Delivery</Text>
@@ -379,98 +486,228 @@ export default function RiderScreen() {
           <GeoPill state={geo} />
         </View>
 
-        {/* Customer card */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Customer</Text>
-          <Text style={styles.customerName}>{customerName ?? '—'}</Text>
-          {customerPhone ? (
-            <Pressable
-              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
-              style={styles.phoneRow}
-            >
-              <Ionicons name="call" size={16} color="#16a34a" />
-              <Text style={styles.phoneText}>{customerPhone}</Text>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {/* Drop-off card */}
-        {address ? (
-          <View style={styles.card}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardLabel}>Drop-off</Text>
-                <Text style={styles.addressText}>{address}</Text>
-                {(addressCity || addressInstructions) ? (
-                  <Text style={styles.addressSub}>
-                    {addressCity ?? ''}{addressCity && addressInstructions ? ' · ' : ''}{addressInstructions ?? ''}
-                  </Text>
-                ) : null}
-              </View>
-              {mapsUrl ? (
-                <Pressable
-                  onPress={() => Linking.openURL(mapsUrl)}
-                  style={styles.navigateBtn}
-                  accessibilityLabel="Navigate"
-                >
-                  <Ionicons name="navigate" size={18} color="#fff" />
-                  <Text style={styles.navigateText}>Navigate</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {note ? (
-              <View style={styles.noteBox}>
-                <Ionicons name="document-text-outline" size={14} color="#64748b" />
-                <Text style={styles.noteText}>{note}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* Stage banner — short text describing the current state */}
+        {/* Stage banner */}
         <View style={[
           styles.stageBanner,
-          stage === 'pending'   && { backgroundColor: '#fef3c7', borderColor: '#fcd34d' },
-          stage === 'enRoute'   && { backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
-          stage === 'atDoor'    && { backgroundColor: '#dcfce7', borderColor: '#86efac' },
-          stage === 'delivered' && { backgroundColor: '#dcfce7', borderColor: '#86efac' },
-          stage === 'gone'      && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+          stage === 'pending'         && { backgroundColor: '#fef3c7', borderColor: '#fcd34d' },
+          stage === 'goingToPickup'   && { backgroundColor: '#ffedd5', borderColor: '#fdba74' },
+          stage === 'goingToCustomer' && { backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+          stage === 'atDoor'          && { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+          stage === 'delivered'       && { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+          stage === 'gone'            && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
         ]}>
           <Ionicons
             name={
-              stage === 'pending'   ? 'hand-right' :
-              stage === 'enRoute'   ? 'navigate-circle' :
-              stage === 'atDoor'    ? 'home' :
-              stage === 'delivered' ? 'checkmark-done-circle' :
-                                       'close-circle'
+              stage === 'pending'         ? 'hand-right' :
+              stage === 'goingToPickup'   ? 'storefront' :
+              stage === 'goingToCustomer' ? 'navigate-circle' :
+              stage === 'atDoor'          ? 'home' :
+              stage === 'delivered'       ? 'checkmark-done-circle' :
+                                              'close-circle'
             }
             size={18}
             color={
-              stage === 'pending'   ? '#b45309' :
-              stage === 'enRoute'   ? '#1d4ed8' :
-              stage === 'atDoor'    ? '#15803d' :
-              stage === 'delivered' ? '#15803d' :
-                                       '#b91c1c'
+              stage === 'pending'         ? '#b45309' :
+              stage === 'goingToPickup'   ? '#9a3412' :
+              stage === 'goingToCustomer' ? '#1d4ed8' :
+              stage === 'atDoor'          ? '#15803d' :
+              stage === 'delivered'       ? '#15803d' :
+                                              '#b91c1c'
             }
           />
           <Text style={[
             styles.stageBannerText,
-            stage === 'pending'   && { color: '#b45309' },
-            stage === 'enRoute'   && { color: '#1e3a8a' },
-            stage === 'atDoor'    && { color: '#14532d' },
-            stage === 'delivered' && { color: '#14532d' },
-            stage === 'gone'      && { color: '#7f1d1d' },
+            stage === 'pending'         && { color: '#b45309' },
+            stage === 'goingToPickup'   && { color: '#7c2d12' },
+            stage === 'goingToCustomer' && { color: '#1e3a8a' },
+            stage === 'atDoor'          && { color: '#14532d' },
+            stage === 'delivered'       && { color: '#14532d' },
+            stage === 'gone'            && { color: '#7f1d1d' },
           ]}>
-            {stage === 'pending'   ? 'New assignment — accept to start' :
-             stage === 'enRoute'   ? 'En route — drive to the customer' :
-             stage === 'atDoor'    ? 'At the door — hand over the order' :
-             stage === 'delivered' ? 'Delivered — well done' :
-                                      wasCancelled ? 'Order cancelled' : 'You were unassigned'}
+            {stage === 'pending'         ? 'New assignment — review and accept' :
+             stage === 'goingToPickup'   ? `Pick up at ${ticket.pickup?.name ?? 'the restaurant'}` :
+             stage === 'goingToCustomer' ? `Deliver to ${ticket.customer_data?.name ?? 'the customer'}` :
+             stage === 'atDoor'          ? 'At the door — hand over the order' :
+             stage === 'delivered'       ? 'Delivered — well done' :
+                                            wasCancelled ? 'Order cancelled' : 'You were unassigned'}
           </Text>
         </View>
 
-        {/* Action buttons — stage-aware. Each stage exposes only the
-            transitions that make sense at that point in the lifecycle. */}
+        {/* Embedded live route map — only during the two driving legs */}
+        {activeLeg && mapDestination ? (
+          <View style={{ position: 'relative' }}>
+            <RiderRouteMap
+              rider={riderPos}
+              destination={mapDestination}
+              destinationKind={activeLeg}
+              height={220}
+            />
+            {/* ETA + distance pill overlay (top-right) */}
+            {(distLabel || etaLabel) ? (
+              <View style={styles.etaPill}>
+                {etaLabel ? (
+                  <View style={styles.etaPillRow}>
+                    <Ionicons name="time-outline" size={13} color="#0f172a" />
+                    <Text style={styles.etaPillText}>{etaLabel}</Text>
+                  </View>
+                ) : null}
+                {distLabel ? (
+                  <View style={styles.etaPillRow}>
+                    <Ionicons name="location-outline" size={13} color="#64748b" />
+                    <Text style={[styles.etaPillText, { color: '#64748b' }]}>{distLabel}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+            {/* External Maps button overlay (bottom-right) */}
+            {mapsUrl ? (
+              <Pressable
+                onPress={() => Linking.openURL(mapsUrl)}
+                style={styles.mapNavOverlay}
+                accessibilityLabel="Navigate in Maps"
+              >
+                <Ionicons name="navigate" size={16} color="#fff" />
+                <Text style={styles.mapNavOverlayText}>Navigate</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* ── Pickup-leg cards: pickup info + items the rider is carrying ── */}
+        {(stage === 'pending' || stage === 'goingToPickup') ? (
+          <>
+            {ticket.pickup ? (
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.legBadgePickup}>
+                    <Ionicons name="storefront" size={14} color="#9a3412" />
+                    <Text style={styles.legBadgeText}>PICKUP</Text>
+                  </View>
+                </View>
+                <Text style={styles.partyName}>{ticket.pickup.name ?? 'Restaurant'}</Text>
+                {ticket.pickup.address ? (
+                  <Text style={styles.addressText}>{ticket.pickup.address}</Text>
+                ) : null}
+                <View style={styles.contactRow}>
+                  {ticket.pickup.phone ? (
+                    <Pressable
+                      onPress={() => Linking.openURL(`tel:${ticket.pickup!.phone}`)}
+                      style={styles.contactBtn}
+                    >
+                      <Ionicons name="call" size={15} color="#16a34a" />
+                      <Text style={styles.contactBtnText}>Call restaurant</Text>
+                    </Pressable>
+                  ) : null}
+                  {ticket.pickup.lat != null && ticket.pickup.lng != null ? (
+                    <Pressable
+                      onPress={() => Linking.openURL(
+                        `https://www.google.com/maps/dir/?api=1&destination=${ticket.pickup!.lat},${ticket.pickup!.lng}&dir_action=navigate`,
+                      )}
+                      style={styles.contactBtn}
+                    >
+                      <Ionicons name="navigate" size={15} color="#1d4ed8" />
+                      <Text style={[styles.contactBtnText, { color: '#1d4ed8' }]}>Directions</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
+            {/* Items list */}
+            {ticket.items && ticket.items.length > 0 ? (
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.cardLabel}>Order — {ticket.items.length} {ticket.items.length === 1 ? 'item' : 'items'}</Text>
+                  {typeof ticket.order_total === 'number' && ticket.order_total > 0 ? (
+                    <Text style={styles.totalText}>{formatMoney(ticket.order_total)}</Text>
+                  ) : null}
+                </View>
+                {ticket.items.map((it) => (
+                  <View key={it.id} style={styles.itemRow}>
+                    <View style={styles.itemQty}>
+                      <Text style={styles.itemQtyText}>{it.qty}×</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemName}>{it.name}</Text>
+                      {it.note ? <Text style={styles.itemNote}>{it.note}</Text> : null}
+                    </View>
+                    <Text style={styles.itemPrice}>{formatMoney(it.price * it.qty)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {/* ── Dropoff-leg cards: customer + drop-off address ── */}
+        {(stage === 'goingToCustomer' || stage === 'atDoor') ? (
+          <>
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.legBadgeDropoff}>
+                  <Ionicons name="home" size={14} color="#15803d" />
+                  <Text style={[styles.legBadgeText, { color: '#15803d' }]}>DELIVER TO</Text>
+                </View>
+              </View>
+              <Text style={styles.partyName}>{customerName ?? 'Customer'}</Text>
+              {address ? <Text style={styles.addressText}>{address}</Text> : null}
+              {(addressCity || addressInstructions) ? (
+                <Text style={styles.addressSub}>
+                  {addressCity ?? ''}{addressCity && addressInstructions ? ' · ' : ''}{addressInstructions ?? ''}
+                </Text>
+              ) : null}
+              <View style={styles.contactRow}>
+                {customerPhone ? (
+                  <Pressable
+                    onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+                    style={styles.contactBtn}
+                  >
+                    <Ionicons name="call" size={15} color="#16a34a" />
+                    <Text style={styles.contactBtnText}>Call</Text>
+                  </Pressable>
+                ) : null}
+                {customerPhone ? (
+                  <Pressable
+                    onPress={() => Linking.openURL(`sms:${customerPhone}`)}
+                    style={styles.contactBtn}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={15} color="#1d4ed8" />
+                    <Text style={[styles.contactBtnText, { color: '#1d4ed8' }]}>Text</Text>
+                  </Pressable>
+                ) : null}
+                {mapsUrl ? (
+                  <Pressable
+                    onPress={() => Linking.openURL(mapsUrl)}
+                    style={styles.contactBtn}
+                  >
+                    <Ionicons name="navigate" size={15} color="#1d4ed8" />
+                    <Text style={[styles.contactBtnText, { color: '#1d4ed8' }]}>Directions</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {note ? (
+                <View style={styles.noteBox}>
+                  <Ionicons name="document-text-outline" size={14} color="#64748b" />
+                  <Text style={styles.noteText}>{note}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Items reminder — collapsed during the dropoff leg */}
+            {ticket.items && ticket.items.length > 0 ? (
+              <View style={[styles.card, { paddingVertical: 12 }]}>
+                <Text style={styles.cardLabel}>
+                  Carrying {ticket.items.length} {ticket.items.length === 1 ? 'item' : 'items'}
+                  {typeof ticket.order_total === 'number' && ticket.order_total > 0
+                    ? ` · ${formatMoney(ticket.order_total)}`
+                    : ''}
+                </Text>
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {/* ── Action buttons — stage-aware ── */}
         {stage === 'pending' ? (
           <View style={{ gap: 10, marginTop: 8 }}>
             <Pressable
@@ -498,7 +735,20 @@ export default function RiderScreen() {
               )}
             </Pressable>
           </View>
-        ) : stage === 'enRoute' ? (
+        ) : stage === 'goingToPickup' ? (
+          <Pressable
+            onPress={onPickup}
+            disabled={busy !== null}
+            style={[styles.bigBtn, styles.btnPickup, busy === 'pickup' && styles.btnBusy, { marginTop: 8 }]}
+          >
+            {busy === 'pickup' ? <ActivityIndicator color="#fff" /> : (
+              <>
+                <Ionicons name="bag-handle" size={20} color="#fff" />
+                <Text style={styles.bigBtnText}>I have the order</Text>
+              </>
+            )}
+          </Pressable>
+        ) : stage === 'goingToCustomer' ? (
           <View style={{ gap: 10, marginTop: 8 }}>
             <Pressable
               onPress={onArrived}
@@ -526,20 +776,18 @@ export default function RiderScreen() {
             </Pressable>
           </View>
         ) : stage === 'atDoor' ? (
-          <View style={{ gap: 10, marginTop: 8 }}>
-            <Pressable
-              onPress={onDelivered}
-              disabled={busy !== null}
-              style={[styles.bigBtn, styles.btnDelivered, busy === 'delivered' && styles.btnBusy]}
-            >
-              {busy === 'delivered' ? <ActivityIndicator color="#fff" /> : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.bigBtnText}>Mark as delivered</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={onDelivered}
+            disabled={busy !== null}
+            style={[styles.bigBtn, styles.btnDelivered, busy === 'delivered' && styles.btnBusy, { marginTop: 8 }]}
+          >
+            {busy === 'delivered' ? <ActivityIndicator color="#fff" /> : (
+              <>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.bigBtnText}>Mark as delivered</Text>
+              </>
+            )}
+          </Pressable>
         ) : stage === 'delivered' ? (
           <View style={[styles.card, styles.deliveredCard]}>
             <Ionicons name="checkmark-circle" size={32} color="#16a34a" />
@@ -561,7 +809,7 @@ export default function RiderScreen() {
         )}
 
         {/* Footer — only relevant when GPS is meant to be running */}
-        {(stage === 'enRoute' || stage === 'atDoor') ? (
+        {(stage === 'goingToPickup' || stage === 'goingToCustomer' || stage === 'atDoor') ? (
           <Text style={styles.footer}>
             Live location streams in the background — even when your phone is locked.
             {'\n'}Stops automatically once the order is delivered.
@@ -667,8 +915,72 @@ const styles = StyleSheet.create({
   btnDelivered: { backgroundColor: '#16a34a' },
   btnAccept:    { backgroundColor: '#1d4ed8' },
   btnDecline:   { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#fca5a5' },
+  btnPickup:    { backgroundColor: '#f97316' },
   btnBusy:      { opacity: 0.7 },
   bigBtnText: { color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 0.2 },
+
+  // ── Map overlays ────────────────────────────────────────────
+  etaPill: {
+    position: 'absolute', top: 10, right: 10,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 10, gap: 2,
+    shadowColor: '#0f172a', shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4,
+  },
+  etaPillRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  etaPillText: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  mapNavOverlay: {
+    position: 'absolute', bottom: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: '#1d4ed8',
+    shadowColor: '#0f172a', shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4,
+  },
+  mapNavOverlayText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // ── Card sub-bits ───────────────────────────────────────────
+  cardHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  legBadgePickup: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+    backgroundColor: '#ffedd5',
+  },
+  legBadgeDropoff: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+    backgroundColor: '#dcfce7',
+  },
+  legBadgeText: { fontSize: 11, fontWeight: '800', color: '#9a3412', letterSpacing: 0.5 },
+  partyName: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+  contactRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  contactBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: '#f1f5f9',
+  },
+  contactBtnText: { fontSize: 13, fontWeight: '700', color: '#16a34a' },
+  totalText: { fontSize: 15, fontWeight: '700', color: '#0f172a', fontVariant: ['tabular-nums'] },
+
+  // ── Items list ──────────────────────────────────────────────
+  itemRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2e8f0',
+  },
+  itemQty: {
+    minWidth: 32, alignItems: 'center',
+    paddingHorizontal: 6, paddingVertical: 4,
+    borderRadius: 6, backgroundColor: '#f1f5f9',
+  },
+  itemQtyText: { fontSize: 13, fontWeight: '800', color: '#475569' },
+  itemName: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  itemNote: { fontSize: 12, color: '#64748b', marginTop: 2, fontStyle: 'italic' },
+  itemPrice: { fontSize: 14, color: '#0f172a', fontVariant: ['tabular-nums'] },
 
   stageBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
