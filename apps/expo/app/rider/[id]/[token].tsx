@@ -37,7 +37,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import {
+  postAccept,
   postArrived,
+  postDecline,
   postDelivered,
   postRegisterPush,
 } from '@/lib/rider-api';
@@ -51,13 +53,27 @@ import { API_BASE_URL } from '@/lib/config';
 interface TicketDetails {
   id: string;
   ticket_number: string;
+  status?: string | null;
   customer_data: { name?: string; phone?: string } | null;
   delivery_address: { street?: string; city?: string; lat?: number; lng?: number; instructions?: string } | null;
   notes: string | null;
+  dispatched_at?: string | null;
   arrived_at: string | null;
   delivered_at: string | null;
+  /** null when the operator has unassigned the rider (e.g. via Station). */
+  assigned_rider_id?: string | null;
   organization_name?: string | null;
 }
+
+/**
+ * Lifecycle stage derived from the timestamp triplet on the ticket.
+ *   pending  → assigned but not yet accepted (dispatched_at NULL)
+ *   enRoute  → accepted, on the way (dispatched_at, no arrived_at)
+ *   atDoor   → at drop-off, waiting for handover (arrived_at, no delivered_at)
+ *   delivered → terminal
+ *   gone     → operator unassigned the rider mid-flow
+ */
+type Stage = 'pending' | 'enRoute' | 'atDoor' | 'delivered' | 'gone';
 
 type GeoState = 'requesting' | 'live' | 'foreground' | 'denied' | 'off';
 
@@ -71,64 +87,72 @@ export default function RiderScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [geo, setGeo] = useState<GeoState>('requesting');
-  const [busy, setBusy] = useState<'arrived' | 'delivered' | null>(null);
+  const [busy, setBusy] = useState<'accept' | 'decline' | 'arrived' | 'delivered' | null>(null);
 
   // ── Fetch the ticket details on mount ──
   // We hit the same /api/rider/details endpoint the web portal uses
   // (or fall back to /api/tickets/:id if the dedicated endpoint
   // doesn't exist yet). The token verifies server-side.
+  // Pull the latest ticket state. Called on mount, after every state
+  // transition (accept/decline/arrived/delivered), and whenever a
+  // background event might have changed things (operator unassigns,
+  // customer cancels — both fire pushes that bring the app forward).
+  const refreshTicket = async (mode: 'initial' | 'silent' = 'silent') => {
+    if (!ticketId || !token) return;
+    if (mode === 'initial') setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/rider/details`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId, token }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data?.ticket) {
+        setTicket(data.ticket);
+        setError(null);
+      } else if (r.status === 401) {
+        setError('This delivery link is invalid or expired.');
+      } else if (mode === 'initial') {
+        setTicket({
+          id: ticketId,
+          ticket_number: ticketId.slice(0, 8),
+          customer_data: null,
+          delivery_address: null,
+          notes: null,
+          arrived_at: null,
+          delivered_at: null,
+        });
+      }
+    } catch (e: any) {
+      if (mode === 'initial') setError(e?.message ?? 'Failed to load delivery.');
+    } finally {
+      if (mode === 'initial') setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let cancelled = false;
     if (!ticketId || !token) {
       setError('Missing ticket id or token.');
       setLoading(false);
       return;
     }
-    (async () => {
-      try {
-        // Lightweight detail fetch — the rider portal page already
-        // server-renders these fields. We re-fetch via a public
-        // endpoint that takes the rider token. If unavailable, we
-        // still let ARRIVED/DELIVERED work (they don't need ticket
-        // detail to fire) and just show "Order #ID" in the UI.
-        const r = await fetch(`${API_BASE_URL}/api/rider/details`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticketId, token }),
-        });
-        if (cancelled) return;
-        const data = await r.json().catch(() => ({}));
-        if (r.ok && data?.ticket) {
-          setTicket(data.ticket);
-        } else if (r.status === 401) {
-          setError('This delivery link is invalid or expired.');
-        } else {
-          // No detail endpoint — render in minimal mode.
-          setTicket({
-            id: ticketId,
-            ticket_number: ticketId.slice(0, 8),
-            customer_data: null,
-            delivery_address: null,
-            notes: null,
-            arrived_at: null,
-            delivered_at: null,
-          });
-        }
-      } catch (e: any) {
-        if (cancelled) return;
-        setError(e?.message ?? 'Failed to load delivery.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+    void refreshTicket('initial');
+    // Re-poll every 10s in case a state-change push didn't deliver
+    // (e.g. notifications disabled). Lightweight — just a single row.
+    const i = setInterval(() => { void refreshTicket('silent'); }, 10_000);
+    return () => clearInterval(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketId, token]);
 
-  // ── Start GPS streaming on mount, stop on unmount or delivered ──
+  // ── GPS streaming — gated on accept ──
+  // Streams ONLY after the rider has accepted (dispatched_at set).
+  // Pre-accept the customer hasn't been told the order is on its way
+  // yet, so we don't waste battery + don't ping the customer's map.
+  // Streaming stops when delivered, cancelled, or the operator
+  // unassigns (server replies {stopped:true} on the next heartbeat).
   useEffect(() => {
     if (!ticketId || !token) return;
-    if (ticket?.delivered_at) {
-      // Already delivered — never start.
+    if (ticket?.delivered_at || !ticket?.dispatched_at) {
       setGeo('off');
       return;
     }
@@ -142,16 +166,8 @@ export default function RiderScreen() {
       }
       setGeo(r.permission === 'granted' ? 'live' : 'foreground');
     })();
-    return () => {
-      cancelled = true;
-      // Don't stop on unmount — the rider may navigate away to Maps
-      // and return; we want the stream alive across foreground/back-
-      // ground transitions. The task only stops when:
-      //   1. server signals { stopped: true } (delivered/cancelled)
-      //   2. the rider taps DELIVERED (handler stops it explicitly)
-      //   3. they manually toggle the GPS pill off (future feature)
-    };
-  }, [ticketId, token, ticket?.delivered_at]);
+    return () => { cancelled = true; };
+  }, [ticketId, token, ticket?.dispatched_at, ticket?.delivered_at]);
 
   // ── Register the device's push token so the assignment / unassign /
   //    cancel notifier can hit this rider instantly even when the app
@@ -203,6 +219,16 @@ export default function RiderScreen() {
 
   const isDelivered = Boolean(ticket?.delivered_at);
   const hasArrived = Boolean(ticket?.arrived_at);
+  const hasAccepted = Boolean(ticket?.dispatched_at);
+  const wasUnassigned = ticket && !ticket.assigned_rider_id && !ticket.delivered_at;
+  const wasCancelled = ticket?.status === 'cancelled';
+
+  const stage: Stage =
+    isDelivered ? 'delivered'
+    : (wasUnassigned || wasCancelled) ? 'gone'
+    : hasArrived ? 'atDoor'
+    : hasAccepted ? 'enRoute'
+    : 'pending';
 
   const customerName = ticket?.customer_data?.name ?? null;
   const customerPhone = ticket?.customer_data?.phone ?? null;
@@ -222,6 +248,55 @@ export default function RiderScreen() {
   }, [destLat, destLng]);
 
   // ── Action handlers ──
+  const onAccept = async () => {
+    if (busy) return;
+    setBusy('accept');
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const r = await postAccept(ticketId, token);
+      if (!r.ok) throw new Error(r.error ?? 'accept failed');
+      setTicket((t) => t ? { ...t, dispatched_at: r.dispatched_at ?? new Date().toISOString() } : t);
+      // Ensure server-side state is reflected (e.g. customer ping
+      // status, race-loser branch).
+      void refreshTicket('silent');
+    } catch (e: any) {
+      Alert.alert('Could not accept', e?.message ?? 'Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onDecline = async () => {
+    if (busy) return;
+    Alert.alert(
+      'Decline this delivery?',
+      'The order goes back to the restaurant. They\'ll assign someone else.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy('decline');
+            try {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              const r = await postDecline(ticketId, token);
+              if (!r.ok) throw new Error(r.error ?? 'decline failed');
+              await stopRiderLocationStream();
+              setGeo('off');
+              // Pop back to home — assignment is no longer ours.
+              router.replace('/rider' as any);
+            } catch (e: any) {
+              Alert.alert('Could not decline', e?.message ?? 'Please try again.');
+            } finally {
+              setBusy(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const onArrived = async () => {
     if (busy || hasArrived || isDelivered) return;
     setBusy('arrived');
@@ -229,8 +304,8 @@ export default function RiderScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const r = await postArrived(ticketId, token);
       if (!r.ok) throw new Error(r.error ?? 'arrived failed');
-      // Optimistic local update so the UI flips immediately.
       setTicket((t) => t ? { ...t, arrived_at: r.arrived_at ?? new Date().toISOString() } : t);
+      void refreshTicket('silent');
     } catch (e: any) {
       Alert.alert('Could not mark as Arrived', e?.message ?? 'Please try again.');
     } finally {
@@ -352,23 +427,91 @@ export default function RiderScreen() {
           </View>
         ) : null}
 
-        {/* Action buttons */}
-        {!isDelivered ? (
+        {/* Stage banner — short text describing the current state */}
+        <View style={[
+          styles.stageBanner,
+          stage === 'pending'   && { backgroundColor: '#fef3c7', borderColor: '#fcd34d' },
+          stage === 'enRoute'   && { backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+          stage === 'atDoor'    && { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+          stage === 'delivered' && { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+          stage === 'gone'      && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+        ]}>
+          <Ionicons
+            name={
+              stage === 'pending'   ? 'hand-right' :
+              stage === 'enRoute'   ? 'navigate-circle' :
+              stage === 'atDoor'    ? 'home' :
+              stage === 'delivered' ? 'checkmark-done-circle' :
+                                       'close-circle'
+            }
+            size={18}
+            color={
+              stage === 'pending'   ? '#b45309' :
+              stage === 'enRoute'   ? '#1d4ed8' :
+              stage === 'atDoor'    ? '#15803d' :
+              stage === 'delivered' ? '#15803d' :
+                                       '#b91c1c'
+            }
+          />
+          <Text style={[
+            styles.stageBannerText,
+            stage === 'pending'   && { color: '#b45309' },
+            stage === 'enRoute'   && { color: '#1e3a8a' },
+            stage === 'atDoor'    && { color: '#14532d' },
+            stage === 'delivered' && { color: '#14532d' },
+            stage === 'gone'      && { color: '#7f1d1d' },
+          ]}>
+            {stage === 'pending'   ? 'New assignment — accept to start' :
+             stage === 'enRoute'   ? 'En route — drive to the customer' :
+             stage === 'atDoor'    ? 'At the door — hand over the order' :
+             stage === 'delivered' ? 'Delivered — well done' :
+                                      wasCancelled ? 'Order cancelled' : 'You were unassigned'}
+          </Text>
+        </View>
+
+        {/* Action buttons — stage-aware. Each stage exposes only the
+            transitions that make sense at that point in the lifecycle. */}
+        {stage === 'pending' ? (
           <View style={{ gap: 10, marginTop: 8 }}>
-            {!hasArrived ? (
-              <Pressable
-                onPress={onArrived}
-                disabled={busy !== null}
-                style={[styles.bigBtn, styles.btnArrived, busy === 'arrived' && styles.btnBusy]}
-              >
-                {busy === 'arrived' ? <ActivityIndicator color="#fff" /> : (
-                  <>
-                    <Ionicons name="home" size={20} color="#fff" />
-                    <Text style={styles.bigBtnText}>I've Arrived</Text>
-                  </>
-                )}
-              </Pressable>
-            ) : null}
+            <Pressable
+              onPress={onAccept}
+              disabled={busy !== null}
+              style={[styles.bigBtn, styles.btnAccept, busy === 'accept' && styles.btnBusy]}
+            >
+              {busy === 'accept' ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={styles.bigBtnText}>Accept delivery</Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={onDecline}
+              disabled={busy !== null}
+              style={[styles.bigBtn, styles.btnDecline, busy === 'decline' && styles.btnBusy]}
+            >
+              {busy === 'decline' ? <ActivityIndicator color="#dc2626" /> : (
+                <>
+                  <Ionicons name="close-circle" size={20} color="#dc2626" />
+                  <Text style={[styles.bigBtnText, { color: '#dc2626' }]}>Decline</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        ) : stage === 'enRoute' ? (
+          <View style={{ gap: 10, marginTop: 8 }}>
+            <Pressable
+              onPress={onArrived}
+              disabled={busy !== null}
+              style={[styles.bigBtn, styles.btnArrived, busy === 'arrived' && styles.btnBusy]}
+            >
+              {busy === 'arrived' ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Ionicons name="home" size={20} color="#fff" />
+                  <Text style={styles.bigBtnText}>I've arrived</Text>
+                </>
+              )}
+            </Pressable>
             <Pressable
               onPress={onDelivered}
               disabled={busy !== null}
@@ -377,23 +520,53 @@ export default function RiderScreen() {
               {busy === 'delivered' ? <ActivityIndicator color="#fff" /> : (
                 <>
                   <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.bigBtnText}>Mark as Delivered</Text>
+                  <Text style={styles.bigBtnText}>Mark as delivered</Text>
                 </>
               )}
             </Pressable>
           </View>
-        ) : (
+        ) : stage === 'atDoor' ? (
+          <View style={{ gap: 10, marginTop: 8 }}>
+            <Pressable
+              onPress={onDelivered}
+              disabled={busy !== null}
+              style={[styles.bigBtn, styles.btnDelivered, busy === 'delivered' && styles.btnBusy]}
+            >
+              {busy === 'delivered' ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={styles.bigBtnText}>Mark as delivered</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        ) : stage === 'delivered' ? (
           <View style={[styles.card, styles.deliveredCard]}>
             <Ionicons name="checkmark-circle" size={32} color="#16a34a" />
             <Text style={styles.deliveredTitle}>Order delivered</Text>
             <Text style={styles.deliveredSub}>Customer has been notified. You can close this screen.</Text>
           </View>
+        ) : (
+          <View style={[styles.card, styles.deliveredCard]}>
+            <Ionicons name="close-circle" size={32} color="#dc2626" />
+            <Text style={[styles.deliveredTitle, { color: '#dc2626' }]}>
+              {wasCancelled ? 'Order cancelled' : 'No longer your delivery'}
+            </Text>
+            <Text style={styles.deliveredSub}>
+              {wasCancelled
+                ? 'The customer cancelled this order. You can close this screen.'
+                : 'The operator unassigned this run. Check the home screen for new work.'}
+            </Text>
+          </View>
         )}
 
-        <Text style={styles.footer}>
-          Live location streams in the background — even when your phone is locked.
-          {'\n'}Stops automatically once the order is delivered.
-        </Text>
+        {/* Footer — only relevant when GPS is meant to be running */}
+        {(stage === 'enRoute' || stage === 'atDoor') ? (
+          <Text style={styles.footer}>
+            Live location streams in the background — even when your phone is locked.
+            {'\n'}Stops automatically once the order is delivered.
+          </Text>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -492,8 +665,17 @@ const styles = StyleSheet.create({
   },
   btnArrived:   { backgroundColor: '#3b82f6' },
   btnDelivered: { backgroundColor: '#16a34a' },
+  btnAccept:    { backgroundColor: '#1d4ed8' },
+  btnDecline:   { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#fca5a5' },
   btnBusy:      { opacity: 0.7 },
   bigBtnText: { color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 0.2 },
+
+  stageBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 12, borderWidth: 1, marginTop: 4,
+  },
+  stageBannerText: { fontSize: 13, fontWeight: '700', flex: 1 },
 
   deliveredCard: { alignItems: 'center', gap: 6, padding: 22 },
   deliveredTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },

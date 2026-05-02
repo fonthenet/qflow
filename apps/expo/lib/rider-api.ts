@@ -59,6 +59,14 @@ export async function postHeartbeat(input: RiderHeartbeatInput): Promise<RiderHe
   return postJson<RiderHeartbeatResult>('/api/rider/heartbeat', input);
 }
 
+export async function postAccept(ticketId: string, token: string): Promise<{ ok: boolean; dispatched_at?: string; noop?: boolean; error?: string }> {
+  return postJson('/api/rider/accept', { ticketId, token });
+}
+
+export async function postDecline(ticketId: string, token: string): Promise<{ ok: boolean; noop?: boolean; error?: string }> {
+  return postJson('/api/rider/decline', { ticketId, token });
+}
+
 export async function postArrived(ticketId: string, token: string): Promise<{ ok: boolean; arrived_at?: string; noop?: boolean; error?: string }> {
   return postJson('/api/rider/arrived', { ticketId, token });
 }

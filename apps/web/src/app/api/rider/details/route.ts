@@ -35,8 +35,9 @@ export async function POST(request: NextRequest) {
   const { data: ticket, error } = await supabase
     .from('tickets')
     .select(`
-      id, ticket_number, customer_data, delivery_address,
-      notes, arrived_at, delivered_at, dispatched_at, office_id,
+      id, ticket_number, status, customer_data, delivery_address,
+      notes, arrived_at, delivered_at, dispatched_at,
+      assigned_rider_id, office_id,
       offices ( name, organization_id, organizations ( name ) )
     `)
     .eq('id', ticketId)
@@ -57,12 +58,14 @@ export async function POST(request: NextRequest) {
     ticket: {
       id: ticket.id,
       ticket_number: ticket.ticket_number,
+      status: ticket.status ?? null,
       customer_data: ticket.customer_data ?? null,
       delivery_address: ticket.delivery_address ?? null,
       notes: ticket.notes ?? null,
       arrived_at: ticket.arrived_at ?? null,
       delivered_at: ticket.delivered_at ?? null,
       dispatched_at: ticket.dispatched_at ?? null,
+      assigned_rider_id: ticket.assigned_rider_id ?? null,
       organization_name: orgName,
     },
   });
