@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       id, ticket_number, status, dispatched_at, arrived_at, picked_up_at,
       delivery_address, customer_data, notes,
       created_at,
-      offices ( name, address, latitude, longitude, phone )
+      offices ( name, address, latitude, longitude, organization_id, organizations ( settings ) )
     `)
     .eq('assigned_rider_id', session.riderId)
     .is('delivered_at', null)
@@ -100,7 +100,12 @@ export async function GET(request: NextRequest) {
         address: t.offices.address,
         lat: t.offices.latitude,
         lng: t.offices.longitude,
-        phone: t.offices.phone ?? null,
+        // offices has no phone column — fall back to the org's
+        // business_phone (or whatsapp_business_phone) from settings
+        // so riders have a callable number for the restaurant.
+        phone: (t.offices.organizations?.settings?.business_phone
+          || t.offices.organizations?.settings?.whatsapp_business_phone
+          || null) as string | null,
       } : null,
       rider_token: generateRiderToken(t.id),
       items: ticketItems,

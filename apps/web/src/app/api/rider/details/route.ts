@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       id, ticket_number, status, customer_data, delivery_address,
       notes, arrived_at, delivered_at, dispatched_at, picked_up_at,
       assigned_rider_id, office_id,
-      offices ( name, address, latitude, longitude, phone, organization_id, organizations ( name ) )
+      offices ( name, address, latitude, longitude, organization_id, organizations ( name, settings ) )
     `)
     .eq('id', ticketId)
     .maybeSingle();
@@ -78,13 +78,19 @@ export async function POST(request: NextRequest) {
     ?? (ticket.offices as any)?.name
     ?? null;
 
+  // Office row has no phone column — fall back to the org's
+  // settings.business_phone (or whatsapp_business_phone). Riders
+  // need a callable number for the restaurant; the org-level
+  // contact is the canonical source.
   const officeRaw = ticket.offices as any;
+  const orgSettings = officeRaw?.organizations?.settings ?? {};
+  const pickupPhone = (orgSettings?.business_phone || orgSettings?.whatsapp_business_phone || null) as string | null;
   const pickup = officeRaw ? {
     name: officeRaw.name ?? null,
     address: officeRaw.address ?? null,
     lat: officeRaw.latitude ?? null,
     lng: officeRaw.longitude ?? null,
-    phone: officeRaw.phone ?? null,
+    phone: pickupPhone,
   } : null;
 
   return NextResponse.json({
