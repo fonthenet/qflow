@@ -14,7 +14,11 @@ export type BusinessCategory =
   | 'banking'
   | 'government'
   | 'services'
+  // Food family — restaurant + cafe share the same template machinery
+  // (isRestaurantCategory accepts both) but seed slightly different
+  // defaults (cafe has shorter prep + different service vocabulary).
   | 'restaurant'
+  | 'cafe'
   | 'education'
   // Beauty / personal-care family. We keep 'beauty' as the legacy
   // catch-all (existing orgs were stamped with it) and add four
@@ -41,6 +45,91 @@ export interface LocalizedText {
 }
 
 /**
+ * Top-level grouping for the signup picker. Categories with the same
+ * parent slug are shown together under one parent card; clicking a
+ * parent that has multiple children opens a sub-picker. Parents with
+ * a single child auto-select that child (no sub-picker shown).
+ *
+ * Parent slugs are stable IDs — only used for UI grouping, never
+ * persisted. A category that doesn't fit a parent gets `parent: 'other'`.
+ */
+export type CategoryParent =
+  | 'food'           // Restaurant + Café
+  | 'beauty'         // Barbershop / Hair / Nail / Spa
+  | 'healthcare'
+  | 'government'
+  | 'banking'
+  | 'education'
+  | 'professional'   // Insurance / Legal / Real Estate
+  | 'retail'         // Telecom / Automotive / Other catch-all
+  ;
+
+export interface CategoryParentDefinition {
+  slug: CategoryParent;
+  emoji: string;
+  label: LocalizedText;
+  /** Short pitch shown under the parent card on the picker. */
+  hint: LocalizedText;
+}
+
+/** Parent groups shown on the first level of the signup picker. */
+export const CATEGORY_PARENTS: CategoryParentDefinition[] = [
+  {
+    slug: 'food',
+    emoji: '🍽️',
+    label: { en: 'Food & Beverage', fr: 'Restauration', ar: 'مطعم ومقهى' },
+    hint: { en: 'Restaurant, café', fr: 'Restaurant, café', ar: 'مطعم، مقهى' },
+  },
+  {
+    slug: 'beauty',
+    emoji: '💇',
+    label: { en: 'Beauty & Personal Care', fr: 'Beauté & Soins', ar: 'التجميل والعناية' },
+    hint: { en: 'Barber, salon, nails, spa', fr: 'Barbier, coiffure, ongles, spa', ar: 'حلاقة، شعر، أظافر، سبا' },
+  },
+  {
+    slug: 'healthcare',
+    emoji: '🏥',
+    label: { en: 'Healthcare', fr: 'Santé', ar: 'الصحة' },
+    hint: { en: 'Clinic, dental, lab', fr: 'Clinique, dentiste, laboratoire', ar: 'عيادة، أسنان، مختبر' },
+  },
+  {
+    slug: 'government',
+    emoji: '🏛️',
+    label: { en: 'Government & Public Services', fr: 'Administration & Services Publics', ar: 'إدارات وخدمات عمومية' },
+    hint: { en: 'Town hall, post office, civil records', fr: 'Mairie, bureau de poste, état civil', ar: 'بلدية، بريد، حالة مدنية' },
+  },
+  {
+    slug: 'banking',
+    emoji: '🏦',
+    label: { en: 'Banking', fr: 'Banque', ar: 'البنوك' },
+    hint: { en: 'Branch, agency', fr: 'Agence, succursale', ar: 'وكالة، فرع' },
+  },
+  {
+    slug: 'education',
+    emoji: '📚',
+    label: { en: 'Education', fr: 'Éducation', ar: 'التعليم' },
+    hint: { en: 'School, university, training', fr: 'École, université, formation', ar: 'مدرسة، جامعة، تدريب' },
+  },
+  {
+    slug: 'professional',
+    emoji: '💼',
+    label: { en: 'Professional Services', fr: 'Services Professionnels', ar: 'الخدمات المهنية' },
+    hint: { en: 'Insurance, legal, real estate', fr: 'Assurance, juridique, immobilier', ar: 'تأمين، قانون، عقارات' },
+  },
+  {
+    slug: 'retail',
+    emoji: '🏪',
+    label: { en: 'Retail & Other', fr: 'Commerce & Autres', ar: 'تجارة وأخرى' },
+    hint: { en: 'Telecom, automotive, anything else', fr: 'Télécom, auto, autres', ar: 'اتصالات، سيارات، غير ذلك' },
+  },
+];
+
+export function getCategoryParent(slug: CategoryParent | null | undefined): CategoryParentDefinition | undefined {
+  if (!slug) return undefined;
+  return CATEGORY_PARENTS.find((p) => p.slug === slug);
+}
+
+/**
  * Everything the wizard needs to seed a ready-to-use business.
  *
  * All names are localized. The `vertical` maps this category to the
@@ -48,6 +137,11 @@ export interface LocalizedText {
  */
 export interface CategoryDefinition {
   value: BusinessCategory;
+  /** Parent group for the signup picker. */
+  parent: CategoryParent;
+  /** Hide from the new-signup picker (still selectable for legacy
+   *  orgs whose `business_category` already matches). */
+  legacy?: boolean;
   emoji: string;
   label: LocalizedText;
   /** The vocabulary the customer sees on their side (e.g. 'Appointment' vs 'Ticket'). */
@@ -93,6 +187,7 @@ export interface CategoryDefinition {
 export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   {
     value: 'healthcare',
+    parent: 'healthcare',
     emoji: '🏥',
     label: { en: 'Healthcare', fr: 'Santé', ar: 'الصحة' },
     vertical: 'clinic',
@@ -110,6 +205,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'banking',
+    parent: 'banking',
     emoji: '🏦',
     label: { en: 'Banking & Finance', fr: 'Banque & Finance', ar: 'البنوك والمالية' },
     vertical: 'bank',
@@ -127,6 +223,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'government',
+    parent: 'government',
     emoji: '🏛️',
     label: { en: 'Government', fr: 'Gouvernement', ar: 'الإدارات الحكومية' },
     vertical: 'public-service',
@@ -143,7 +240,13 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     defaultDesk: { name: { en: 'Counter 1', fr: 'Guichet 1', ar: 'شباك 1' } },
   },
   {
+    // Legacy duplicate of 'government' — kept selectable for orgs that
+    // were stamped with it before consolidation, but hidden from the
+    // new-signup picker so operators only see the canonical
+    // 'government' option.
     value: 'services',
+    parent: 'government',
+    legacy: true,
     emoji: '🏢',
     label: { en: 'Public Services', fr: 'Services Publics', ar: 'الخدمات العمومية' },
     vertical: 'public-service',
@@ -161,8 +264,9 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'restaurant',
+    parent: 'food',
     emoji: '🍽️',
-    label: { en: 'Restaurants', fr: 'Restaurants', ar: 'المطاعم' },
+    label: { en: 'Restaurant', fr: 'Restaurant', ar: 'مطعم' },
     vertical: 'restaurant',
     defaultOfficeName: { en: 'Main Dining Room', fr: 'Salle Principale', ar: 'القاعة الرئيسية' },
     defaultDepartment: {
@@ -177,7 +281,29 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     defaultDesk: { name: { en: 'Host Station', fr: 'Accueil', ar: 'محطة الاستقبال' } },
   },
   {
+    value: 'cafe',
+    parent: 'food',
+    emoji: '☕',
+    label: { en: 'Café', fr: 'Café', ar: 'مقهى' },
+    vertical: 'restaurant',
+    defaultOfficeName: { en: 'Main Café', fr: 'Café Principal', ar: 'المقهى الرئيسي' },
+    defaultDepartment: {
+      name: { en: 'Counter', fr: 'Comptoir', ar: 'الكاونتر' },
+      code: 'CTR',
+    },
+    defaultService: {
+      // Cafés default to takeaway as the headline service since most
+      // café orders are walk-in-and-go. The full takeout/delivery/
+      // dine-in trio is still seeded by the restaurant template.
+      name: { en: 'Takeaway Order', fr: 'Commande à Emporter', ar: 'طلب للأخذ' },
+      code: 'TAKE',
+      estimatedMinutes: 8,
+    },
+    defaultDesk: { name: { en: 'Counter 1', fr: 'Comptoir 1', ar: 'كاونتر 1' } },
+  },
+  {
     value: 'education',
+    parent: 'education',
     emoji: '📚',
     label: { en: 'Education', fr: 'Éducation', ar: 'التعليم' },
     vertical: 'education',
@@ -195,6 +321,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'barbershop',
+    parent: 'beauty',
     emoji: '💈',
     label: { en: 'Barbershop', fr: 'Salon de barbier', ar: 'صالون حلاقة' },
     vertical: 'barber',
@@ -212,6 +339,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'hair_salon',
+    parent: 'beauty',
     emoji: '💇',
     label: { en: 'Hair Salon', fr: 'Salon de coiffure', ar: 'صالون شعر' },
     vertical: 'salon',
@@ -229,6 +357,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'nail_salon',
+    parent: 'beauty',
     emoji: '💅',
     label: { en: 'Nail Salon', fr: 'Salon de manucure', ar: 'صالون أظافر' },
     vertical: 'salon',
@@ -246,6 +375,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'spa',
+    parent: 'beauty',
     emoji: '🧖',
     label: { en: 'Spa & Wellness', fr: 'Spa & Bien-être', ar: 'سبا وعافية' },
     vertical: 'spa',
@@ -262,10 +392,12 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
     defaultDesk: { name: { en: 'Room 1', fr: 'Cabine 1', ar: 'غرفة 1' } },
   },
   // Legacy catch-all — kept selectable so existing 'beauty' orgs stay
-  // routable, but new operators see the more specific options above
-  // first. Maps to the same vertical pool.
+  // routable, but hidden from the new-signup picker (legacy: true)
+  // since the four specific sub-types above cover every real case.
   {
     value: 'beauty',
+    parent: 'beauty',
+    legacy: true,
     emoji: '✂️',
     label: { en: 'Beauty & Spa (mixed)', fr: 'Beauté & Spa (mixte)', ar: 'تجميل وسبا (مختلط)' },
     vertical: 'salon',
@@ -283,6 +415,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'telecom',
+    parent: 'retail',
     emoji: '📱',
     label: { en: 'Telecom', fr: 'Télécom', ar: 'الاتصالات' },
     vertical: 'telecom',
@@ -300,6 +433,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'insurance',
+    parent: 'professional',
     emoji: '🛡️',
     label: { en: 'Insurance', fr: 'Assurance', ar: 'التأمين' },
     vertical: 'insurance',
@@ -317,6 +451,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'automotive',
+    parent: 'retail',
     emoji: '🚗',
     label: { en: 'Automotive', fr: 'Automobile', ar: 'السيارات' },
     vertical: 'automotive',
@@ -334,6 +469,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'legal',
+    parent: 'professional',
     emoji: '⚖️',
     label: { en: 'Legal', fr: 'Juridique', ar: 'الشؤون القانونية' },
     vertical: 'legal',
@@ -351,6 +487,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'real_estate',
+    parent: 'professional',
     emoji: '🏠',
     label: { en: 'Real Estate', fr: 'Immobilier', ar: 'العقارات' },
     vertical: 'real_estate',
@@ -368,6 +505,7 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
   },
   {
     value: 'other',
+    parent: 'retail',
     emoji: '💼',
     label: { en: 'Other', fr: 'Autre', ar: 'أخرى' },
     vertical: 'general',
@@ -388,6 +526,33 @@ export const BUSINESS_CATEGORIES: CategoryDefinition[] = [
 export function getBusinessCategory(value: string | null | undefined): CategoryDefinition | undefined {
   if (!value) return undefined;
   return BUSINESS_CATEGORIES.find((c) => c.value === value);
+}
+
+/**
+ * Children of a parent group — used by the signup picker to render
+ * the second-level sub-category picker. Excludes legacy categories
+ * by default so new operators only see canonical options. Pass
+ * includeLegacy=true on the Settings page (operator may want to
+ * view their existing legacy category).
+ */
+export function getCategoriesForParent(
+  parent: CategoryParent,
+  includeLegacy = false,
+): CategoryDefinition[] {
+  return BUSINESS_CATEGORIES.filter(
+    (c) => c.parent === parent && (includeLegacy || !c.legacy),
+  );
+}
+
+/**
+ * Parent groups that have at least one non-legacy child. Used to
+ * render the first-level picker — we don't want a parent card
+ * appearing if all its children are legacy/hidden.
+ */
+export function getActiveCategoryParents(): CategoryParentDefinition[] {
+  return CATEGORY_PARENTS.filter(
+    (p) => BUSINESS_CATEGORIES.some((c) => c.parent === p.slug && !c.legacy),
+  );
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { restoreSession } from '../lib/supabase';
 import type { StaffSession } from '../lib/types';
 import { type DesktopLocale } from '../lib/i18n';
@@ -9,10 +9,14 @@ import {
   DEFAULT_SETUP_WIZARD_SPEC,
   DEFAULT_TIMEZONE,
   detectDefaultCountry,
+  getActiveCategoryParents,
+  getBusinessCategory,
+  getCategoriesForParent,
   getCountry,
   resolveLocalized,
   type BusinessCategory,
   type CategoryLocale,
+  type CategoryParent,
 } from '@qflo/shared';
 
 // ── Station Signup (new-signup) ───────────────────────────────────
@@ -68,6 +72,11 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
 
   const [businessName, setBusinessName] = useState('');
   const [category, setCategory] = useState<BusinessCategory | ''>('');
+  // Two-step picker state. When a parent has a single child we
+  // auto-select it; when it has multiple children we show a sub-
+  // picker. Operator can tap "Change" on the chosen pill to reset
+  // back to the parent grid.
+  const [parentSlug, setParentSlug] = useState<CategoryParent | null>(null);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -104,23 +113,59 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
   const timezone = selectedCity?.timezone ?? selectedCountry?.defaultTimezone ?? DEFAULT_TIMEZONE;
 
   // Prefill office name + editable seed from the category defaults.
+  // Replaces the earlier "only fill if empty" logic that left clinic
+  // defaults visible after the operator switched to a different
+  // category (the user-reported "Restaurants → Main Clinic" bug).
+  //
+  // Strategy:
+  //   - On the FIRST category pick, fill all four fields from defaults.
+  //   - On every subsequent category change, overwrite ONLY the fields
+  //     that still match the previous category's defaults (i.e. the
+  //     operator hasn't manually edited them). Operator-edited values
+  //     are preserved — switching category by mistake doesn't wipe a
+  //     custom service name they typed.
+  const lastPrefillRef = useRef<{
+    category: BusinessCategory | null;
+    office: string;
+    dept: string;
+    service: { name: string; minutes: number } | null;
+    desk: string;
+  }>({ category: null, office: '', dept: '', service: null, desk: '' });
+
   useEffect(() => {
     if (!selectedCategory) return;
-    if (!officeName) {
-      setOfficeName(resolveLocalized(selectedCategory.defaultOfficeName, wizardLocale));
+    const prev = lastPrefillRef.current;
+    if (prev.category === selectedCategory.value) return; // same category — nothing to do
+
+    const nextOffice = resolveLocalized(selectedCategory.defaultOfficeName, wizardLocale);
+    const nextDept = resolveLocalized(selectedCategory.defaultDepartment.name, wizardLocale);
+    const nextServiceName = resolveLocalized(selectedCategory.defaultService.name, wizardLocale);
+    const nextServiceMinutes = selectedCategory.defaultService.estimatedMinutes;
+    const nextDesk = resolveLocalized(selectedCategory.defaultDesk.name, wizardLocale);
+
+    // Office — overwrite if empty OR still equal to the previous prefill.
+    if (!officeName || officeName === prev.office) setOfficeName(nextOffice);
+    if (!deptName || deptName === prev.dept) setDeptName(nextDept);
+
+    if (services.length === 0
+      || (services.length === 1 && prev.service
+          && services[0].name === prev.service.name
+          && services[0].minutes === prev.service.minutes)) {
+      setServices([{ name: nextServiceName, minutes: nextServiceMinutes }]);
     }
-    if (!deptName) {
-      setDeptName(resolveLocalized(selectedCategory.defaultDepartment.name, wizardLocale));
+
+    if (desks.length === 0
+      || (desks.length === 1 && desks[0] === prev.desk)) {
+      setDesks([nextDesk]);
     }
-    if (services.length === 0) {
-      setServices([{
-        name: resolveLocalized(selectedCategory.defaultService.name, wizardLocale),
-        minutes: selectedCategory.defaultService.estimatedMinutes,
-      }]);
-    }
-    if (desks.length === 0) {
-      setDesks([resolveLocalized(selectedCategory.defaultDesk.name, wizardLocale)]);
-    }
+
+    lastPrefillRef.current = {
+      category: selectedCategory.value,
+      office: nextOffice,
+      dept: nextDept,
+      service: { name: nextServiceName, minutes: nextServiceMinutes },
+      desk: nextDesk,
+    };
   }, [selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset the city whenever the country changes.
@@ -250,21 +295,13 @@ export function Signup({ onSignedUp, onCancel, locale }: Props) {
             />
           </div>
 
-          <div className="form-field">
-            <label>Category</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value as BusinessCategory)}
-              style={{ colorScheme: 'light dark' }}
-            >
-              <option value="">—</option>
-              {BUSINESS_CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.emoji} {resolveLocalized(c.label, wizardLocale)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <CategoryPicker
+            wizardLocale={wizardLocale}
+            category={category}
+            parentSlug={parentSlug}
+            onPick={(p, c) => { setParentSlug(p); setCategory(c); }}
+            onClear={() => { setParentSlug(null); setCategory(''); }}
+          />
 
           <div className="form-field">
             <label>Your full name</label>
@@ -570,3 +607,206 @@ const iconBtn: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
 };
+
+// ── CategoryPicker ──────────────────────────────────────────────
+// Two-step picker for the signup screen. Operator first picks a
+// parent group (Food, Beauty, Healthcare …); if that parent has
+// multiple children we show the child sub-picker. Single-child
+// parents auto-select on click.
+//
+// State lives in the parent <Signup> so coming back via "Change"
+// resets cleanly. The component is render-only — no side effects
+// beyond the onPick / onClear callbacks.
+function CategoryPicker({
+  wizardLocale,
+  category,
+  parentSlug,
+  onPick,
+  onClear,
+}: {
+  wizardLocale: CategoryLocale;
+  category: BusinessCategory | '';
+  parentSlug: CategoryParent | null;
+  onPick: (parent: CategoryParent, category: BusinessCategory) => void;
+  onClear: () => void;
+}) {
+  const parents = useMemo(() => getActiveCategoryParents(), []);
+  const selectedCategory = category ? getBusinessCategory(category) : undefined;
+  const childrenOfParent = parentSlug ? getCategoriesForParent(parentSlug) : [];
+
+  // Phase A — category already chosen → show a confirmation pill
+  // with a "Change" button. Keeps the form short once the operator
+  // has picked.
+  if (selectedCategory) {
+    return (
+      <div className="form-field">
+        <label>Category</label>
+        <div style={pickerChosen}>
+          <span style={{ fontSize: 22 }}>{selectedCategory.emoji}</span>
+          <span style={{ flex: 1, fontWeight: 600 }}>
+            {resolveLocalized(selectedCategory.label, wizardLocale)}
+          </span>
+          <button type="button" onClick={onClear} style={pickerChangeBtn}>
+            Change
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase B — parent picked, multiple children → child grid.
+  if (parentSlug && childrenOfParent.length > 0) {
+    return (
+      <div className="form-field">
+        <label>Category</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <button type="button" onClick={onClear} style={pickerBackBtn}>
+            ← All categories
+          </button>
+        </div>
+        <div style={pickerGrid}>
+          {childrenOfParent.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              onClick={() => onPick(parentSlug, c.value)}
+              style={pickerCard}
+            >
+              <span style={{ fontSize: 26 }}>{c.emoji}</span>
+              <span style={pickerCardLabel}>
+                {resolveLocalized(c.label, wizardLocale)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Phase C — initial parent grid.
+  return (
+    <div className="form-field">
+      <label>Category</label>
+      <div style={pickerGrid}>
+        {parents.map((p) => {
+          const children = getCategoriesForParent(p.slug);
+          const onClick = () => {
+            // Single-child parents (Healthcare, Banking, Education,
+            // Government) auto-select the only child instead of
+            // forcing an unnecessary second tap.
+            if (children.length === 1) {
+              onPick(p.slug, children[0].value);
+            } else {
+              // Open the sub-picker — onPick is what actually persists,
+              // so for the parent step we just nudge state via onClear-
+              // adjacent logic. Use a tiny dispatcher: call onPick with
+              // the FIRST child only when there's a single one (above);
+              // otherwise call the consumer with no category to mean
+              // "open sub-picker". The consumer (parent <Signup>) sets
+              // parentSlug from a separate setter — but to keep this
+              // component self-contained, we just forward via a fake
+              // pick on the first child and let consumer ignore. To
+              // avoid that hack, the parent passes a setParentSlug-only
+              // callback; here we expose it via the same onPick by
+              // calling with empty string — see consumer.
+              // Simpler: use a separate prop. (We do — see below.)
+              setParentOnly(p.slug);
+            }
+          };
+          return (
+            <button
+              key={p.slug}
+              type="button"
+              onClick={onClick}
+              style={pickerCard}
+            >
+              <span style={{ fontSize: 28 }}>{p.emoji}</span>
+              <span style={pickerCardLabel}>
+                {resolveLocalized(p.label, wizardLocale)}
+              </span>
+              <span style={pickerCardHint}>
+                {resolveLocalized(p.hint, wizardLocale)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // Closure-scoped helper — keeps the parent-only navigation inside
+  // the component without polluting Signup's surface.
+  function setParentOnly(slug: CategoryParent) {
+    // Simulate "open sub-picker" by calling onPick with an empty
+    // category and the parent slug — the consumer (Signup) reads
+    // parentSlug from this and shows the sub-picker on next render.
+    onPick(slug, '' as BusinessCategory);
+  }
+}
+
+const pickerGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+  gap: 8,
+};
+
+const pickerCard: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: 6,
+  padding: '14px 12px',
+  borderRadius: 10,
+  border: '1px solid var(--border, #334155)',
+  background: 'var(--surface, #1e293b)',
+  color: 'var(--text, #e2e8f0)',
+  cursor: 'pointer',
+  textAlign: 'left',
+  minHeight: 92,
+};
+
+const pickerCardLabel: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 700,
+  lineHeight: 1.2,
+};
+
+const pickerCardHint: React.CSSProperties = {
+  fontSize: 11,
+  color: 'var(--text2, #94a3b8)',
+  lineHeight: 1.3,
+};
+
+const pickerChosen: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1.5px solid var(--primary, #3b82f6)',
+  background: 'var(--surface, #1e293b)',
+  color: 'var(--text, #e2e8f0)',
+};
+
+const pickerChangeBtn: React.CSSProperties = {
+  padding: '6px 12px',
+  borderRadius: 6,
+  border: '1px solid var(--border, #475569)',
+  background: 'transparent',
+  color: 'var(--primary, #3b82f6)',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
+const pickerBackBtn: React.CSSProperties = {
+  padding: '4px 10px',
+  borderRadius: 6,
+  border: '1px solid transparent',
+  background: 'transparent',
+  color: 'var(--text2, #94a3b8)',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
